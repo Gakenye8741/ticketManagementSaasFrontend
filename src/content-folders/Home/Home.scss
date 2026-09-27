@@ -1,0 +1,69 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Chewy&family=Updock&display=swap');
+
+
+.Upcoming{
+    width: 100%;
+    height: 100vh;
+    padding: 30px 30px;
+    
+    h1{
+    font-family: Arial, Helvetica, sans-serif;
+    text-align: center;
+    font-family: "Updock";
+    font-size: 60px;
+    text-decoration: underline;
+    background: linear-gradient(to left,red,white,green,blue, yellow,red);
+    background-size: 1100%;
+    color: transparent;
+    background-clip: text;
+    font-weight: 900;
+    animation: colorChange 10s linear infinite;
+    @keyframes colorChange{
+        from{
+            background-position: 400% 50%;
+        }
+        to{
+            background-position: 100% 50%;
+        }
+    }
+
+}
+.row{
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+}
+.OurVenues {
+  h2 {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 700;
+  }
+
+  .card:hover {
+    transform: translateY(-4px);
+    transition: 0.3s ease-in-out;
+  }
+}
+#venues {
+  .card {
+    transition: transform 0.3s ease;
+    &:hover {
+      transform: translateY(-6px);
+    }
+  }
+
+  iframe {
+    border: none;
+  }
+}
+@media screen and (max-width: 500px){
+  .hero-overlay{
+    font-size: 20px;
+    width: 100%;
+    height: fit-content;
+  }
+}

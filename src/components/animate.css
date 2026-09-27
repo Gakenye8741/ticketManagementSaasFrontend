@@ -1,0 +1,28 @@
+@import url('https://fonts.googleapis.com/css2?family=Updock&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Chewy&family=Updock&display=swap');
+@keyframes glow {
+  0% {
+    box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.8);
+  }
+  100% {
+    box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+  }
+}
+
+.animate-glow {
+  animation: glow 1.5s infinite ease-in-out;
+}
+.typed-cursor {
+  font-weight: 100;
+  font-size: 24px;
+  color: #6366f1; /* Tailwind indigo-500 */
+}
+.font-updock {
+  font-family: 'Updock', cursive;
+}
+.font-chewy {
+  font-family: 'Chewy', cursive;
+}

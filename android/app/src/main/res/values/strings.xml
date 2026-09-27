@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TicketStream</string>
+    <string name="title_activity_main">TicketStream</string>
+    <string name="package_name">com.gekenye.ticket</string>
+    <string name="custom_url_scheme">com.gekenye.ticket</string>
+</resources>

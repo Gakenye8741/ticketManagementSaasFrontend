@@ -2,7 +2,12 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 
 export const userApi = createApi({
   reducerPath: 'userApi',
-  baseQuery: fetchBaseQuery({ baseUrl: 'http://localhost:5000/api/' }),
+  baseQuery: fetchBaseQuery({
+    baseUrl: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/`,
+    credentials: 'include', // Ensures cookies are sent/received with requests
+  }),
+  refetchOnReconnect: true,
+  refetchOnMountOrArgChange: true,
   tagTypes: ['users', 'user', 'emails'],
   endpoints: (builder) => ({
     // 🟢 Auth: Login
@@ -146,5 +151,5 @@ export const {
   useDeleteUserMutation,
   useSearchUsersByLastNameQuery,
   useSearchUsersWithDetailsQuery,
-  useSendEmailNotificationMutation, // ✅ NEW: Email broadcast & targeted notification hook
+  useSendEmailNotificationMutation,
 } = userApi;

@@ -40,17 +40,13 @@ export interface BulkDeleteMediaPayload {
 
 export const mediaApi = createApi({
   reducerPath: 'mediaApi',
-  baseQuery: fetchBaseQuery({
-    baseUrl: `${import.meta.env.VITE_API_BASE_URL || 'https://ticket-backend-ufx5.onrender.com'}/api/`,
-    credentials: 'include',
-    prepareHeaders: (headers, { getState }) => {
-      const token = (getState() as RootState).auth.token;
-      if (token) {
-        headers.set('Authorization', `Bearer ${token}`);
-      }
-      return headers;
-    },
-  }),
+ baseQuery: fetchBaseQuery({
+     baseUrl: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/`,
+     credentials: 'include',
+   }),
+   refetchOnReconnect: true,
+   refetchOnMountOrArgChange: true,
+
   tagTypes: [
     'media',
     'mediaByEvent',

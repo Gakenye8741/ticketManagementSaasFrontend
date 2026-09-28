@@ -2,8 +2,8 @@ import { configureStore } from "@reduxjs/toolkit";
 import storage from "redux-persist/lib/storage";
 import { persistReducer, persistStore } from "redux-persist";
 
-// Reducers & Types
-import authReducer, { AuthState } from "../features/Auth/AuthSlice";
+// Reducers & Types (Changed to default import or whatever your AuthSlice exports)
+import authReducer, * as AuthSliceTypes from "../features/Auth/AuthSlice";
 
 // APIs
 import { userApi } from "../features/APIS/UserApi";
@@ -27,8 +27,7 @@ const authPersistConfiguration = {
 };
 
 // Create A persistent Reducer for the AUTH
-// Explicitly typing this helps resolve the "cannot be named" error
-const persistedAuthReducer = persistReducer<AuthState>(authPersistConfiguration, authReducer);
+const persistedAuthReducer = persistReducer<AuthSliceTypes.AuthState>(authPersistConfiguration, authReducer);
 
 export const store = configureStore({
   reducer: {
@@ -45,7 +44,7 @@ export const store = configureStore({
     [mpesaApi.reducerPath]: mpesaApi.reducer,
     [qrTicketApi.reducerPath]: qrTicketApi.reducer,
     auth: persistedAuthReducer,
-  }, // <--- Fixed: Added missing comma here
+  },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
       serializableCheck: false,
@@ -60,7 +59,7 @@ export const store = configureStore({
       adminResponseApi.middleware,
       paymentApi.middleware,
       emailApi.middleware,
-      mpesaApi.middleware ,
+      mpesaApi.middleware,
       qrTicketApi.middleware
     ),
 });

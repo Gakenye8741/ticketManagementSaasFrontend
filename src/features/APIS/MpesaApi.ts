@@ -1,25 +1,23 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 
 // Define the interface for the STK Push request based on your payments REST file
-interface StkPushPayload {
+export interface StkPushPayload {
   phoneNumber: string;
   bookingId: number | string;
 }
 
-// Define the interface for the Stripe Checkout Session request
-interface StripeCheckoutPayload {
+export interface StripeCheckoutPayload {
   bookingId: number | string;
   amount: number;
   eventName: string;
   ticketTypeName: string;
   quantity: number;
 }
-
 export const mpesaApi = createApi({
   reducerPath: 'mpesaApi',
   baseQuery: fetchBaseQuery({
-    // Production Render URL for payments gateway (matches base route: /api/payments)
-    baseUrl: 'http://localhost:5000/api/payments/',
+    // Uses VITE_API_BASE_URL environment variable with fallback, pointing to the payments base route
+    baseUrl: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/payments/`,
     // Include credentials for cookie-based authentication sessions instead of Authorization headers
     credentials: 'include',
     prepareHeaders: (headers) => {
@@ -27,11 +25,13 @@ export const mpesaApi = createApi({
       return headers;
     }
   }),
+  refetchOnReconnect: true,
+  refetchOnMountOrArgChange: true,
   tagTypes: ['Payments', 'Bookings'],
   endpoints: (builder) => ({
     
     /**
-     * 1. Health Check
+     * Health Check
      * GET /api/payments/health
      */
     checkPaymentHealth: builder.query<any, void>({

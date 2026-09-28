@@ -1,21 +1,16 @@
 // features/api/paymentApi.ts
 
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
-import type { RootState } from '../../App/store';
 
 export const paymentApi = createApi({
   reducerPath: 'paymentApi',
   baseQuery: fetchBaseQuery({
-    baseUrl: 'https://ticket-backend-ufx5.onrender.com/api/',
-    prepareHeaders: (headers, { getState }) => {
-      const token = (getState() as RootState).auth.token;
-      if (token) {
-        headers.set('Authorization', `${token}`);
-      }
-      headers.set('Content-Type', 'application/json');
-      return headers;
-    },
-  }),
+      baseUrl: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/`,
+      credentials: 'include',
+    }),
+    refetchOnReconnect: true,
+    refetchOnMountOrArgChange: true,
+  
   tagTypes: ['payments', 'payment'],
   endpoints: (builder) => ({
     // 📥 Get all payments

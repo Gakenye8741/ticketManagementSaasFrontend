@@ -127,7 +127,7 @@ export const EmailVerification = () => {
                   <div className="w-2.5 h-2.5 rounded-full bg-warning"></div>
                   <div className="w-2.5 h-2.5 rounded-full bg-success"></div>
                 </div>
-                <span className="text-[10px] font-mono text-base-content/50 uppercase tracking-widest">Verify_Node.tsx</span>
+                <span className="text-[10px] font-mono text-base-content/50 uppercase tracking-widest">Verify_email page</span>
               </div>
 
               <div className="space-y-1">

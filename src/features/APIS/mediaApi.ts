@@ -5,7 +5,7 @@ import type { RootState } from '../../App/store';
 export interface MediaPayload {
   eventId: number;
   url: string;
-  type: 'image' | 'video' | 'banner' | 'gallery' | 'poster';
+  type: 'image' | 'video';
   altText?: string;
   isPrimary?: boolean;
 }
@@ -17,7 +17,7 @@ export interface BulkCreateMediaPayload {
 export interface UpdateMediaPayload {
   mediaId: number;
   url?: string;
-  type?: 'image' | 'video' | 'banner' | 'gallery' | 'poster';
+  type?: 'image' | 'video';
   altText?: string;
   isPrimary?: boolean;
 }

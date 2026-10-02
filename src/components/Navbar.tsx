@@ -20,8 +20,9 @@ import {
   Sparkles,
   Tag,
   LogIn,
-  UserPlus,
-  Loader2
+  Loader2,
+  ShieldCheck,
+  CalendarCheck
 } from "lucide-react";
 
 import "./animate.css"; 
@@ -42,7 +43,7 @@ export const Navbar = () => {
   const dispatch = useDispatch();
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
   const user = useSelector((state: RootState) => state.auth.user);
-  const role = useSelector((state: RootState) => state.auth.role);
+  const role = useSelector((state: RootState) => state.auth.role); // e.g., "admin", "organizer", "user"
 
   // Debounce search query to prevent excessive API calls while typing
   useEffect(() => {
@@ -99,6 +100,25 @@ export const Navbar = () => {
     setIsSearchOpen(false);
     setSearchQuery("");
     navigate(`/events/${slug}`);
+  };
+
+  // Determine dashboard link and label based on user role
+  const getDashboardRoute = () => {
+    if (role === "admin") return "/AdminDashBoard/analytics";
+    if (role === "organizer") return "/organizer-dashboard/"; // Adjust path if your organizer route differs
+    return "/dashboard/analytics"; // Standard user / attendee dashboard
+  };
+
+  const getDashboardLabel = () => {
+    if (role === "admin") return "Admin Control Center";
+    if (role === "organizer") return "Organizer Dashboard";
+    return "My Dashboard";
+  };
+
+  const getDashboardIcon = () => {
+    if (role === "admin") return <ShieldCheck size={15} className="text-primary" />;
+    if (role === "organizer") return <CalendarCheck size={15} className="text-primary" />;
+    return <LayoutDashboard size={15} className="text-primary" />;
   };
 
   return (
@@ -266,17 +286,18 @@ export const Navbar = () => {
                     <span className="hidden xl:inline text-xs font-bold uppercase tracking-wider">
                       {user?.firstName || "Account"}
                     </span>
+                    
                     <ChevronDown size={14} className="opacity-50" />
                   </div>
                 </label>
                 <ul tabIndex={0} className="menu dropdown-content mt-2 p-1.5 shadow-xl bg-base-100 rounded-2xl w-56 border border-base-200 z-[110]">
                   <li className="menu-title text-[10px] uppercase font-bold tracking-widest px-3 py-1.5 opacity-40">
-                    Dashboard
+                    {role ? `${role.toUpperCase()} MENU` : "DASHBOARD"}
                   </li>
                   <li>
-                    <Link to={role === "admin" ? "/AdminDashBoard/analytics" : "/dashboard/analytics"} className="flex items-center gap-2.5 py-2 px-3 rounded-lg text-xs font-semibold">
-                      <LayoutDashboard size={15} className="text-primary" /> 
-                      <span>Store Overview</span>
+                    <Link to={getDashboardRoute()} className="flex items-center gap-2.5 py-2 px-3 rounded-lg text-xs font-semibold">
+                      {getDashboardIcon()} 
+                      <span>{getDashboardLabel()}</span>
                     </Link>
                   </li>
                   <li>
@@ -332,17 +353,30 @@ export const Navbar = () => {
             ))}
 
             {isAuthenticated && (
-              <Link 
-                to="/tickets" 
-                className={`p-3 rounded-xl flex items-center gap-3 transition-all ${
-                  location.pathname === "/tickets" 
-                    ? "bg-primary text-primary-content shadow-sm" 
-                    : "bg-base-200/60 text-base-content hover:bg-base-200"
-                }`}
-              >
-                <Ticket size={18} />
-                <span>My Tickets</span>
-              </Link>
+              <>
+                <Link 
+                  to={getDashboardRoute()} 
+                  className={`p-3 rounded-xl flex items-center gap-3 transition-all ${
+                    location.pathname.includes("dashboard") 
+                      ? "bg-primary text-primary-content shadow-sm" 
+                      : "bg-base-200/60 text-base-content hover:bg-base-200"
+                  }`}
+                >
+                  <LayoutDashboard size={18} />
+                  <span>{getDashboardLabel()}</span>
+                </Link>
+                <Link 
+                  to="/tickets" 
+                  className={`p-3 rounded-xl flex items-center gap-3 transition-all ${
+                    location.pathname === "/tickets" 
+                      ? "bg-primary text-primary-content shadow-sm" 
+                      : "bg-base-200/60 text-base-content hover:bg-base-200"
+                  }`}
+                >
+                  <Ticket size={18} />
+                  <span>My Tickets</span>
+                </Link>
+              </>
             )}
 
             <Link 

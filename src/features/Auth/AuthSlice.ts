@@ -18,10 +18,11 @@ const authSlice = createSlice({
     reducers: {
         setCredentials: (
             state, 
-            action: PayloadAction<{ digitalId: number; email: string; role: string; firstName: string; message: string }>
+            action: PayloadAction<{ digitalId: number; orgId: number; email: string; role: string; firstName: string; message: string }>
         ) => {
             state.user = {
                 digitalId: action.payload.digitalId,
+                orgId: action.payload.orgId,
                 email: action.payload.email,
                 firstName: action.payload.firstName,
                 message: action.payload.message

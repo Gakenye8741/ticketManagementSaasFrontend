@@ -39,6 +39,13 @@ import { EventSlugPage } from './pages/Slug';
 import TicketViewPage from './pages/TicketViewPage'; // 👈 Imported the new Ticket View page
 import { AboutPage } from './pages/About';
 import PricingSection from './pages/pricing';
+import { OrganaizerDashBoard } from './pages/OrganaizerDashboard';
+import {OrganizationManager} from './DashBoards/OrganizerDashboard/OrganizationManager';
+import EventManager from './DashBoards/OrganizerDashboard/EventManager';
+import TicketTypesManager from './DashBoards/OrganizerDashboard/TicketTypesManager';
+import { EventMediaManager } from './DashBoards/OrganizerDashboard/MediaMAnager';
+import BookingsManager from './DashBoards/OrganizerDashboard/BookingsManager';
+import PaymentsManager from './DashBoards/OrganizerDashboard/PaymentManager';
 
 function App() {
   const Router = createBrowserRouter([
@@ -65,6 +72,7 @@ function App() {
         { path: '/tickets/view/:ticketToken', element: <TicketViewPage /> }, // 👈 Added public ticket viewing route for email links
       ],
     },
+
     {
       path: 'dashboard',
       element: (
@@ -102,6 +110,25 @@ function App() {
         { path: 'AllPayments', element: <AllPayments /> },
         { path: 'adminprofile', element: <AdminUserProfile /> },
         { path: 'SalesReports', element: <SalesReport /> },
+      ],
+    },
+    {
+      path: 'organizer-dashboard',
+      element: (
+        <ProtectedRoutes>
+          <OrganaizerDashBoard />
+        </ProtectedRoutes>
+      ),
+      errorElement: <Error />,
+      children: [
+        { path: 'my-organization', element: <OrganizationManager /> },
+        { path: 'my-events', element: <EventManager /> },
+        { path: 'ticket-types', element: <TicketTypesManager /> },
+        { path: 'media', element: <EventMediaManager /> },
+        { path: 'bookings', element: <BookingsManager /> },
+        { path: 'payments', element: <PaymentsManager /> },
+        
+     
       ],
     },
   ]);

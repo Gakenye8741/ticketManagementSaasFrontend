@@ -18,6 +18,8 @@ import { paymentApi } from "../features/APIS/PaymentApi";
 import { emailApi } from "../features/APIS/SendngEmails";
 import { mpesaApi } from "../features/APIS/MpesaApi"; 
 import { qrTicketApi } from "../features/APIS/QrcodeTicketApi";
+import { organizationsApi } from "../features/APIS/organizationApi";
+
 
 // Create Persist Configuration for auth Slice
 const authPersistConfiguration = {
@@ -43,6 +45,7 @@ export const store = configureStore({
     [emailApi.reducerPath]: emailApi.reducer,
     [mpesaApi.reducerPath]: mpesaApi.reducer,
     [qrTicketApi.reducerPath]: qrTicketApi.reducer,
+    [organizationsApi.reducerPath]: organizationsApi.reducer,
     auth: persistedAuthReducer,
   },
   middleware: (getDefaultMiddleware) =>
@@ -60,7 +63,8 @@ export const store = configureStore({
       paymentApi.middleware,
       emailApi.middleware,
       mpesaApi.middleware,
-      qrTicketApi.middleware
+      qrTicketApi.middleware,
+      organizationsApi.middleware
     ),
 });
 

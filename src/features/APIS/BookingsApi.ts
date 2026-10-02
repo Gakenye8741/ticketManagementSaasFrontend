@@ -31,15 +31,10 @@ export type CreateBookingRequest = {
 
 export const bookingApi = createApi({
   reducerPath: "bookingApi",
-  baseQuery: fetchBaseQuery({
-    baseUrl: "http://localhost:5000/api/",
-    // Credentials included for cookie-based authentication sessions instead of Bearer headers
-    credentials: "include",
-    prepareHeaders: (headers) => {
-      headers.set("Content-Type", "application/json");
-      return headers;
-    },
-  }),
+baseQuery: fetchBaseQuery({
+     baseUrl: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/`,
+     credentials: 'include',
+   }),
   refetchOnReconnect: true,
   refetchOnMountOrArgChange: true,
   tagTypes: ["Bookings", "Booking"],

@@ -46,6 +46,8 @@ import TicketTypesManager from './DashBoards/OrganizerDashboard/TicketTypesManag
 import { EventMediaManager } from './DashBoards/OrganizerDashboard/MediaMAnager';
 import BookingsManager from './DashBoards/OrganizerDashboard/BookingsManager';
 import PaymentsManager from './DashBoards/OrganizerDashboard/PaymentManager';
+import TicketsManager from './DashBoards/OrganizerDashboard/TicketsManager';
+import AnalyticsManager from './DashBoards/OrganizerDashboard/AnalyticsManager';
 
 function App() {
   const Router = createBrowserRouter([
@@ -127,6 +129,8 @@ function App() {
         { path: 'media', element: <EventMediaManager /> },
         { path: 'bookings', element: <BookingsManager /> },
         { path: 'payments', element: <PaymentsManager /> },
+        { path: 'tickets', element: <TicketsManager /> },
+        { path: 'analytics', element: <AnalyticsManager /> },
         
      
       ],

@@ -69,7 +69,7 @@ function App() {
         { path: "/email-verification", element: <EmailVerification />, errorElement: <Error /> },
         { path: "/forgot-password", element: <ForgotPassword />, errorElement: <Error /> },
         { path: "/reset-password/:token", element: <ResetPassword />, errorElement: <Error /> },
-        { path: '/tickets/view/:ticketToken', element: <TicketViewPage /> }, // 👈 Added public ticket viewing route for email links
+        { path: '/tickets/view/:ticketToken', element: <TicketViewPage /> }, 
       ],
     },
 

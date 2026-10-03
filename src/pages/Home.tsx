@@ -6,11 +6,11 @@ import {
   Zap, 
   Calendar, 
   MapPin, 
-  CheckCircle2, 
   Rocket
 } from "lucide-react";
 import { Navbar } from "../components/Navbar";
 import { Footer } from "../components/Footer";
+import { HeroEventSection } from "../components/HeroEventSection"; // <-- Imported new Hero component
 import { useGetAllEventsQuery } from "../features/APIS/EventsApi";
 
 // Custom Hook for smooth animated counter numbers
@@ -56,58 +56,26 @@ export const Home = () => {
       <Navbar />
 
       <main>
-        {/* --- HERO SECTION WITH BACKGROUND IMAGE & LIGHT/DARK OVERLAY --- */}
-        <section className="relative overflow-hidden pt-36 pb-28 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto rounded-3xl my-6 bg-cover bg-center border border-base-300 shadow-xl" style={{ backgroundImage: `url('https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=2000&auto=format&fit=crop')` }}>
-          
-          {/* Background Overlay: Adapts nicely between light and dark themes */}
-          <div className="absolute inset-0 bg-base-100/90 dark:bg-base-100/95 backdrop-blur-xs"></div>
-          
-          <div className="relative z-10 text-center max-w-4xl mx-auto space-y-6">
-            
-                        
-            <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight leading-tight">
-              Sell event tickets with <span className="text-primary">M-Pesa & Stripe</span> integration
+        {/* --- DYNAMIC HERO EVENT SECTION WITH SLUG & MEDIA API INTEGRATION --- */}
+        <section className="pt-28 pb-6 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+          <div className="text-center max-w-3xl mx-auto mb-8 space-y-3">
+            <span className="text-xs font-bold uppercase tracking-widest text-primary bg-primary/10 px-4 py-1.5 rounded-full">
+              Featured Experience
+            </span>
+            <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight">
+              Discover top events & shows
             </h1>
-            
-            <p className="text-base sm:text-lg text-base-content/80 max-w-2xl mx-auto leading-relaxed">
-              Create your event page in minutes, accept automated M-Pesa STK push payments or global cards via Stripe, and verify gate passes right from your mobile device.
+            <p className="text-base text-base-content/70">
+              Explore featured upcoming events, get your digital tickets instantly with M-Pesa or Stripe, and experience seamless check-ins.
             </p>
-
-            <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
-              <Link 
-                to="/events/create" 
-                className="btn btn-primary rounded-xl px-8 py-4 font-bold text-sm sm:text-base shadow-lg shadow-primary/20 flex items-center gap-2 group hover:scale-105 transition-all"
-              >
-                <span>Get started free</span>
-                <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-              </Link>
-              <Link 
-                to="/events" 
-                className="btn btn-ghost border border-base-300 rounded-xl px-8 py-4 font-bold text-sm sm:text-base hover:bg-base-200 transition-all"
-              >
-                Browse events
-              </Link>
-            </div>
-
-            <div className="pt-8 flex flex-wrap items-center justify-center gap-6 text-sm font-semibold text-base-content/70">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 size={18} className="text-primary" />
-                <span>M-Pesa & Stripe payments</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 size={18} className="text-primary" />
-                <span>Zero upfront costs</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 size={18} className="text-primary" />
-                <span>Built for organizers</span>
-              </div>
-            </div>
           </div>
+
+          {/* Render the dynamic Hero Carousel Component */}
+          <HeroEventSection />
         </section>
 
         {/* --- ANIMATED TRACTION STATS BAR --- */}
-        <section className="border-y border-base-300/60 bg-base-200/40 py-12 mb-20 shadow-inner">
+        <section className="border-y border-base-300/60 bg-base-200/40 py-12 my-12 shadow-inner">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-6">
               <span className="text-xs font-bold uppercase tracking-widest text-primary bg-primary/10 px-4 py-1.5 rounded-full">
@@ -290,12 +258,12 @@ export const Home = () => {
           </div>
         </section>
 
-        {/* --- LIVE EVENTS SHOWCASE --- */}
+        {/* --- LIVE EVENTS CATALOG GRID --- */}
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-24">
           <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 mb-10">
             <div>
               <span className="text-xs font-bold uppercase tracking-widest text-primary">Discover gigs</span>
-              <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight mt-1">Featured events & shows</h2>
+              <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight mt-1">All upcoming events & shows</h2>
             </div>
             <Link to="/events" className="btn btn-ghost btn-sm text-sm font-bold text-primary flex items-center gap-1 hover:bg-primary/10">
               <span>View all events</span>
@@ -312,11 +280,11 @@ export const Home = () => {
           ) : latestEvents.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {latestEvents.map((event: any) => (
-                <div key={event.eventId} className="bg-base-200/60 border border-base-300 rounded-3xl overflow-hidden group hover:border-primary/50 transition-all shadow-sm flex flex-col justify-between">
+                <div key={event.eventId || event.id} className="bg-base-200/60 border border-base-300 rounded-3xl overflow-hidden group hover:border-primary/50 transition-all shadow-sm flex flex-col justify-between">
                   <div>
                     <div className="h-48 bg-base-300 relative flex items-center justify-center overflow-hidden">
-                      {event.bannerUrl ? (
-                        <img src={event.bannerUrl} alt={event.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      {event.bannerUrl || event.imageUrl ? (
+                        <img src={event.bannerUrl || event.imageUrl} alt={event.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                       ) : (
                         <Calendar className="w-12 h-12 text-base-content/20" />
                       )}
@@ -326,9 +294,9 @@ export const Home = () => {
                     </div>
                     <div className="p-6 space-y-3">
                       <div className="flex items-center justify-between text-sm font-bold text-primary">
-                        <span>{new Date(event.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                        <span>{new Date(event.date || event.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                         <span className="px-3 py-1 rounded-lg bg-primary/10">
-                          {Number(event.ticketPrice) === 0 ? "Free" : `KES ${Number(event.ticketPrice).toLocaleString()}`}
+                          {Number(event.ticketPrice) === 0 ? "Free" : `KES ${Number(event.ticketPrice || 0).toLocaleString()}`}
                         </span>
                       </div>
                       <h3 className="text-lg font-bold text-base-content group-hover:text-primary transition-colors line-clamp-1">
@@ -336,14 +304,14 @@ export const Home = () => {
                       </h3>
                       <div className="flex items-center gap-2 text-sm text-base-content/70">
                         <MapPin size={16} className="shrink-0" />
-                        <span className="line-clamp-1">{event.venue?.name ? `${event.venue.name}, ${event.venue.address}` : "Venue TBA"}</span>
+                        <span className="line-clamp-1">{event.venue?.name ? `${event.venue.name}, ${event.venue.address}` : event.location || "Venue TBA"}</span>
                       </div>
                     </div>
                   </div>
                   <div className="p-6 pt-0">
                     <div className="pt-4 border-t border-base-300/60 flex items-center justify-between">
                       <span className="text-xs font-medium text-base-content/60">TicketStream Verified</span>
-                      <Link to={`/events/${event.eventId}`} className="btn btn-sm btn-primary rounded-xl font-bold">
+                      <Link to={`/events/${event.slug || event.eventId}`} className="btn btn-sm btn-primary rounded-xl font-bold">
                         Get Ticket
                       </Link>
                     </div>

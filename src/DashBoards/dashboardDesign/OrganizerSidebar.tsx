@@ -18,6 +18,7 @@ import {
   Store,
   TicketCheckIcon,
   Wallet2,
+  HouseIcon,
 } from "lucide-react";
 import { type RootState } from "../../App/store";
 
@@ -42,6 +43,7 @@ export const OrganizerSidebar = ({ isCollapsed = false }: OrganizerSidebarProps)
     {
       title: "Event Management",
       items: [
+        { path: "/organizer-dashboard/my-venues", label: "My venues", icon: HouseIcon },
         { path: "/organizer-dashboard/my-events", label: "My Events", icon: Calendar },
         { path: "/organizer-dashboard/ticket-types", label: "Manage TicketsTypes", icon: Ticket },
         { path: "/organizer-dashboard/media", label: "Manage Event Media", icon: Images },

@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { useSelector } from "react-redux";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   BarChart3,
@@ -27,6 +28,8 @@ import {
   UserCheck,
   Hourglass,
   Trophy,
+  MapPin,
+  Plus,
 } from "lucide-react";
 import { type RootState } from "../../App/store";
 import { useGetBookingsByEventIdQuery, type Booking } from "../../features/APIS/BookingsApi";
@@ -35,7 +38,9 @@ import { useGetTicketsByEventIdQuery, type Ticket } from "../../features/APIS/ti
 import { useGetTicketTypesByEventIdQuery } from "../../features/APIS/ticketsType.Api";
 import { useGetEventsByOrganizationQuery } from "../../features/APIS/EventsApi";
 import { useGetOrganizationStatsQuery } from "../../features/APIS/organizationApi";
+import { useGetAllVenuesQuery, type Venue } from "../../features/APIS/VenueApi";
 import usePageTitle from "../../hooks/usePageTitle";
+import { useOrganizerOrg } from "../../hooks/useOrganizerOrg";
 
 // Change this to match the currency used on your other pages
 const CURRENCY = "KSH";
@@ -555,17 +560,23 @@ export const AnalyticsManager = () => {
   usePageTitle("Analytics");
 
   const user = useSelector((state: RootState) => state.auth.user);
-  const orgId = user?.orgId || user?.organizationId || 1;
+
+  // The organizer's REAL organization. There is no fallback to a default one:
+  // someone without an organization must not see other people's analytics.
+  const { orgId, hasOrg, isLoading: orgLoading } = useOrganizerOrg();
 
   // ---------------------------------------------------------------------------
-  // EVENTS, SCOPE & ORGANIZATION OVERVIEW
+  // EVENTS, SCOPE & ORGANIZATION OVERVIEW (only this organization's events)
   // ---------------------------------------------------------------------------
-  const { data: eventsData } = useGetEventsByOrganizationQuery(orgId, { skip: !orgId });
+  const { data: eventsData } = useGetEventsByOrganizationQuery(orgId as number, { skip: !orgId });
   const rawEvents = useMemo(() => toArray<any>(eventsData), [eventsData]);
   const getEventId = (ev: any) => ev?.eventId || ev?.id || ev?._id;
 
-  const [scope, setScope] = useState<string>("all"); // "all" or an event id
+  // "all" or an event id. A picked event only counts if it belongs to this
+  // organization, otherwise we fall back to "all my events".
+  const [pickedScope, setPickedScope] = useState<string>("all");
   const allIds = useMemo(() => rawEvents.map((e) => Number(getEventId(e))).filter(Boolean), [rawEvents]);
+  const scope = pickedScope === "all" || allIds.includes(Number(pickedScope)) ? pickedScope : "all";
   const scopeIds = useMemo(() => (scope === "all" ? allIds : [Number(scope)].filter(Boolean)), [scope, allIds]);
   const isAll = scope === "all";
 
@@ -579,17 +590,25 @@ export const AnalyticsManager = () => {
 
   const scopeTitle = isAll ? "All events" : eventTitleById(scope);
 
-  const { data: orgStatsData } = useGetOrganizationStatsQuery(orgId, { skip: !orgId });
+  const { data: orgStatsData } = useGetOrganizationStatsQuery(orgId as number, { skip: !orgId });
   const orgStats: any = (orgStatsData as any)?.data ?? orgStatsData;
 
   // ---------------------------------------------------------------------------
-  // DATA: per-event payloads + organization payments
+  // DATA: per-event payloads + organization payments + venues
   // ---------------------------------------------------------------------------
   const [payloads, setPayloads] = useState<Record<number, EventPayload>>({});
   const [refreshKey, setRefreshKey] = useState(0);
   const handleData = useCallback((p: EventPayload) => setPayloads((prev) => ({ ...prev, [p.eventId]: p })), []);
 
-  const paymentsQ = useGetPaymentsByOrgIdQuery(orgId, { skip: !orgId });
+  const paymentsQ = useGetPaymentsByOrgIdQuery(orgId as number, { skip: !orgId });
+
+  // The organizer's venues (the API already scopes them to the logged-in organizer;
+  // we also drop any venue that clearly belongs to another organization)
+  const venuesQ = useGetAllVenuesQuery(undefined, { skip: !hasOrg });
+  const venues = useMemo(
+    () => toArray<Venue>(venuesQ.data).filter((v: any) => v.orgId == null || Number(v.orgId) === Number(orgId)),
+    [venuesQ.data, orgId]
+  );
 
   const loadedCount = scopeIds.filter((id) => payloads[id] && !payloads[id].loading).length;
   const failedCount = scopeIds.filter((id) => payloads[id]?.error).length;
@@ -806,6 +825,62 @@ export const AnalyticsManager = () => {
   const visibleTiers = showAllTiers ? a.tiers : a.tiers.slice(0, 6);
 
   // ---------------------------------------------------------------------------
+  // VENUE STATS (events are linked to venues through event.venueId)
+  // ---------------------------------------------------------------------------
+  const venueStats = useMemo(() => {
+    const eventVenueId = new Map<number, number | null>();
+    rawEvents.forEach((ev: any) => {
+      const id = Number(getEventId(ev));
+      eventVenueId.set(id, ev?.venueId != null && ev.venueId !== "" ? Number(ev.venueId) : null);
+    });
+
+    const allRows = venues.map((v: any) => {
+      const vid = Number(v.venueId ?? v.id);
+      const evs = a.perEvent.filter((e) => eventVenueId.get(e.id) === vid);
+      const ticketsSold = evs.reduce((s, e) => s + e.ticketsSold, 0);
+      const capacity = num(v.capacity);
+      return {
+        id: vid,
+        name: (v.name as string) || `Venue #${vid}`,
+        location: (v.location || v.address || "") as string,
+        capacity,
+        events: evs.length,
+        bookings: evs.reduce((s, e) => s + e.bookings, 0),
+        ticketsSold,
+        revenue: evs.reduce((s, e) => s + e.revenue, 0),
+        scanned: evs.reduce((s, e) => s + e.scanned, 0),
+        fill: pct(ticketsSold, capacity * evs.length),
+        avgSold: evs.length ? Math.round(ticketsSold / evs.length) : 0,
+      };
+    });
+
+    // When one event is selected, only show the venue that event uses
+    const rows = (isAll ? allRows : allRows.filter((r) => r.events > 0)).sort((m, n) => n.revenue - m.revenue);
+
+    const knownVenueIds = new Set(venues.map((v: any) => Number(v.venueId ?? v.id)));
+    const noVenue = a.perEvent.filter((e) => {
+      const vid = eventVenueId.get(e.id);
+      return vid == null || !knownVenueIds.has(vid);
+    });
+
+    const used = rows.filter((r) => r.events > 0);
+    const topVenue = used.find((r) => r.revenue > 0) || null;
+    const avgFill = used.length ? Math.round((used.reduce((s, r) => s + r.fill, 0) / used.length) * 10) / 10 : 0;
+
+    return {
+      rows,
+      usedCount: used.length,
+      topVenue,
+      avgFill,
+      noVenueEvents: noVenue.length,
+      noVenueRevenue: noVenue.reduce((s, e) => s + e.revenue, 0),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venues, a.perEvent, rawEvents, isAll]);
+
+  const maxVenueRevenue = Math.max(...venueStats.rows.map((r) => r.revenue), 0);
+
+  // ---------------------------------------------------------------------------
   // HIGHLIGHTS (plain-language insights)
   // ---------------------------------------------------------------------------
   const highlights = useMemo(() => {
@@ -823,6 +898,18 @@ export const AnalyticsManager = () => {
           ),
         });
       }
+    }
+
+    if (venueStats.topVenue && venueStats.usedCount > 1) {
+      out.push({
+        icon: <MapPin size={14} />,
+        text: (
+          <>
+            <b>{venueStats.topVenue.name}</b> is your best venue with <b>{fmtMoney(venueStats.topVenue.revenue)}</b> across{" "}
+            <b>{venueStats.topVenue.events}</b> {venueStats.topVenue.events === 1 ? "event" : "events"}.
+          </>
+        ),
+      });
     }
 
     const topDay = [...a.bookingsSeries.points].sort((m, n) => n.value - m.value)[0];
@@ -934,7 +1021,7 @@ export const AnalyticsManager = () => {
 
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [a, isAll]);
+  }, [a, isAll, venueStats]);
 
   const orgCards = orgStats
     ? [
@@ -996,6 +1083,14 @@ export const AnalyticsManager = () => {
     downloadCsv(`${fileBase()}-events.csv`, [
       ["Event", "Revenue", "Bookings", "Confirmed bookings", "Tickets sold", "Tickets issued", "Scanned", "Check-in %", "Capacity", "Sold (tiers)", "Capacity used %"],
       ...sortedEvents.map((e) => [e.title, e.revenue, e.bookings, e.confirmed, e.ticketsSold, e.tickets, e.scanned, e.checkIn, e.capacity, e.sold, e.capacityUsed]),
+    ]);
+  };
+
+  const exportVenuesCsv = () => {
+    closeMenu();
+    downloadCsv(`${fileBase()}-venues.csv`, [
+      ["Venue", "Location", "Venue capacity", "Events", "Bookings", "Tickets sold", "Revenue", "Scanned", "Avg tickets per event", "Fill rate %"],
+      ...venueStats.rows.map((v) => [v.name, v.location, v.capacity, v.events, v.bookings, v.ticketsSold, v.revenue, v.scanned, v.avgSold, v.fill]),
     ]);
   };
 
@@ -1106,6 +1201,40 @@ export const AnalyticsManager = () => {
     </div>
   );
 
+  // --- WHILE WE CHECK THE ORGANIZER'S ORGANIZATION ---
+  if (orgLoading) {
+    return (
+      <div className="flex justify-center py-32">
+        <span className="loading loading-spinner loading-md text-primary"></span>
+      </div>
+    );
+  }
+
+  // --- NO ORGANIZATION YET: ask them to create one first ---
+  if (!hasOrg) {
+    return (
+      <div className="flex flex-col gap-5 pb-16 max-w-3xl mx-auto w-full font-sans px-3 sm:px-6">
+        <div className="text-center bg-base-200/20 rounded-2xl border border-dashed border-base-300 p-8 sm:p-12 flex flex-col items-center gap-3">
+          <div className="p-3 bg-primary/10 text-primary rounded-2xl">
+            <Building2 size={32} />
+          </div>
+          <h2 className="font-black text-base text-base-content">Create your organization first</h2>
+          <p className="text-xs text-base-content/60 max-w-md leading-relaxed">
+            Analytics are built from your events, and events belong to an organization. Create your organization and your
+            first event, then your sales, check-ins and venue insights will show up here.
+          </p>
+          <Link
+            to="/organizer-dashboard/my-organization"
+            className="btn btn-primary btn-sm gap-2 rounded-xl text-xs font-bold shadow-sm mt-2"
+          >
+            <Plus size={14} />
+            <span>Create Organization</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-5 pb-16 max-w-7xl mx-auto w-full font-sans px-3 sm:px-6">
       {/* One data loader per event in scope (renders nothing) */}
@@ -1150,7 +1279,7 @@ export const AnalyticsManager = () => {
 
           <select
             value={scope}
-            onChange={(e) => setScope(e.target.value)}
+            onChange={(e) => setPickedScope(e.target.value)}
             className="select select-bordered select-xs sm:select-sm rounded-xl text-xs w-full sm:w-52 font-semibold"
           >
             <option value="all">All my events</option>
@@ -1169,6 +1298,7 @@ export const AnalyticsManager = () => {
               onClick={() => {
                 setRefreshKey((k) => k + 1);
                 paymentsQ.refetch();
+                venuesQ.refetch();
               }}
               className="btn btn-ghost btn-sm btn-square rounded-xl bg-base-200"
               title="Refresh data"
@@ -1204,6 +1334,11 @@ export const AnalyticsManager = () => {
                   </button>
                 </li>
                 <li>
+                  <button onClick={exportVenuesCsv} disabled={isLoading} className="text-xs font-semibold">
+                    <FileSpreadsheet size={14} className="text-success" /> Venues breakdown
+                  </button>
+                </li>
+                <li>
                   <button onClick={exportBookingsCsv} disabled={isLoading} className="text-xs font-semibold">
                     <FileSpreadsheet size={14} className="text-success" /> Bookings
                   </button>
@@ -1236,10 +1371,11 @@ export const AnalyticsManager = () => {
             <div className="flex flex-col gap-1">
               <span className="font-bold text-base-content">Analytics Guide</span>
               <p className="text-base-content/70 leading-relaxed text-[11px]">
-                See every event together with <b>All my events</b>, or pick a single event. The time range applies to bookings,
-                payments and revenue, while ticket tiers and check-in figures show current totals. Use <b>Export</b> to save a
-                PDF report (choose "Save as PDF" in the print window) or download spreadsheets for bookings, payments, tickets
-                and the per-event breakdown.
+                Everything here comes from <b>your own events and venues</b> only. See every event together with{" "}
+                <b>All my events</b>, or pick a single event. The time range applies to bookings, payments and revenue, while
+                ticket tiers and check-in figures show current totals. Use <b>Export</b> to save a PDF report (choose "Save as
+                PDF" in the print window) or download spreadsheets for bookings, payments, tickets, venues and the per-event
+                breakdown.
               </p>
             </div>
           </div>
@@ -1504,6 +1640,107 @@ export const AnalyticsManager = () => {
       )}
 
       {/* =================================================================== */}
+      {/* VENUE PERFORMANCE                                                   */}
+      {/* =================================================================== */}
+      <Panel
+        title="Venue performance"
+        subtitle={isAll ? "How each of your venues is doing across its events" : "The venue used by this event"}
+        icon={<MapPin size={16} />}
+      >
+        {isLoading || venuesQ.isLoading ? (
+          PANEL_SKELETON
+        ) : venuesQ.isError ? (
+          <div className="alert alert-warning text-xs font-semibold py-2 rounded-xl">
+            <AlertCircle size={16} />
+            <span>Venues could not be loaded. Try the refresh button.</span>
+          </div>
+        ) : venueStats.rows.length === 0 ? (
+          <ChartEmpty text={venues.length === 0 ? "No venues yet" : "This event has no venue assigned"} />
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+              <div className="rounded-xl bg-base-200/50 p-2.5">
+                <span className="block text-sm font-black text-base-content">{venueStats.usedCount}</span>
+                <span className="text-[10px] text-base-content/50">Venues in use</span>
+              </div>
+              <div className="rounded-xl bg-base-200/50 p-2.5 min-w-0">
+                <span className="block text-sm font-black text-base-content truncate">{venueStats.topVenue?.name ?? "—"}</span>
+                <span className="text-[10px] text-base-content/50">Top venue</span>
+              </div>
+              <div className="rounded-xl bg-base-200/50 p-2.5">
+                <span className="block text-sm font-black text-base-content">{venueStats.avgFill}%</span>
+                <span className="text-[10px] text-base-content/50">Avg. fill rate</span>
+              </div>
+              <div className="rounded-xl bg-base-200/50 p-2.5">
+                <span className="block text-sm font-black text-base-content">{venueStats.noVenueEvents}</span>
+                <span className="text-[10px] text-base-content/50">Events without a venue</span>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto -mx-1">
+              <table className="table table-sm w-full text-xs min-w-[720px]">
+                <thead>
+                  <tr className="text-base-content/60 border-b border-base-200">
+                    <th className="font-bold w-8">#</th>
+                    <th className="font-bold">Venue</th>
+                    <th className="font-bold">Events</th>
+                    <th className="font-bold">Revenue</th>
+                    <th className="font-bold">Tickets sold</th>
+                    <th className="font-bold">Capacity</th>
+                    <th className="font-bold">Fill rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {venueStats.rows.map((v, i) => (
+                    <tr key={v.id} className={`hover:bg-base-200/30 border-b border-base-100 ${v.events === 0 ? "opacity-60" : ""}`}>
+                      <td className="font-bold text-base-content/40">{i + 1}</td>
+                      <td className="max-w-[220px]">
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-bold text-base-content truncate">{v.name}</span>
+                          {v.location && <span className="text-[10px] text-base-content/40 truncate">{v.location}</span>}
+                        </div>
+                      </td>
+                      <td className="font-semibold text-base-content/70">{v.events}</td>
+                      <td className="min-w-[150px]">
+                        <div className="flex flex-col gap-1">
+                          <span className="font-bold text-success">{fmtMoney(v.revenue)}</span>
+                          <div className="h-1.5 rounded-full bg-base-200 overflow-hidden">
+                            <div className="h-full rounded-full bg-success" style={{ width: `${pct(v.revenue, maxVenueRevenue)}%` }} />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="font-semibold text-base-content/70">
+                        {v.ticketsSold} <span className="text-[10px] text-base-content/40">({v.avgSold}/event)</span>
+                      </td>
+                      <td className="font-semibold text-base-content/70">{v.capacity.toLocaleString()}</td>
+                      <td className="min-w-[110px]">
+                        <div className="flex items-center gap-2">
+                          <progress className="progress progress-primary w-16 h-1.5" value={Math.min(v.fill, 100)} max={100}></progress>
+                          <span className="font-semibold text-base-content/70">{v.fill}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {venueStats.noVenueRevenue > 0 && (
+                  <tfoot>
+                    <tr>
+                      <td colSpan={7} className="text-[10px] text-base-content/50 pt-2">
+                        Plus {fmtMoney(venueStats.noVenueRevenue)} from events that have no venue assigned.
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+            <p className="text-[10px] text-base-content/40">
+              Fill rate = tickets sold ÷ (venue capacity × number of events held there), for the selected period.
+            </p>
+          </div>
+        )}
+      </Panel>
+
+      {/* =================================================================== */}
       {/* TICKET TIERS + CHECK-IN                                             */}
       {/* =================================================================== */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1724,6 +1961,43 @@ export const AnalyticsManager = () => {
               </table>
             </ReportSection>
           )}
+
+          <ReportSection title="Venue performance">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-gray-400 text-gray-600">
+                  <th className="py-1">Venue</th>
+                  <th className="py-1 text-right">Events</th>
+                  <th className="py-1 text-right">Capacity</th>
+                  <th className="py-1 text-right">Tickets sold</th>
+                  <th className="py-1 text-right">Revenue</th>
+                  <th className="py-1 text-right">Fill rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {venueStats.rows.length === 0 && (
+                  <tr>
+                    <td className="py-1 text-gray-500" colSpan={6}>
+                      No venues
+                    </td>
+                  </tr>
+                )}
+                {venueStats.rows.map((v) => (
+                  <tr key={v.id} className="border-b border-gray-200">
+                    <td className="py-1 font-bold">
+                      {v.name}
+                      {v.location && <span className="font-normal text-gray-500"> · {v.location}</span>}
+                    </td>
+                    <td className="py-1 text-right">{v.events}</td>
+                    <td className="py-1 text-right">{v.capacity.toLocaleString()}</td>
+                    <td className="py-1 text-right">{v.ticketsSold}</td>
+                    <td className="py-1 text-right">{fmtMoney(v.revenue)}</td>
+                    <td className="py-1 text-right">{v.fill}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ReportSection>
 
           <ReportSection title="Ticket tiers">
             <table className="w-full text-left">

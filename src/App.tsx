@@ -50,6 +50,7 @@ import TicketsManager from './DashBoards/OrganizerDashboard/TicketsManager';
 import AnalyticsManager from './DashBoards/OrganizerDashboard/AnalyticsManager';
 import WalletManager from './DashBoards/OrganizerDashboard/WalletManager';
 import OrganizerProfileManager from './DashBoards/OrganizerDashboard/OrganizerProfileManager';
+import VenueManager from './DashBoards/OrganizerDashboard/VenueManager';
 
 function App() {
   const Router = createBrowserRouter([
@@ -135,7 +136,7 @@ function App() {
         { path: 'analytics', element: <AnalyticsManager /> },
         { path: 'wallet', element: <WalletManager /> },
         { path: 'profile', element: <OrganizerProfileManager /> },
-        
+        { path: 'my-venues', element: <VenueManager /> },
      
       ],
     },

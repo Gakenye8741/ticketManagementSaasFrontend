@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import { useSelector } from "react-redux";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Image as ImageIcon,
@@ -24,6 +24,7 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  Building2,
 } from "lucide-react";
 import { useGetEventsByOrganizationQuery } from "../../features/APIS/EventsApi";
 import {
@@ -35,6 +36,7 @@ import {
   useSetMediaAsPrimaryMutation,
 } from "../../features/APIS/mediaApi";
 import usePageTitle from "../../hooks/usePageTitle";
+import { useOrganizerOrg } from "../../hooks/useOrganizerOrg";
 
 // Cloudinary config (unsigned upload preset)
 const CLOUDINARY_CLOUD_NAME = "dwibg4vvf";
@@ -44,35 +46,20 @@ export const EventMediaManager = () => {
   usePageTitle("Event Media Manager");
 
   // ---------------------------------------------------------------------------
-  // ORG ID (Redux with localStorage fallback)
+  // ORGANIZER'S ORGANIZATION
+  // The organizer's REAL organization. There is no fallback to a default one:
+  // someone without an organization must not see or edit other people's media.
   // ---------------------------------------------------------------------------
-  const authUser = useSelector((state: any) => state.auth?.user);
-  let orgId = authUser?.orgId || authUser?.organizationId;
-
-  if (!orgId) {
-    try {
-      const persistedAuth = localStorage.getItem("persist:auth");
-      if (persistedAuth) {
-        const parsed = JSON.parse(persistedAuth);
-        const userObj = parsed.user ? JSON.parse(parsed.user) : null;
-        orgId = userObj?.orgId;
-      } else {
-        const localUser = localStorage.getItem("user");
-        if (localUser) orgId = JSON.parse(localUser)?.orgId;
-      }
-    } catch (err) {
-      console.error("Failed to parse orgId from localStorage", err);
-    }
-  }
+  const { orgId, hasOrg, isLoading: orgLoading } = useOrganizerOrg();
 
   // ---------------------------------------------------------------------------
-  // DATA FETCHING: EVENTS
+  // DATA FETCHING: EVENTS (only this organization's events)
   // ---------------------------------------------------------------------------
   const {
     data: eventsData,
     isLoading: isLoadingEvents,
     error: eventsError,
-  } = useGetEventsByOrganizationQuery(orgId, { skip: !orgId });
+  } = useGetEventsByOrganizationQuery(orgId as number, { skip: !orgId });
 
   const rawEvents = Array.isArray(eventsData)
     ? eventsData
@@ -82,9 +69,17 @@ export const EventMediaManager = () => {
 
   const getEventId = (ev: any) => ev?.eventId || ev?.id || ev?._id;
 
+  // The chosen event (from the dropdown). It only counts if it belongs to this
+  // organization; otherwise we fall back to the organization's first event, and
+  // it also updates once the events finish loading.
   const [pickedEventId, setPickedEventId] = useState<string | number>("");
-  // Falls back to the first event once events finish loading
-  const selectedEventId = pickedEventId || (rawEvents.length > 0 ? getEventId(rawEvents[0]) : "");
+  const ownEventIds = rawEvents.map((ev: any) => String(getEventId(ev)));
+  const selectedEventId: string | number =
+    pickedEventId && ownEventIds.includes(String(pickedEventId))
+      ? pickedEventId
+      : rawEvents.length > 0
+      ? getEventId(rawEvents[0])
+      : "";
   const numericEventId = Number(selectedEventId);
 
   const activeEvent = rawEvents.find((ev: any) => String(getEventId(ev)) === String(selectedEventId));
@@ -412,6 +407,40 @@ export const EventMediaManager = () => {
     </div>
   );
 
+  // --- WHILE WE CHECK THE ORGANIZER'S ORGANIZATION ---
+  if (orgLoading) {
+    return (
+      <div className="flex justify-center py-32">
+        <span className="loading loading-spinner loading-md text-primary"></span>
+      </div>
+    );
+  }
+
+  // --- NO ORGANIZATION YET: ask them to create one first ---
+  if (!hasOrg) {
+    return (
+      <div className="flex flex-col gap-5 pb-16 max-w-3xl mx-auto w-full font-sans px-3 sm:px-6">
+        <div className="text-center bg-base-200/20 rounded-2xl border border-dashed border-base-300 p-8 sm:p-12 flex flex-col items-center gap-3">
+          <div className="p-3 bg-primary/10 text-primary rounded-2xl">
+            <Building2 size={32} />
+          </div>
+          <h2 className="font-black text-base text-base-content">Create your organization first</h2>
+          <p className="text-xs text-base-content/60 max-w-md leading-relaxed">
+            Photos and videos belong to your events, and events belong to an organization. Create your organization and
+            your first event, then you can upload and manage its media here.
+          </p>
+          <Link
+            to="/organizer-dashboard/my-organization"
+            className="btn btn-primary btn-sm gap-2 rounded-xl text-xs font-bold shadow-sm mt-2"
+          >
+            <Plus size={14} />
+            <span>Create Organization</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-5 pb-16 max-w-7xl mx-auto w-full font-sans px-3 sm:px-6">
       {/* =================================================================== */}
@@ -473,8 +502,8 @@ export const EventMediaManager = () => {
               <span className="font-bold text-base-content">Media Guide & Features</span>
               <p className="text-base-content/70 leading-relaxed text-[11px]">
                 Upload images and videos for your events, add media from links, and choose the primary banner shown
-                to attendees. Use the event dropdown to switch events, tick items in the gallery to delete several at
-                once.
+                to attendees. Use the event dropdown to switch between your events, tick items in the gallery to
+                delete several at once.
               </p>
             </div>
           </div>
@@ -505,22 +534,16 @@ export const EventMediaManager = () => {
       )}
 
       {/* =================================================================== */}
-      {/* STATES: NO ORG / LOADING / ERROR / EMPTY                            */}
+      {/* STATES: LOADING / ERROR / EMPTY                                     */}
       {/* =================================================================== */}
-      {!orgId ? (
-        <div className="text-center py-16 bg-warning/10 rounded-2xl border border-dashed border-warning/40 p-6">
-          <AlertTriangle size={36} className="mx-auto text-warning/60 mb-2" />
-          <h3 className="font-bold text-xs text-base-content">Organization not found</h3>
-          <p className="text-[11px] text-base-content/60 mt-0.5">Please log in again as an organizer to load your events.</p>
-        </div>
-      ) : isLoadingEvents ? (
+      {isLoadingEvents ? (
         <div className="flex justify-center py-20">
           <span className="loading loading-spinner loading-md text-primary"></span>
         </div>
       ) : eventsError ? (
         <div className="alert alert-error text-xs font-semibold py-3 rounded-xl">
           <AlertCircle size={16} />
-          <span>Failed to load events for organization {orgId}.</span>
+          <span>Failed to load your events. Please refresh and try again.</span>
         </div>
       ) : rawEvents.length === 0 ? (
         <div className="text-center py-16 bg-base-200/20 rounded-2xl border border-dashed border-base-300 p-6">

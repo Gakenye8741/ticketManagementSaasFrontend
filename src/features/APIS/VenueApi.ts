@@ -1,100 +1,112 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
-import type { RootState } from '../../App/store';
+
+// Venue Payload and Input Interfaces
+export interface Venue {
+  venueId?: number;
+  id?: number;
+  orgId?: number;
+  name: string;
+  location: string;
+  address: string;
+  capacity: number;
+  description?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface VenueWithEvents extends Venue {
+  events?: any[];
+}
 
 export interface CreateVenuePayload {
   name: string;
-  location?: string;
-  capacity?: number;
-  [key: string]: any;
+  location: string;
+  address: string;
+  capacity: number;
+  description?: string;
 }
 
-export interface UpdateVenuePayload extends Partial<CreateVenuePayload> {
+export interface UpdateVenuePayload {
   venueId: number;
+  name?: string;
+  location?: string;
+  address?: string;
+  capacity?: number;
+  description?: string;
 }
 
 export const venueApi = createApi({
   reducerPath: 'venueApi',
   baseQuery: fetchBaseQuery({
-    baseUrl: `${import.meta.env.VITE_API_BASE_URL || 'https://ticket-backend-ufx5.onrender.com'}/api/`,
+    baseUrl: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/`,
     credentials: 'include',
-    prepareHeaders: (headers, { getState }) => {
-      const token = (getState() as RootState).auth.token;
-      if (token) {
-        const formattedToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
-        headers.set('Authorization', formattedToken);
-      }
-      headers.set('Content-Type', 'application/json');
-      return headers;
-    },
   }),
   refetchOnReconnect: true,
   refetchOnMountOrArgChange: true,
 
-  tagTypes: ['venues', 'venue'],
-
+  tagTypes: ['venues', 'venue', 'venueDetails'],
   endpoints: (builder) => ({
-    // ➕ Create Venue
-    createVenue: builder.mutation<any, CreateVenuePayload>({
-      query: (createVenuePayload) => ({
-        url: 'venues',
-        method: 'POST',
-        body: createVenuePayload,
-      }),
-      invalidatesTags: [{ type: 'venues', id: 'LIST' }],
-    }),
-
-    // 🔄 Update Venue
-    updateVenue: builder.mutation<any, UpdateVenuePayload>({
-      query: ({ venueId, ...body }) => ({
-        url: `venues/${venueId}`,
-        method: 'PUT',
-        body,
-      }),
-      invalidatesTags: (_result, _error, { venueId }) => [
-        { type: 'venues', id: venueId },
-        { type: 'venues', id: 'LIST' },
-      ],
-    }),
-
-    // 🗑️ Delete Venue
-    deleteVenue: builder.mutation<any, number>({
-      query: (id) => ({
-        url: `venues/${id}`,
-        method: 'DELETE',
-      }),
-      invalidatesTags: (_result, _error, id) => [
-        { type: 'venues', id },
-        { type: 'venues', id: 'LIST' },
-      ],
-    }),
-
-    // 📥 Get All Venues
+    // 1. Get All Venues for the Logged-in Organizer
     getAllVenues: builder.query<any, void>({
       query: () => 'venues',
-      providesTags: (result) =>
-        result && Array.isArray(result)
-          ? [
-              ...result.map((venue: { venueId: number }) => ({
-                type: 'venues' as const,
-                id: venue.venueId,
-              })),
-              { type: 'venues', id: 'LIST' },
-            ]
-          : [{ type: 'venues', id: 'LIST' }],
+      providesTags: ['venues'],
     }),
 
-    // 🔍 Get Venue By Name
+    // 2. Search Venues by Name
+    searchVenues: builder.query<any, string>({
+      query: (searchTerm) => `venues/search?q=${encodeURIComponent(searchTerm)}`,
+      providesTags: ['venues'],
+    }),
+
+    // 3. Create a New Venue (scoped to the organizer's organization)
+    createVenue: builder.mutation<any, CreateVenuePayload>({
+      query: (venueData) => ({
+        url: 'venues',
+        method: 'POST',
+        body: venueData,
+      }),
+      invalidatesTags: ['venues'],
+    }),
+
+    // 4. Get Venue By Name
     getVenueByName: builder.query<any, string>({
-      query: (name) => `venues/${name}`,
-      providesTags: (_result, _error, name) => [{ type: 'venue', id: name }],
+      query: (name) => `venues/${encodeURIComponent(name)}`,
+      providesTags: ['venue'],
+    }),
+
+    // 5. Get Venue Details including Events
+    getVenueDetailsWithEvents: builder.query<any, string>({
+      query: (name) => `details/venues/search?name=${encodeURIComponent(name)}`,
+      providesTags: ['venueDetails'],
+    }),
+
+    // 6. Update an Existing Venue
+    updateVenue: builder.mutation<any, UpdateVenuePayload>({
+      query: ({ venueId, ...data }) => ({
+        url: `venues/${venueId}`,
+        method: 'PUT',
+        body: data,
+      }),
+      invalidatesTags: ['venues', 'venue', 'venueDetails'],
+    }),
+
+    // 7. Delete an Existing Venue
+    deleteVenue: builder.mutation<any, number>({
+      query: (venueId) => ({
+        url: `venues/${venueId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['venues', 'venue', 'venueDetails'],
     }),
   }),
 });
 
 export const {
+  useGetAllVenuesQuery,
+  useSearchVenuesQuery,
   useCreateVenueMutation,
+  useGetVenueByNameQuery,
+  useGetVenueDetailsWithEventsQuery,
   useUpdateVenueMutation,
   useDeleteVenueMutation,
-  useGetAllVenuesQuery,
-  useGetVenueByNameQuery,
 } = venueApi;

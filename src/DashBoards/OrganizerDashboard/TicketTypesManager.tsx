@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSelector } from "react-redux";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Ticket,
@@ -16,9 +16,9 @@ import {
   Package,
   ArrowLeft,
   Copy,
-  Info
+  Info,
+  Building2
 } from "lucide-react";
-import { type RootState } from "../../App/store";
 import {
   useGetTicketTypesByEventIdQuery,
   useCreateTicketTypeMutation,
@@ -31,6 +31,10 @@ import {
 } from "../../features/APIS/ticketsType.Api";
 import { useGetEventsByOrganizationQuery } from "../../features/APIS/EventsApi";
 import usePageTitle from "../../hooks/usePageTitle";
+import { useOrganizerOrg } from "../../hooks/useOrganizerOrg";
+
+// Currency used across the organizer pages
+const CURRENCY = "KSH";
 
 interface TicketTypesManagerProps {
   eventId?: string | number;
@@ -40,13 +44,14 @@ interface TicketTypesManagerProps {
 export const TicketTypesManager = ({ eventId: propEventId, onBack }: TicketTypesManagerProps) => {
   usePageTitle("Ticket Types Manager");
 
-  const user = useSelector((state: RootState) => state.auth.user);
-  const orgId = user?.orgId || user?.organizationId || 1;
+  // The organizer's REAL organization. There is no fallback to a default one:
+  // someone without an organization must not see or edit other people's tickets.
+  const { orgId, hasOrg, isLoading: orgLoading } = useOrganizerOrg();
 
   // ---------------------------------------------------------------------------
   // DATA FETCHING: EVENTS & EVENT NAMES
   // ---------------------------------------------------------------------------
-  const { data: eventsData } = useGetEventsByOrganizationQuery(orgId, {
+  const { data: eventsData } = useGetEventsByOrganizationQuery(orgId as number, {
     skip: !orgId,
   });
 
@@ -56,9 +61,19 @@ export const TicketTypesManager = ({ eventId: propEventId, onBack }: TicketTypes
     ? (eventsData as any).data
     : [];
 
-  const [selectedEventId, setSelectedEventId] = useState<string | number>(
-    propEventId || (rawEvents.length > 0 ? rawEvents[0].eventId || rawEvents[0].id : "")
-  );
+  const getEventId = (ev: any) => ev?.eventId || ev?.id || ev?._id;
+
+  // The chosen event (from the dropdown or the eventId prop). It only counts if it
+  // belongs to this organization; otherwise we fall back to the organization's first
+  // event, and it also updates once the events finish loading.
+  const [pickedEventId, setPickedEventId] = useState<string | number>(propEventId || "");
+  const ownEventIds = rawEvents.map((ev: any) => String(getEventId(ev)));
+  const selectedEventId: string | number =
+    pickedEventId && ownEventIds.includes(String(pickedEventId))
+      ? pickedEventId
+      : rawEvents.length > 0
+      ? getEventId(rawEvents[0])
+      : "";
 
   const activeEvent = rawEvents.find(
     (ev: any) => String(ev.eventId || ev.id || ev._id) === String(selectedEventId)
@@ -224,6 +239,40 @@ export const TicketTypesManager = ({ eventId: propEventId, onBack }: TicketTypes
   const totalCapacity = rawTicketTypes.reduce((acc: number, t: any) => acc + (Number(t.quantity) || 0), 0);
   const totalSold = rawTicketTypes.reduce((acc: number, t: any) => acc + (Number(t.sold) || 0), 0);
 
+  // --- WHILE WE CHECK THE ORGANIZER'S ORGANIZATION ---
+  if (orgLoading) {
+    return (
+      <div className="flex justify-center py-32">
+        <span className="loading loading-spinner loading-md text-primary"></span>
+      </div>
+    );
+  }
+
+  // --- NO ORGANIZATION YET: ask them to create one first ---
+  if (!hasOrg) {
+    return (
+      <div className="flex flex-col gap-5 pb-16 max-w-3xl mx-auto w-full font-sans px-3 sm:px-6">
+        <div className="text-center bg-base-200/20 rounded-2xl border border-dashed border-base-300 p-8 sm:p-12 flex flex-col items-center gap-3">
+          <div className="p-3 bg-primary/10 text-primary rounded-2xl">
+            <Building2 size={32} />
+          </div>
+          <h2 className="font-black text-base text-base-content">Create your organization first</h2>
+          <p className="text-xs text-base-content/60 max-w-md leading-relaxed">
+            Ticket types belong to your events, and events belong to an organization. Create your organization and your
+            first event, then you can set up your ticket tiers here.
+          </p>
+          <Link
+            to="/organizer-dashboard/my-organization"
+            className="btn btn-primary btn-sm gap-2 rounded-xl text-xs font-bold shadow-sm mt-2"
+          >
+            <Plus size={14} />
+            <span>Create Organization</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-5 pb-16 max-w-7xl mx-auto w-full font-sans px-3 sm:px-6">
       
@@ -254,7 +303,7 @@ export const TicketTypesManager = ({ eventId: propEventId, onBack }: TicketTypes
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <select
             value={selectedEventId}
-            onChange={(e) => setSelectedEventId(e.target.value)}
+            onChange={(e) => setPickedEventId(e.target.value)}
             className="select select-bordered select-xs sm:select-sm rounded-xl text-xs w-full sm:w-48 font-semibold"
           >
             {rawEvents.map((ev: any) => {
@@ -326,7 +375,7 @@ export const TicketTypesManager = ({ eventId: propEventId, onBack }: TicketTypes
         <div className="bg-base-100 border border-base-200 p-4 rounded-2xl shadow-sm flex items-center justify-between">
           <div className="flex flex-col gap-0.5">
             <span className="text-[11px] text-base-content/60 font-semibold">Total Revenue Generated</span>
-            <span className="text-base sm:text-lg font-black text-base-content">${Number(totalRevenue).toLocaleString()}</span>
+            <span className="text-base sm:text-lg font-black text-base-content">{CURRENCY} {Number(totalRevenue).toLocaleString()}</span>
           </div>
           <div className="p-2.5 bg-success/10 text-success rounded-xl">
             <DollarSign size={18} />
@@ -411,7 +460,7 @@ export const TicketTypesManager = ({ eventId: propEventId, onBack }: TicketTypes
                         <Ticket size={14} className="text-primary shrink-0" />
                         <span>{ticket.name}</span>
                       </td>
-                      <td className="py-3 px-4 font-bold text-success">${Number(ticket.price).toFixed(2)}</td>
+                      <td className="py-3 px-4 font-bold text-success">{CURRENCY} {Number(ticket.price).toFixed(2)}</td>
                       <td className="py-3 px-4 text-base-content/70">{ticket.quantity}</td>
                       <td className="py-3 px-4 text-base-content/70 font-semibold">{ticket.sold || 0}</td>
                       <td className="py-3 px-4">
@@ -493,7 +542,7 @@ export const TicketTypesManager = ({ eventId: propEventId, onBack }: TicketTypes
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1">
-                    <label className="font-semibold text-base-content/70 text-[11px]">Price ($)</label>
+                    <label className="font-semibold text-base-content/70 text-[11px]">Price ({CURRENCY})</label>
                     <input
                       type="text"
                       required
@@ -563,7 +612,7 @@ export const TicketTypesManager = ({ eventId: propEventId, onBack }: TicketTypes
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1">
-                    <label className="font-semibold text-base-content/70 text-[11px]">Price (KSH)</label>
+                    <label className="font-semibold text-base-content/70 text-[11px]">Price ({CURRENCY})</label>
                     <input
                       type="text"
                       required

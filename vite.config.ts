@@ -9,21 +9,22 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg", "robots.txt"],
+      includeAssets: ["ticketstreamlogo.jpeg", "robots.txt", "sitemap.xml"],
       workbox: {
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB
       },
       manifest: {
-        name: "Ticket App",
-        short_name: "Ticket",
+        name: "Ticket Stream",
+        short_name: "TicketStream",
+        description: "Discover, Book & Manage Event Tickets Online",
         start_url: "/",
         display: "standalone",
         background_color: "#ffffff",
         theme_color: "#0f172a",
         icons: [
-          { src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" },
-          { src: "/pwa-512x512.png", sizes: "512x512", type: "image/png" },
-          { src: "/pwa-512x512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
+          { src: "/ticketstreamlogo.jpeg", sizes: "192x192", type: "image/jpeg" },
+          { src: "/ticketstreamlogo.jpeg", sizes: "512x512", type: "image/jpeg" },
+          { src: "/ticketstreamlogo.jpeg", sizes: "512x512", type: "image/jpeg", purpose: "any maskable" },
         ],
       },
     }),

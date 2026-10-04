@@ -59,10 +59,7 @@ export const Home = () => {
         {/* --- DYNAMIC HERO EVENT SECTION WITH SLUG & MEDIA API INTEGRATION --- */}
         <section className="pt-28 pb-6 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
           <div className="text-center max-w-3xl mx-auto mb-8 space-y-3">
-            <span className="text-xs font-bold uppercase tracking-widest text-primary bg-primary/10 px-4 py-1.5 rounded-full">
-              Featured Experience
-            </span>
-            <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight">
+                       <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight">
               Discover top events & shows
             </h1>
             <p className="text-base text-base-content/70">

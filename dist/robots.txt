@@ -1,5 +1,0 @@
-User-agent: *
-Allow: /
-
-# Sitemap location
-Sitemap: https://ticketstream.gakenye-ndiritu.co.ke/sitemap.xml

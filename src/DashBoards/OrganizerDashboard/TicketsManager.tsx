@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useSelector } from "react-redux";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Ticket as TicketIcon,
@@ -25,8 +25,9 @@ import {
   Mail,
   Phone,
   Receipt,
+  Building2,
+  Plus,
 } from "lucide-react";
-import { type RootState } from "../../App/store";
 import {
   useGetTicketsByEventIdQuery,
   useCountEventTicketsQuery,
@@ -37,6 +38,7 @@ import { useGetBookingByIdQuery } from "../../features/APIS/BookingsApi";
 import { useGetTicketTypesByEventIdQuery } from "../../features/APIS/ticketsType.Api";
 import { useGetEventsByOrganizationQuery } from "../../features/APIS/EventsApi";
 import usePageTitle from "../../hooks/usePageTitle";
+import { useOrganizerOrg } from "../../hooks/useOrganizerOrg";
 
 // Change this to match the currency used on your other pages
 const CURRENCY = "KSH";
@@ -130,13 +132,14 @@ const PurchaserInfo = ({ bookingId }: { bookingId: number }) => {
 export const TicketsManager = () => {
   usePageTitle("Tickets Manager");
 
-  const user = useSelector((state: RootState) => state.auth.user);
-  const orgId = user?.orgId || user?.organizationId || 1;
+  // The organizer's REAL organization. There is no fallback to a default one:
+  // someone without an organization must not see other people's tickets.
+  const { orgId, hasOrg, isLoading: orgLoading } = useOrganizerOrg();
 
   // ---------------------------------------------------------------------------
   // EVENTS
   // ---------------------------------------------------------------------------
-  const { data: eventsData } = useGetEventsByOrganizationQuery(orgId, { skip: !orgId });
+  const { data: eventsData } = useGetEventsByOrganizationQuery(orgId as number, { skip: !orgId });
 
   const rawEvents = Array.isArray(eventsData)
     ? eventsData
@@ -169,7 +172,11 @@ export const TicketsManager = () => {
 
   const { data: ticketTypesData } = useGetTicketTypesByEventIdQuery(selectedEventId, { skip: !selectedEventId });
 
-  const tickets: Ticket[] = useMemo(() => toArray(ticketsData), [ticketsData]);
+  // Safety net: only keep tickets that belong to the selected event
+  const tickets: Ticket[] = useMemo(
+    () => toArray(ticketsData).filter((t) => !t.eventId || Number(t.eventId) === numericEventId),
+    [ticketsData, numericEventId]
+  );
 
   const ticketTypeList = useMemo(() => {
     const d: any = ticketTypesData;
@@ -310,6 +317,40 @@ export const TicketsManager = () => {
     animate: { opacity: 1, scale: 1, y: 0 },
     exit: { opacity: 0, scale: 0.96, y: 10 },
   };
+
+  // --- WHILE WE CHECK THE ORGANIZER'S ORGANIZATION ---
+  if (orgLoading) {
+    return (
+      <div className="flex justify-center py-32">
+        <span className="loading loading-spinner loading-md text-primary"></span>
+      </div>
+    );
+  }
+
+  // --- NO ORGANIZATION YET: ask them to create one first ---
+  if (!hasOrg) {
+    return (
+      <div className="flex flex-col gap-5 pb-16 max-w-3xl mx-auto w-full font-sans px-3 sm:px-6">
+        <div className="text-center bg-base-200/20 rounded-2xl border border-dashed border-base-300 p-8 sm:p-12 flex flex-col items-center gap-3">
+          <div className="p-3 bg-primary/10 text-primary rounded-2xl">
+            <Building2 size={32} />
+          </div>
+          <h2 className="font-black text-base text-base-content">Create your organization first</h2>
+          <p className="text-xs text-base-content/60 max-w-md leading-relaxed">
+            Tickets are issued for your events, and events belong to an organization. Create your organization and your
+            first event, then the tickets sold will appear here.
+          </p>
+          <Link
+            to="/organizer-dashboard/my-organization"
+            className="btn btn-primary btn-sm gap-2 rounded-xl text-xs font-bold shadow-sm mt-2"
+          >
+            <Plus size={14} />
+            <span>Create Organization</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-5 pb-16 max-w-7xl mx-auto w-full font-sans px-3 sm:px-6">

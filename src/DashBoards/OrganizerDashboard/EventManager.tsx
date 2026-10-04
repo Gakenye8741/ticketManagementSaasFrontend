@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSelector } from "react-redux";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar,
@@ -19,20 +19,20 @@ import {
   Image as ImageIcon,
   ChevronLeft,
   ChevronRight,
-  AlertTriangle
+  AlertTriangle,
+  Building2
 } from "lucide-react";
-import { type RootState } from "../../App/store";
 import {
   useGetEventsByOrganizationQuery,
   useCreateEventMutation,
   useUpdateEventMutation,
   useUpdateEventStatusMutation,
   useDeleteEventMutation,
-  useGetEventsByTitleQuery,
 } from "../../features/APIS/EventsApi";
 import { useGetAllVenuesQuery } from "../../features/APIS/VenueApi";
 import { useGetPrimaryMediaByEventIdQuery } from "../../features/APIS/mediaApi";
 import usePageTitle from "../../hooks/usePageTitle";
+import { useOrganizerOrg } from "../../hooks/useOrganizerOrg";
 
 const EVENT_CATEGORIES = [
   "music",
@@ -84,11 +84,12 @@ const EventImageThumbnail = ({ eventId }: { eventId: number | string }) => {
 export const EventManager = () => {
   usePageTitle("Event Manager");
 
-  const user = useSelector((state: RootState) => state.auth.user);
-  const orgId = user?.orgId || user?.organizationId || 1;
+  // The organizer's REAL organization. There is no fallback to a default one:
+  // someone who has not created an organization yet must not see other people's events.
+  const { orgId, hasOrg, isLoading: orgLoading } = useOrganizerOrg();
 
   // 1. Queries
-  const { data: events, isLoading: eventsLoading, refetch: refetchEvents } = useGetEventsByOrganizationQuery(orgId, {
+  const { data: events, isLoading: eventsLoading, refetch: refetchEvents } = useGetEventsByOrganizationQuery(orgId as number, {
     skip: !orgId,
   });
 
@@ -120,10 +121,6 @@ export const EventManager = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
 
-  const { data: searchResults } = useGetEventsByTitleQuery(searchTitle, {
-    skip: !searchTitle || searchTitle.trim().length === 0,
-  });
-
   const [eventFormData, setEventFormData] = useState({
     title: "",
     description: "",
@@ -133,12 +130,18 @@ export const EventManager = () => {
     venueId: "",
   });
 
-  const rawEvents = searchTitle.trim() ? searchResults : events;
-  const displayedEvents = Array.isArray(rawEvents)
-    ? rawEvents
-    : Array.isArray((rawEvents as any)?.data)
-    ? (rawEvents as any).data
+  // Only this organization's events. Searching filters this list here instead of
+  // asking the server to search every event on the platform.
+  const orgEvents = Array.isArray(events)
+    ? events
+    : Array.isArray((events as any)?.data)
+    ? (events as any).data
     : [];
+
+  const searchQuery = searchTitle.trim().toLowerCase();
+  const displayedEvents = searchQuery
+    ? orgEvents.filter((event: any) => String(event.title || "").toLowerCase().includes(searchQuery))
+    : orgEvents;
 
   // Pagination calculation
   const totalPages = Math.ceil(displayedEvents.length / itemsPerPage) || 1;
@@ -147,6 +150,7 @@ export const EventManager = () => {
 
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!orgId) return;
     setErrorMessage("");
 
     const generatedSlug = eventFormData.title
@@ -192,7 +196,7 @@ export const EventManager = () => {
 
   const handleUpdateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedEventId) return;
+    if (!selectedEventId || !orgId) return;
     setErrorMessage("");
 
     const generatedSlug = eventFormData.title
@@ -263,6 +267,40 @@ export const EventManager = () => {
       setIsDeleteModalOpen(false);
     }
   };
+
+  // --- WHILE WE CHECK THE ORGANIZER'S ORGANIZATION ---
+  if (orgLoading) {
+    return (
+      <div className="flex justify-center py-32">
+        <span className="loading loading-spinner loading-md text-primary"></span>
+      </div>
+    );
+  }
+
+  // --- NO ORGANIZATION YET: ask them to create one first ---
+  if (!hasOrg) {
+    return (
+      <div className="flex flex-col gap-5 pb-16 max-w-3xl mx-auto w-full font-sans px-3 sm:px-6">
+        <div className="text-center bg-base-200/20 rounded-2xl border border-dashed border-base-300 p-8 sm:p-12 flex flex-col items-center gap-3">
+          <div className="p-3 bg-primary/10 text-primary rounded-2xl">
+            <Building2 size={32} />
+          </div>
+          <h2 className="font-black text-base text-base-content">Create your organization first</h2>
+          <p className="text-xs text-base-content/60 max-w-md leading-relaxed">
+            Events belong to an organization, so you need one before you can create or manage events. It only takes a minute:
+            add your organization's name and logo, then come back here to create your first event.
+          </p>
+          <Link
+            to="/organizer-dashboard/my-organization"
+            className="btn btn-primary btn-sm gap-2 rounded-xl text-xs font-bold shadow-sm mt-2"
+          >
+            <Plus size={14} />
+            <span>Create Organization</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-5 pb-16 max-w-7xl mx-auto w-full font-sans px-3 sm:px-6">
@@ -360,11 +398,17 @@ export const EventManager = () => {
       ) : displayedEvents.length === 0 ? (
         <div className="text-center py-16 bg-base-200/20 rounded-2xl border border-dashed border-base-300 p-6">
           <Calendar size={36} className="mx-auto text-primary/40 mb-2" />
-          <h3 className="font-bold text-xs text-base-content">No Events Scheduled</h3>
-          <p className="text-[11px] text-base-content/60 mt-0.5 mb-3">Create your first event to get started.</p>
-          <button onClick={() => setIsCreateModalOpen(true)} className="btn btn-primary btn-xs rounded-xl font-bold">
-            Create Event
-          </button>
+          <h3 className="font-bold text-xs text-base-content">
+            {searchQuery ? "No Matching Events" : "No Events Scheduled"}
+          </h3>
+          <p className="text-[11px] text-base-content/60 mt-0.5 mb-3">
+            {searchQuery ? "Try a different title." : "Create your first event to get started."}
+          </p>
+          {!searchQuery && (
+            <button onClick={() => setIsCreateModalOpen(true)} className="btn btn-primary btn-xs rounded-xl font-bold">
+              Create Event
+            </button>
+          )}
         </div>
       ) : viewMode === "grid" ? (
         /* --- GRID VIEW --- */

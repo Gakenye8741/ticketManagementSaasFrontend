@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useSelector } from "react-redux";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CalendarCheck,
@@ -21,8 +21,9 @@ import {
   Mail,
   Phone,
   Users,
+  Building2,
+  Plus,
 } from "lucide-react";
-import { type RootState } from "../../App/store";
 import {
   useGetBookingsByEventIdQuery,
   useGetRecentBookingsQuery,
@@ -34,6 +35,7 @@ import {
 import { useGetTicketTypesByEventIdQuery } from "../../features/APIS/ticketsType.Api";
 import { useGetEventsByOrganizationQuery } from "../../features/APIS/EventsApi";
 import usePageTitle from "../../hooks/usePageTitle";
+import { useOrganizerOrg } from "../../hooks/useOrganizerOrg";
 
 // Change this to match the currency used on your Ticket Types page
 const CURRENCY = "KSH";
@@ -56,13 +58,14 @@ const fmtDate = (d?: string) =>
 export const BookingsManager = () => {
   usePageTitle("Bookings");
 
-  const user = useSelector((state: RootState) => state.auth.user);
-  const orgId = user?.orgId || user?.organizationId || 1;
+  // The organizer's REAL organization. There is no fallback to a default one:
+  // someone without an organization must not see other people's bookings.
+  const { orgId, hasOrg, isLoading: orgLoading } = useOrganizerOrg();
 
   // ---------------------------------------------------------------------------
   // EVENTS
   // ---------------------------------------------------------------------------
-  const { data: eventsData } = useGetEventsByOrganizationQuery(orgId, { skip: !orgId });
+  const { data: eventsData } = useGetEventsByOrganizationQuery(orgId as number, { skip: !orgId });
 
   const rawEvents = Array.isArray(eventsData)
     ? eventsData
@@ -71,6 +74,8 @@ export const BookingsManager = () => {
     : [];
 
   const getEventId = (ev: any) => ev?.eventId || ev?.id || ev?._id;
+
+  const orgEventIds = useMemo(() => new Set(rawEvents.map((e: any) => String(getEventId(e)))), [rawEvents]);
 
   const [pickedEventId, setPickedEventId] = useState<string | number>("");
   const selectedEventId = pickedEventId || (rawEvents.length > 0 ? getEventId(rawEvents[0]) : "");
@@ -108,7 +113,10 @@ export const BookingsManager = () => {
 
   const toArray = (d: any): Booking[] => (Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []);
 
-  const bookings: Booking[] = view === "event" ? toArray(eventBookingsData) : toArray(recentData);
+  // Keep only bookings that belong to this organization's own events
+  const bookings: Booking[] = (view === "event" ? toArray(eventBookingsData) : toArray(recentData)).filter((b) =>
+    orgEventIds.has(String(b.eventId))
+  );
   const isLoading = view === "event" ? eventBookingsLoading : recentLoading;
   const isError = view === "event" ? eventBookingsError : recentError;
 
@@ -253,6 +261,40 @@ export const BookingsManager = () => {
       )}
     </div>
   );
+
+  // --- WHILE WE CHECK THE ORGANIZER'S ORGANIZATION ---
+  if (orgLoading) {
+    return (
+      <div className="flex justify-center py-32">
+        <span className="loading loading-spinner loading-md text-primary"></span>
+      </div>
+    );
+  }
+
+  // --- NO ORGANIZATION YET: ask them to create one first ---
+  if (!hasOrg) {
+    return (
+      <div className="flex flex-col gap-5 pb-16 max-w-3xl mx-auto w-full font-sans px-3 sm:px-6">
+        <div className="text-center bg-base-200/20 rounded-2xl border border-dashed border-base-300 p-8 sm:p-12 flex flex-col items-center gap-3">
+          <div className="p-3 bg-primary/10 text-primary rounded-2xl">
+            <Building2 size={32} />
+          </div>
+          <h2 className="font-black text-base text-base-content">Create your organization first</h2>
+          <p className="text-xs text-base-content/60 max-w-md leading-relaxed">
+            Bookings belong to your events, and events belong to an organization. Create your organization and your first
+            event, then bookings will appear here.
+          </p>
+          <Link
+            to="/organizer-dashboard/my-organization"
+            className="btn btn-primary btn-sm gap-2 rounded-xl text-xs font-bold shadow-sm mt-2"
+          >
+            <Plus size={14} />
+            <span>Create Organization</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-5 pb-16 max-w-7xl mx-auto w-full font-sans px-3 sm:px-6">

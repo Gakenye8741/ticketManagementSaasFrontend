@@ -39,7 +39,7 @@ import { useGetEventsByOrganizationQuery } from "../../features/APIS/EventsApi";
 import usePageTitle from "../../hooks/usePageTitle";
 
 // Change this to match the currency used on your other pages
-const CURRENCY = "$";
+const CURRENCY = "KSH";
 const VIEW_KEY = "tickets_view_mode";
 const TABLE_SIZES = [10, 20, 50];
 const CARD_SIZES = [8, 12, 24, 48];

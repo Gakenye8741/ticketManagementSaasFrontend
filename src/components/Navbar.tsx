@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import type { RootState } from "../App/store";
@@ -28,11 +28,11 @@ import {
 import "./animate.css"; 
 import { ThemeToggle } from "./ThemeToggle";
 import { useGetEventsByTitleQuery } from "../features/APIS/EventsApi";
+import { useGetUserByDigitalIdQuery } from "../features/APIS/UserApi";
 
 export const Navbar = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const searchRef = useRef<HTMLDivElement>(null);
 
   const [scrolled, setScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -44,6 +44,17 @@ export const Navbar = () => {
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
   const user = useSelector((state: RootState) => state.auth.user);
   const role = useSelector((state: RootState) => state.auth.role); // e.g., "admin", "organizer", "user"
+
+  // Fetch the logged-in user's latest profile so the photo is always up to date
+  // (this shares the same cache as the profile page, so it refreshes after an upload)
+  const digitalId = user?.digitalId || user?.userId;
+  const { data: profileData } = useGetUserByDigitalIdQuery(digitalId, {
+    skip: !isAuthenticated || !digitalId,
+  });
+  const profile: any = (profileData as any)?.data || profileData;
+  // Fresh value from the API first, then the value saved at login
+  const avatarUrl = profile?.profileImageUrl || user?.profileImageUrl || "";
+  const avatarInitial = (profile?.firstName || user?.firstName)?.charAt(0) || "U";
 
   // Debounce search query to prevent excessive API calls while typing
   useEffect(() => {
@@ -72,16 +83,20 @@ export const Navbar = () => {
     setSearchQuery("");
   }, [location.pathname]);
 
-  // Handle clicks outside search dropdown to close it
+  // Search modal: close with Escape and lock page scroll while it is open
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
-        setIsSearchOpen(false);
-      }
+    if (!isSearchOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsSearchOpen(false);
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isSearchOpen]);
 
   const handleLogout = () => {
     dispatch(clearCredentials());
@@ -105,8 +120,8 @@ export const Navbar = () => {
   // Determine dashboard link and label based on user role
   const getDashboardRoute = () => {
     if (role === "admin") return "/AdminDashBoard/analytics";
-    if (role === "organizer") return "/organizer-dashboard/"; // Adjust path if your organizer route differs
-    return "/dashboard/analytics"; // Standard user / attendee dashboard
+    if (role === "organizer") return "/organizer-dashboard/";
+    return "/dashboard/analytics";
   };
 
   const getDashboardLabel = () => {
@@ -148,77 +163,23 @@ export const Navbar = () => {
                   TicketStream
                 </span>
                 <span className="text-[8px] sm:text-[10px] font-bold tracking-widest text-primary uppercase mt-0.5">
-                  Event Ticketing System
+                  Event Ticketing
                 </span>
               </div>
             </Link>
           </div>
 
-          {/* Center: Global Search Bar with Live RTK Query Results */}
-          <div className="flex flex-1 max-w-[180px] sm:max-w-xs md:max-w-md mx-1 sm:mx-4 relative" ref={searchRef}>
-            <form onSubmit={handleSearchSubmit} className="relative w-full">
-              <input
-                type="text"
-                placeholder="Search events by name..."
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setIsSearchOpen(true);
-                }}
-                onFocus={() => {
-                  if (searchQuery.trim().length >= 2) setIsSearchOpen(true);
-                }}
-                className="w-full bg-base-200/80 border border-transparent focus:border-primary text-[11px] sm:text-xs rounded-xl py-1.5 sm:py-2 pl-7 sm:pl-9 pr-7 text-base-content placeholder:text-base-content/40 focus:outline-none transition-all"
-              />
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40 w-3.5 h-3.5" />
-              {isSearching && (
-                <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-primary w-3.5 h-3.5 animate-spin" />
-              )}
-            </form>
-
-            {/* Live Autocomplete Dropdown */}
-            {isSearchOpen && debouncedQuery.length >= 2 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-base-100 rounded-2xl shadow-xl border border-base-200 overflow-hidden z-[120] max-h-80 overflow-y-auto">
-                {isSearching && (!searchResults || searchResults.length === 0) ? (
-                  <div className="p-4 text-center text-xs text-base-content/60 flex items-center justify-center gap-2">
-                    <Loader2 size={14} className="animate-spin text-primary" /> Searching events...
-                  </div>
-                ) : searchResults && searchResults.length > 0 ? (
-                  <div className="py-1">
-                    <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-base-content/40 border-b border-base-100">
-                      Matching Events
-                    </div>
-                    {searchResults.map((event: any) => (
-                      <button
-                        key={event._id || event.id}
-                        onClick={() => handleSelectEvent(event.slug)}
-                        className="w-full text-left px-3 py-2.5 hover:bg-base-200 flex items-center gap-3 transition-colors border-b border-base-100/50 last:border-none"
-                      >
-                        {event.bannerImage || event.imageUrl ? (
-                          <img 
-                            src={event.bannerImage || event.imageUrl} 
-                            alt={event.title} 
-                            className="w-8 h-8 rounded-lg object-cover shrink-0" 
-                          />
-                        ) : (
-                          <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
-                            <Compass size={14} />
-                          </div>
-                        )}
-                        <div className="flex flex-col overflow-hidden">
-                          <span className="text-xs font-bold text-base-content truncate">{event.title}</span>
-                          <span className="text-[10px] text-base-content/60 truncate">{event.category || event.location || "Event"}</span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="p-4 text-center text-xs text-base-content/60">
-                    No events found matching "{searchQuery}"
-                  </div>
-                )}
-              </div>
-            )}
+          {/* Center: Search trigger - opens the search modal */}
+          <div className="flex flex-1 max-w-[150px] sm:max-w-xs md:max-w-md mx-1 sm:mx-4 relative">
+            <button
+              type="button"
+              onClick={() => setIsSearchOpen(true)}
+              aria-label="Search events"
+              className="relative w-full bg-base-200/80 border border-transparent hover:border-primary/40 text-[11px] sm:text-xs rounded-xl py-1.5 sm:py-2 pl-7 sm:pl-9 pr-3 text-left text-base-content/40 truncate transition-all"
+            >
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" />
+              Search events...
+            </button>
           </div>
 
           {/* Desktop Navigation Links */}
@@ -277,10 +238,10 @@ export const Navbar = () => {
                 <label tabIndex={0} className="cursor-pointer">
                   <div className="flex items-center gap-1.5 sm:gap-2 bg-base-200/70 hover:bg-base-200 p-1 pl-1.5 pr-2 sm:pr-3 rounded-xl border border-base-300 transition-all">
                     <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg overflow-hidden bg-primary/20 text-primary flex items-center justify-center font-bold text-xs">
-                      {user?.profileImageUrl ? (
-                        <img src={user.profileImageUrl} alt="Profile" className="w-full h-full object-cover" />
+                      {avatarUrl ? (
+                        <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
                       ) : (
-                        user?.firstName?.charAt(0) || "U"
+                        avatarInitial
                       )}
                     </div>
                     <span className="hidden xl:inline text-xs font-bold uppercase tracking-wider">
@@ -325,6 +286,107 @@ export const Navbar = () => {
           </div>
         </div>
       </nav>
+
+      {/* --- SEARCH MODAL --- */}
+      {isSearchOpen && (
+        <div
+          className="fixed inset-0 z-[130] bg-black/60 backdrop-blur-xs flex items-start justify-center p-3 sm:p-6 pt-16 sm:pt-24 animate-in fade-in duration-200"
+          onClick={() => setIsSearchOpen(false)}
+        >
+          <div
+            className="w-full max-w-xl bg-base-100 rounded-2xl shadow-2xl border border-base-200 overflow-hidden flex flex-col max-h-[80vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Search input */}
+            <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 p-3 border-b border-base-200">
+              <Search className="text-base-content/40 w-4 h-4 shrink-0" />
+              <input
+                autoFocus
+                type="text"
+                placeholder="Search events..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="flex-1 min-w-0 bg-transparent text-base sm:text-sm text-base-content placeholder:text-base-content/40 focus:outline-none"
+              />
+              {isSearching && <Loader2 className="text-primary w-4 h-4 animate-spin shrink-0" />}
+              <button
+                type="button"
+                onClick={() => setIsSearchOpen(false)}
+                className="btn btn-ghost btn-xs btn-square rounded-lg shrink-0"
+                aria-label="Close search"
+              >
+                <X size={16} />
+              </button>
+            </form>
+
+            {/* Results */}
+            <div className="overflow-y-auto">
+              {debouncedQuery.length < 2 ? (
+                <div className="p-6 text-center text-xs text-base-content/50 flex flex-col items-center gap-2">
+                  <Search size={22} className="text-primary/40" />
+                  <span>Type at least 2 characters to search events.</span>
+                </div>
+              ) : isSearching && (!searchResults || searchResults.length === 0) ? (
+                <div className="p-6 text-center text-xs text-base-content/60 flex items-center justify-center gap-2">
+                  <Loader2 size={14} className="animate-spin text-primary" /> Searching events...
+                </div>
+              ) : searchResults && searchResults.length > 0 ? (
+                <div className="py-1">
+                  <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-base-content/40 border-b border-base-100">
+                    Matching Events ({searchResults.length})
+                  </div>
+                  {searchResults.map((event: any) => (
+                    <button
+                      key={event._id || event.id}
+                      onClick={() => handleSelectEvent(event.slug)}
+                      className="w-full text-left px-3 py-3 hover:bg-base-200 flex items-center gap-3 transition-colors border-b border-base-100/50 last:border-none"
+                    >
+                      {event.bannerImage || event.imageUrl ? (
+                        <img
+                          src={event.bannerImage || event.imageUrl}
+                          alt={event.title}
+                          className="w-12 h-12 rounded-xl object-cover shrink-0"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                          <Compass size={18} />
+                        </div>
+                      )}
+                      <div className="flex flex-col overflow-hidden">
+                        <span className="text-xs font-bold text-base-content truncate">{event.title}</span>
+                        <span className="text-[10px] text-base-content/60 truncate">{event.category || event.location || "Event"}</span>
+                      </div>
+                    </button>
+                  ))}
+                  <div className="p-2 border-t border-base-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSearchOpen(false);
+                        navigate(`/events?search=${encodeURIComponent(searchQuery.trim())}`);
+                      }}
+                      className="btn btn-ghost btn-xs w-full text-primary rounded-lg text-[11px]"
+                    >
+                      See all results for "{searchQuery.trim()}"
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6 text-center text-xs text-base-content/60 flex flex-col items-center gap-2">
+                  <span>No events found matching "{searchQuery}"</span>
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="btn btn-xs btn-outline btn-primary mt-1"
+                  >
+                    Clear search
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- FULLSCREEN MOBILE DRAWER MENU --- */}
       {mobileMenuOpen && (

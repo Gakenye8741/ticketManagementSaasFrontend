@@ -55,83 +55,100 @@ export const userApi = createApi({
       }),
     }),
 
-    // 📋 Get all users
+    // 📋 1. Get all users (Admin only)
     getAllUsersProfiles: builder.query({
       query: () => 'users',
       providesTags: ['users'],
     }),
 
-    // 🔍 Get user by National ID
-    getUserByNationalId: builder.query({
-      query: (nationalId: number | string) => `users/${nationalId}`,
+    // 🔍 2. Search users by last name (Admin only)
+    searchUsersByLastName: builder.query({
+      query: (lastName: string) => ({
+        url: 'users-search',
+        params: { lastName },
+      }),
+      providesTags: ['users'],
+    }),
+
+    // 🔍 3. Search users with details by query (Admin only) — uses `q`
+    searchUsersWithDetails: builder.query({
+      query: (q: string) => ({
+        url: 'details/users-search',
+        params: { q },
+      }),
+      providesTags: ['users'],
+    }),
+
+    // 🔍 4. Get user by digital ID
+    getUserByDigitalId: builder.query({
+      query: (digitalId: number | string) => `users/${digitalId}`,
       providesTags: ['user'],
     }),
 
-    // 🔍 Get full user details
+    // 🔍 5. Get full user details by digital ID
     getUserDetails: builder.query({
-      query: (nationalId: number | string) => `users/${nationalId}/details`,
+      query: (digitalId: number | string) => `users/${digitalId}/details`,
       providesTags: ['user'],
     }),
 
-    // 🔁 Update user by National ID (standard user update)
+    // ➕ 6. Create a new user (Public)
+    createUser: builder.mutation({
+      query: (newUserPayload) => ({
+        url: 'users',
+        method: 'POST',
+        body: newUserPayload, // { firstName, lastName, email, contactPhone, password, city, country }
+      }),
+      invalidatesTags: ['users'],
+    }),
+
+    // 📧 7. Broadcast email to registered users (Admin only)
+    sendEmailNotification: builder.mutation({
+      query: (emailPayload) => ({
+        url: 'users/send-email',
+        method: 'POST',
+        body: emailPayload, // { subject, message, preheader }
+      }),
+      invalidatesTags: ['emails'],
+    }),
+
+    // 🔁 8. Update user by digital ID
     updateUser: builder.mutation({
-      query: ({ nationalId, ...patch }) => ({
-        url: `users/${nationalId}`,
+      query: ({ digitalId, ...patch }) => ({
+        url: `users/${digitalId}`,
         method: 'PUT',
-        body: patch,
+        body: patch, // e.g. { firstName: "Johnathan" }
       }),
       invalidatesTags: ['user', 'users'],
     }),
 
-    // 🔁 Admin: Update user by National ID (can update roles, etc.)
+    // 🔁 9. Update user by digital ID (Admin only)
     updateAdminUser: builder.mutation({
-      query: ({ nationalId, ...adminUpdatePayload }) => ({
-        url: `admin/users/${nationalId}`,
+      query: ({ digitalId, ...adminUpdatePayload }) => ({
+        url: `admin/users/${digitalId}`,
         method: 'PUT',
-        body: adminUpdatePayload,
+        body: adminUpdatePayload, // { firstName, lastName, email, password, role }
       }),
       invalidatesTags: ['user', 'users'],
     }),
 
-    // 🖼️ Update only profile image
+    // 🖼️ Update only profile image (uses the same PUT users/:digitalId route)
     updateUserProfileImage: builder.mutation({
-      query: ({ nationalId, profile_picture }) => ({
-        url: `users/${nationalId}`,
+      query: ({ digitalId, profile_picture }) => ({
+        url: `users/${digitalId}`,
         method: 'PUT',
         body: { profile_picture },
       }),
       invalidatesTags: ['user', 'users'],
     }),
 
-    // ❌ Delete user by National ID
+    // ❌ 10. Delete user by digital ID (Admin only)
     deleteUser: builder.mutation({
-      query: (nationalId: number | string) => ({
-        url: `users/${nationalId}`,
+      query: (digitalId: number | string) => ({
+        url: `users/${digitalId}`,
         method: 'DELETE',
       }),
       invalidatesTags: ['user', 'users'],
     }),
-
-    // 🔍 Search users by last name (basic)
-    searchUsersByLastName: builder.query({
-      query: (lastName: string) => `users-search?lastName=${lastName}`,
-    }),
-
-    // 🔍 Search users by last name (full details)
-    searchUsersWithDetails: builder.query({
-      query: (lastName: string) => `details/users-search?lastName=${lastName}`,
-    }),
-
-    // 📧 Broadcast/Send email to all registered users or a specific user by nationalId
-    sendEmailNotification: builder.mutation({
-      query: (emailPayload) => ({
-        url: 'users/send-email',
-        method: 'POST',
-        body: emailPayload, // { subject, htmlContent, message, targetNationalId, preheader, redirectUrl, eventDetails }
-      }),
-      invalidatesTags: ['emails'],
-    }),
-
   }),
 });
 
@@ -143,13 +160,14 @@ export const {
   useResetPasswordMutation,
   useVerifyEmailMutation,
   useGetAllUsersProfilesQuery,
-  useGetUserByNationalIdQuery,
+  useSearchUsersByLastNameQuery,
+  useSearchUsersWithDetailsQuery,
+  useGetUserByDigitalIdQuery,
   useGetUserDetailsQuery,
+  useCreateUserMutation,
+  useSendEmailNotificationMutation,
   useUpdateUserMutation,
   useUpdateAdminUserMutation,
   useUpdateUserProfileImageMutation,
   useDeleteUserMutation,
-  useSearchUsersByLastNameQuery,
-  useSearchUsersWithDetailsQuery,
-  useSendEmailNotificationMutation,
 } = userApi;

@@ -17,6 +17,7 @@ import {
   HelpCircle,
   Store,
   TicketCheckIcon,
+  Wallet2,
 } from "lucide-react";
 import { type RootState } from "../../App/store";
 
@@ -33,6 +34,7 @@ export const OrganizerSidebar = ({ isCollapsed = false }: OrganizerSidebarProps)
       title: "Overview",
       items: [
         { path: "/organizer/dashboard", label: "Dashboard", icon: LayoutDashboard },
+        { path: "/organizer-dashboard/wallet", label: "My Wallet", icon: Wallet2 },
         { path: "/organizer-dashboard/analytics", label: "Analytics & Sales", icon: BarChart3 },
         { path: "/organizer-dashboard/my-organization", label: "My Organization", icon: Building2 },
       ]
@@ -48,18 +50,11 @@ export const OrganizerSidebar = ({ isCollapsed = false }: OrganizerSidebarProps)
         { path: "/organizer-dashboard/tickets", label: "Manage Event Tickets", icon: TicketCheckIcon },
       ]
     },
-    {
-      title: "Operations",
-      items: [
-        { path: "/organizer/scanner", label: "Gate Pass Scanner", icon: QrCode },
-        { path: "/organizer/attendees", label: "Attendees List", icon: Users },
-        { path: "/organizer/payouts", label: "Payouts & Earnings", icon: Banknote },
-      ]
-    },
+ 
     {
       title: "Account",
       items: [
-        { path: "/organizer/settings", label: "Organizer Profile", icon: UserCog },
+        { path: "/organizer-dashboard/profile", label: "Organizer Profile", icon: UserCog },
         { path: "/contact", label: "Support", icon: HelpCircle },
       ]
     }

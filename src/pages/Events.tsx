@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   Calendar as CalendarIcon,
@@ -19,6 +19,8 @@ import {
   Ticket,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Grid3x3,
   Music2,
   Mic2,
@@ -63,6 +65,124 @@ import { useGetAllEventsQuery } from "../features/APIS/EventsApi";
 import { useGetAllTicketTypesQuery, useGetTicketTypesByEventIdQuery } from "../features/APIS/ticketsType.Api";
 // NOTE: adjust this import path/filename if your media API file lives elsewhere
 import { useGetMediaByEventIdQuery } from "../features/APIS/mediaApi";
+import usePageTitle from "../hooks/usePageTitle";
+
+// ---------------------------------------------------------------------------
+// EVENT STATUS
+// Reads the event's status (whatever it is called in your API) and turns it into
+// a label + colour for the badge. Ended events are hidden from this page: they
+// will live in the past-events archive instead.
+// ---------------------------------------------------------------------------
+type StatusTone = "upcoming" | "live" | "cancelled" | "postponed" | "soldout" | "neutral";
+
+const ENDED_STATUSES = new Set(["ended", "completed", "finished", "past", "closed", "expired"]);
+const LIVE_STATUSES = new Set(["ongoing", "live", "in_progress", "started", "happening"]);
+const CANCELLED_STATUSES = new Set(["cancelled", "canceled"]);
+const UPCOMING_STATUSES = new Set(["upcoming", "published", "active", "scheduled", "open", "on_sale", "approved"]);
+const SOLD_OUT_STATUSES = new Set(["sold_out", "soldout"]);
+const POSTPONED_STATUSES = new Set(["postponed", "rescheduled"]);
+
+const normalizeStatus = (event: any): string =>
+  String(event?.status ?? event?.eventStatus ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+// An event is "ended" when its status says so. If the event has no status at
+// all, we fall back to its date: once that day is over, it counts as ended.
+const isEventEnded = (event: any): boolean => {
+  const status = normalizeStatus(event);
+  if (status) return ENDED_STATUSES.has(status);
+
+  const rawDate = event?.endDate ?? event?.date;
+  if (!rawDate) return false;
+  const end = new Date(rawDate);
+  if (isNaN(end.getTime())) return false;
+  end.setHours(23, 59, 59, 999);
+  return end.getTime() < Date.now();
+};
+
+const getEventStatus = (event: any): { label: string; tone: StatusTone } | null => {
+  const status = normalizeStatus(event);
+
+  if (status) {
+    if (LIVE_STATUSES.has(status)) return { label: "Live now", tone: "live" };
+    if (CANCELLED_STATUSES.has(status)) return { label: "Cancelled", tone: "cancelled" };
+    if (POSTPONED_STATUSES.has(status)) return { label: "Postponed", tone: "postponed" };
+    if (SOLD_OUT_STATUSES.has(status)) return { label: "Sold out", tone: "soldout" };
+    if (UPCOMING_STATUSES.has(status)) return { label: "Upcoming", tone: "upcoming" };
+
+    // Any other status: show it as it is, in a neutral style
+    const label = status.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+    return { label, tone: "neutral" };
+  }
+
+  // No status on the event: it is upcoming if its date is still ahead
+  const date = new Date(event?.date);
+  if (!isNaN(date.getTime()) && date.getTime() >= Date.now()) return { label: "Upcoming", tone: "upcoming" };
+  return null;
+};
+
+const STATUS_ORDER: StatusTone[] = ["live", "upcoming", "soldout", "postponed", "cancelled", "neutral"];
+
+// Page numbers with ellipses, e.g. 1 … 4 5 6 … 20
+const getPageNumbers = (current: number, total: number): (number | "…")[] => {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: (number | "…")[] = [1];
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  if (start > 2) pages.push("…");
+  for (let i = start; i <= end; i++) pages.push(i);
+  if (end < total - 1) pages.push("…");
+  pages.push(total);
+  return pages;
+};
+
+const PAGE_SIZE_OPTIONS = [9, 12, 24, 48];
+
+const statusOverlayClasses: Record<StatusTone, string> = {
+  upcoming: "bg-primary text-primary-content",
+  live: "bg-error text-error-content",
+  cancelled: "bg-error/90 text-error-content",
+  postponed: "bg-warning text-warning-content",
+  soldout: "bg-neutral text-neutral-content",
+  neutral: "bg-base-100/90 text-base-content",
+};
+
+const statusListClasses: Record<StatusTone, string> = {
+  upcoming: "bg-primary/10 text-primary",
+  live: "bg-error/10 text-error",
+  cancelled: "bg-error/10 text-error",
+  postponed: "bg-warning/15 text-warning",
+  soldout: "bg-neutral/10 text-neutral",
+  neutral: "bg-base-200 text-base-content/70",
+};
+
+const EventStatusBadge = ({
+  status,
+  variant = "overlay",
+}: {
+  status: { label: string; tone: StatusTone } | null;
+  variant?: "overlay" | "list";
+}) => {
+  if (!status) return null;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${
+        variant === "overlay" ? "px-2 py-0.5 sm:px-2.5 sm:py-1 shadow-sm" : "px-2 py-0.5"
+      } ${(variant === "overlay" ? statusOverlayClasses : statusListClasses)[status.tone]}`}
+    >
+      {status.tone === "live" && (
+        <span className="relative flex h-1.5 w-1.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-75" />
+          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-current" />
+        </span>
+      )}
+      {status.label}
+    </span>
+  );
+};
 
 // Presentational price badge — pricing is resolved once per event up in
 // EventsPage (from real ticket types) and passed straight in as a prop.
@@ -79,15 +199,28 @@ const EventPriceBadge = ({
       ? "Free tier available"
       : `Starts from KES ${pricing.cheapest.toLocaleString()}`;
 
+  // Shorter wording so it fits in half-width cards on phones
+  const shortLabel = !pricing.isPaid
+    ? "Free"
+    : pricing.cheapest === 0
+      ? "Free tier"
+      : `From KES ${pricing.cheapest.toLocaleString()}`;
+
   if (variant === "overlay") {
     return (
-      <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-white/20 backdrop-blur-sm text-white">
-        {label}
+      <span className="text-[10px] sm:text-xs font-bold px-1.5 sm:px-2 py-0.5 rounded-md bg-white/20 backdrop-blur-sm text-white whitespace-nowrap">
+        <span className="sm:hidden">{shortLabel}</span>
+        <span className="hidden sm:inline">{label}</span>
       </span>
     );
   }
 
-  return <span className="text-sm font-bold text-primary">{label}</span>;
+  return (
+    <span className="text-xs sm:text-sm font-bold text-primary">
+      <span className="sm:hidden">{shortLabel}</span>
+      <span className="hidden sm:inline">{label}</span>
+    </span>
+  );
 };
 
 // Resolves and renders an event's display image:
@@ -166,9 +299,16 @@ const EventCardPrice = ({
 };
 
 export const EventsPage = () => {
+  usePageTitle("Events");
+
   // Fetch live events from API
   const { data: eventsResponse, isLoading } = useGetAllEventsQuery(undefined);
-  const eventsList = eventsResponse?.data || [];
+
+  // Ended events are not shown here (they will go in the past-events archive)
+  const eventsList = useMemo(
+    () => ((eventsResponse?.data || []) as any[]).filter((event) => !isEventEnded(event)),
+    [eventsResponse]
+  );
 
   // Fetch every ticket type once, so category (Free/Paid) and displayed
   // price reflect real ticket tiers rather than the event's own ticketPrice field
@@ -257,6 +397,7 @@ export const EventsPage = () => {
   const [priceType, setPriceType] = useState("all"); // all, free, paid
   const [priceRange, setPriceRange] = useState<number>(50000); // Slider max price
   const [sortBy, setSortBy] = useState("date_asc"); // date_asc, date_desc, price_asc, price_desc, title
+  const [statusFilter, setStatusFilter] = useState("all"); // all, live, upcoming, soldout, postponed, cancelled, neutral
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid"); // grid vs list view toggle
 
   // Mobile Filter Modal State
@@ -264,7 +405,27 @@ export const EventsPage = () => {
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const eventsPerPage = 9;
+  const [eventsPerPage, setEventsPerPage] = useState(PAGE_SIZE_OPTIONS[0]);
+  const resultsRef = useRef<HTMLDivElement>(null);
+
+  // Status options come from the events that are actually on the page
+  const statusOptions = useMemo(() => {
+    const counts = new Map<StatusTone, { label: string; count: number }>();
+    eventsList.forEach((e: any) => {
+      const st = getEventStatus(e);
+      if (!st) return;
+      const cur = counts.get(st.tone);
+      counts.set(st.tone, { label: st.tone === "neutral" ? "Other" : st.label, count: (cur?.count || 0) + 1 });
+    });
+    return [
+      { value: "all", label: "All", count: eventsList.length },
+      ...STATUS_ORDER.filter((t) => counts.has(t)).map((t) => ({
+        value: t as string,
+        label: counts.get(t)!.label,
+        count: counts.get(t)!.count,
+      })),
+    ];
+  }, [eventsList]);
 
   // Categories list based on backend enum
   const categories = [
@@ -327,6 +488,9 @@ export const EventsPage = () => {
 
       if (!matchesSearch) return false;
 
+      // Status Filter
+      if (statusFilter !== "all" && getEventStatus(event)?.tone !== statusFilter) return false;
+
       // Category Filter
       if (selectedCategory !== "all" && event.category !== selectedCategory) {
         return false;
@@ -383,19 +547,25 @@ export const EventsPage = () => {
       }
       return 0;
     });
-  }, [eventsList, searchQuery, selectedCategory, selectedCity, dateFilter, priceType, priceRange, sortBy, ticketTypesByEvent]);
+  }, [eventsList, searchQuery, selectedCategory, selectedCity, dateFilter, priceType, priceRange, statusFilter, sortBy, ticketTypesByEvent]);
 
   // Reset back to page 1 whenever the filtered/sorted result set changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedCategory, selectedCity, dateFilter, priceType, priceRange, sortBy]);
+  }, [searchQuery, selectedCategory, selectedCity, dateFilter, priceType, priceRange, statusFilter, sortBy, eventsPerPage]);
 
   const totalPages = Math.max(1, Math.ceil(filteredAndSortedEvents.length / eventsPerPage));
+  const safePage = Math.min(currentPage, totalPages);
 
   const paginatedEvents = useMemo(() => {
-    const start = (currentPage - 1) * eventsPerPage;
+    const start = (safePage - 1) * eventsPerPage;
     return filteredAndSortedEvents.slice(start, start + eventsPerPage);
-  }, [filteredAndSortedEvents, currentPage]);
+  }, [filteredAndSortedEvents, safePage, eventsPerPage]);
+
+  const goToPage = (page: number) => {
+    setCurrentPage(Math.min(Math.max(1, page), totalPages));
+    resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   // Fixed Left Sidebar Filter Controls Component
   const filterControlsContent = (
@@ -405,9 +575,10 @@ export const EventsPage = () => {
           <SlidersHorizontal size={17} className="text-primary" />
           <span>Filters</span>
         </div>
-        {(selectedCategory !== "all" || selectedCity !== "all" || priceType !== "all" || searchQuery !== "" || priceRange < 50000) && (
+        {(selectedCategory !== "all" || selectedCity !== "all" || priceType !== "all" || statusFilter !== "all" || searchQuery !== "" || priceRange < 50000) && (
           <button
             onClick={() => {
+              setStatusFilter("all");
               setSelectedCategory("all");
               setSelectedCity("all");
               setPriceType("all");
@@ -435,6 +606,28 @@ export const EventsPage = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="input input-sm input-bordered w-full pl-10 rounded-lg bg-base-100 font-medium transition-shadow duration-200 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/40"
           />
+        </div>
+      </div>
+
+      {/* Event Status Filter */}
+      <div className="space-y-2.5 pt-5 border-t border-base-300">
+        <label className="text-xs font-semibold text-base-content/60 flex items-center gap-1.5">
+          <Flame size={13} /> Event status
+        </label>
+        <div className="grid grid-cols-2 gap-1.5">
+          {statusOptions.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setStatusFilter(opt.value)}
+              className={`flex items-center justify-between gap-1.5 text-xs font-semibold rounded-lg px-2.5 py-1.5 transition-colors duration-150 border ${statusFilter === opt.value
+                  ? "bg-primary text-primary-content border-primary"
+                  : "bg-base-100 border-base-300 text-base-content/70 hover:border-primary/40 hover:text-base-content"
+                }`}
+            >
+              <span className="truncate">{opt.label}</span>
+              <span className={`text-[10px] font-bold ${statusFilter === opt.value ? "opacity-80" : "text-base-content/40"}`}>{opt.count}</span>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -647,7 +840,7 @@ export const EventsPage = () => {
           </aside>
 
           {/* MAIN EVENTS CONTENT GRID SECTION */}
-          <div className="lg:col-span-3 space-y-6">
+          <div ref={resultsRef} className="lg:col-span-3 space-y-6 scroll-mt-28">
 
             {/* --- CREATE EVENT BANNER / SECTION --- */}
             <div className="relative overflow-hidden bg-primary text-primary-content px-6 py-6 sm:px-8 sm:py-7 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-6">
@@ -676,8 +869,8 @@ export const EventsPage = () => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="text-sm text-base-content/60">
                 Showing <strong className="text-base-content font-bold">
-                  {filteredAndSortedEvents.length === 0 ? 0 : (currentPage - 1) * eventsPerPage + 1}
-                  –{Math.min(currentPage * eventsPerPage, filteredAndSortedEvents.length)}
+                  {filteredAndSortedEvents.length === 0 ? 0 : (safePage - 1) * eventsPerPage + 1}
+                  –{Math.min(safePage * eventsPerPage, filteredAndSortedEvents.length)}
                 </strong> of <strong className="text-base-content font-bold">{filteredAndSortedEvents.length}</strong> event{filteredAndSortedEvents.length === 1 ? "" : "s"}
               </div>
 
@@ -721,9 +914,9 @@ export const EventsPage = () => {
             </div>
 
             {isLoading ? (
-              <div className={viewMode === "grid" ? "grid grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-5" : "space-y-4"}>
+              <div className={viewMode === "grid" ? "grid grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-5" : "grid grid-cols-2 gap-3 sm:grid-cols-1 sm:gap-4"}>
                 {Array.from({ length: eventsPerPage }, (_, i) => i + 1).map((n) => (
-                  <div key={n} className={viewMode === "grid" ? "h-80 bg-base-200 border border-base-300 rounded-2xl animate-pulse" : "h-32 bg-base-200 border border-base-300 rounded-2xl animate-pulse"}></div>
+                  <div key={n} className={viewMode === "grid" ? "h-80 bg-base-200 border border-base-300 rounded-2xl animate-pulse" : "h-48 sm:h-32 bg-base-200 border border-base-300 rounded-2xl animate-pulse"}></div>
                 ))}
               </div>
             ) : filteredAndSortedEvents.length > 0 ? (
@@ -739,7 +932,7 @@ export const EventsPage = () => {
                         className="group flex flex-col bg-base-100 border border-base-300 rounded-2xl overflow-hidden transition-all duration-300 hover:border-primary/50 hover:shadow-xl hover:shadow-base-300/40 hover:-translate-y-1"
                       >
                         {/* Media */}
-                        <div className="relative h-44 sm:h-48 bg-base-300 overflow-hidden">
+                        <div className="relative h-32 sm:h-48 bg-base-300 overflow-hidden">
                           <EventCardImage
                             eventId={event.eventId}
                             bannerUrl={event.bannerUrl}
@@ -749,19 +942,23 @@ export const EventsPage = () => {
                           {/* legibility gradient */}
                           <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/0 to-black/0" />
 
-                          <span className="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-base-100/90 text-base-content text-[10px] font-bold uppercase tracking-wide">
-                            {event.category.replace('_', ' ')}
-                          </span>
+                          {/* Category + event status */}
+                          <div className="absolute top-2 left-2 sm:top-3 sm:left-3 flex flex-col items-start gap-1 sm:gap-1.5">
+                            <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md bg-base-100/90 text-base-content text-[10px] font-bold uppercase tracking-wide max-w-[110px] sm:max-w-none truncate">
+                              {event.category?.replace('_', ' ')}
+                            </span>
+                            <EventStatusBadge status={getEventStatus(event)} variant="overlay" />
+                          </div>
 
                           <button
                             onClick={(e) => { e.preventDefault(); }}
-                            className="absolute top-3 right-3 w-7 h-7 rounded-full bg-base-100/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                            className="absolute top-2 right-2 sm:top-3 sm:right-3 w-7 h-7 rounded-full bg-base-100/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                             title="Save event"
                           >
                             <Bookmark size={13} className="text-primary" />
                           </button>
 
-                          <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between text-white">
+                          <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-3 sm:right-3 flex items-end justify-between gap-1 text-white">
                             <span className="text-xs font-bold">
                               {eventDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                             </span>
@@ -774,17 +971,17 @@ export const EventsPage = () => {
                         </div>
 
                         {/* Body */}
-                        <div className="flex flex-col flex-1 p-4 gap-2">
-                          <h3 className="text-base font-bold leading-snug line-clamp-1 group-hover:text-primary transition-colors">
+                        <div className="flex flex-col flex-1 p-3 sm:p-4 gap-1.5 sm:gap-2">
+                          <h3 className="text-sm sm:text-base font-bold leading-snug line-clamp-1 group-hover:text-primary transition-colors">
                             {event.title}
                           </h3>
-                          <div className="flex items-center gap-1.5 text-xs text-base-content/60">
+                          <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-base-content/60">
                             <MapPin size={13} className="shrink-0 text-primary" />
                             <span className="line-clamp-1">{event.venue?.name || "Venue TBA"}</span>
                           </div>
 
-                          <div className="mt-3 pt-3 border-t border-base-300 flex items-center justify-between">
-                            <span className="text-[11px] font-medium text-base-content/45 flex items-center gap-1">
+                          <div className="mt-2 pt-2 sm:mt-3 sm:pt-3 border-t border-base-300 flex items-center justify-end sm:justify-between">
+                            <span className="text-[11px] font-medium text-base-content/45 hidden sm:flex items-center gap-1">
                               <Ticket size={12} /> Verified
                             </span>
                             <span className="text-xs font-bold text-primary group-hover:underline underline-offset-2">
@@ -798,14 +995,14 @@ export const EventsPage = () => {
                 </div>
               ) : (
                 // HORIZONTAL LIST VIEW MODE WITH SLUG ROUTING
-                <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-1">
                   {paginatedEvents.map((event: any) => (
                     <Link
                       key={event.eventId}
                       to={`/events/${event.slug}`}
-                      className="group bg-base-100 border border-base-300 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-4 transition-all duration-200 hover:border-primary/50 hover:shadow-md"
+                      className="group bg-base-100 border border-base-300 rounded-2xl p-2.5 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4 transition-all duration-200 hover:border-primary/50 hover:shadow-md"
                     >
-                      <div className="w-full h-40 sm:w-32 sm:h-24 rounded-xl bg-base-300 shrink-0 relative overflow-hidden flex items-center justify-center">
+                      <div className="w-full h-28 sm:w-32 sm:h-24 rounded-xl bg-base-300 shrink-0 relative overflow-hidden flex items-center justify-center">
                         <EventCardImage
                           eventId={event.eventId}
                           bannerUrl={event.bannerUrl}
@@ -819,14 +1016,15 @@ export const EventsPage = () => {
                           <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-primary/10 text-primary">
                             {event.category?.replace('_', ' ') || "Event"}
                           </span>
+                          <EventStatusBadge status={getEventStatus(event)} variant="list" />
                           <span className="text-xs font-semibold text-base-content/50">
                             {new Date(event.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} · {event.time || "Time TBA"}
                           </span>
                         </div>
-                        <h3 className="text-base font-bold line-clamp-1 group-hover:text-primary transition-colors">
+                        <h3 className="text-sm sm:text-base font-bold line-clamp-1 group-hover:text-primary transition-colors">
                           {event.title}
                         </h3>
-                        <p className="text-xs text-base-content/55 line-clamp-1">
+                        <p className="hidden sm:block text-xs text-base-content/55 line-clamp-1">
                           {event.description || "No description provided for this upcoming event."}
                         </p>
                         <div className="flex items-center gap-1.5 text-xs text-base-content/60">
@@ -835,13 +1033,13 @@ export const EventsPage = () => {
                         </div>
                       </div>
 
-                      <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-base-300 w-full sm:w-auto">
+                      <div className="flex flex-col items-stretch sm:items-end justify-center gap-1.5 sm:gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-base-300 w-full sm:w-auto">
                         <EventCardPrice
                           eventId={event.eventId}
                           fallbackPricing={getEventPricing(event)}
                           variant="list"
                         />
-                        <span className="text-xs font-bold px-4 py-2 rounded-xl bg-primary text-primary-content transition-transform group-hover:scale-105">
+                        <span className="text-xs font-bold px-4 py-2 rounded-xl bg-primary text-primary-content text-center transition-transform group-hover:scale-105">
                           Get ticket
                         </span>
                       </div>
@@ -858,6 +1056,7 @@ export const EventsPage = () => {
                 </p>
                 <button
                   onClick={() => {
+                    setStatusFilter("all");
                     setSelectedCategory("all");
                     setSelectedCity("all");
                     setDateFilter("all");
@@ -873,38 +1072,85 @@ export const EventsPage = () => {
             )}
 
             {/* --- PAGINATION --- */}
-            {!isLoading && filteredAndSortedEvents.length > eventsPerPage && (
-              <div className="flex items-center justify-between gap-4 pt-4">
-                <button
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="flex items-center gap-1 text-sm font-semibold px-3 py-2 rounded-xl border border-base-300 text-base-content/70 transition-colors hover:border-primary/40 hover:text-base-content disabled:opacity-40 disabled:pointer-events-none"
-                >
-                  <ChevronLeft size={15} /> Prev
-                </button>
+            {!isLoading && filteredAndSortedEvents.length > PAGE_SIZE_OPTIONS[0] && (
+              <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-4 border-t border-base-300">
+                <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-base-content/60">
+                  <span>
+                    Page <strong className="text-base-content font-bold">{safePage}</strong> of{" "}
+                    <strong className="text-base-content font-bold">{totalPages}</strong>
+                  </span>
 
-                <div className="flex items-center gap-1.5">
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                    <button
-                      key={page}
-                      onClick={() => setCurrentPage(page)}
-                      className={`w-8 h-8 rounded-lg text-sm font-semibold transition-colors ${currentPage === page
-                          ? "bg-primary text-primary-content"
-                          : "text-base-content/60 hover:bg-base-200"
-                        }`}
+                  <label className="flex items-center gap-2">
+                    <span>Per page</span>
+                    <select
+                      value={eventsPerPage}
+                      onChange={(e) => setEventsPerPage(Number(e.target.value))}
+                      className="select select-xs select-bordered rounded-lg font-semibold bg-base-100 cursor-pointer"
                     >
-                      {page}
-                    </button>
-                  ))}
+                      {PAGE_SIZE_OPTIONS.map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
 
-                <button
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  className="flex items-center gap-1 text-sm font-semibold px-3 py-2 rounded-xl border border-base-300 text-base-content/70 transition-colors hover:border-primary/40 hover:text-base-content disabled:opacity-40 disabled:pointer-events-none"
-                >
-                  Next <ChevronRight size={15} />
-                </button>
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => goToPage(1)}
+                      disabled={safePage === 1}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-base-300 text-base-content/70 transition-colors hover:border-primary/40 hover:text-base-content disabled:opacity-40 disabled:pointer-events-none"
+                      aria-label="First page"
+                    >
+                      <ChevronsLeft size={15} />
+                    </button>
+                    <button
+                      onClick={() => goToPage(safePage - 1)}
+                      disabled={safePage === 1}
+                      className="flex items-center gap-1 text-sm font-semibold px-3 h-8 rounded-lg border border-base-300 text-base-content/70 transition-colors hover:border-primary/40 hover:text-base-content disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      <ChevronLeft size={15} /> <span className="hidden sm:inline">Prev</span>
+                    </button>
+
+                    {getPageNumbers(safePage, totalPages).map((page, idx) =>
+                      page === "…" ? (
+                        <span key={`gap-${idx}`} className="w-6 text-center text-base-content/40 select-none">
+                          …
+                        </span>
+                      ) : (
+                        <button
+                          key={page}
+                          onClick={() => goToPage(page)}
+                          aria-current={page === safePage ? "page" : undefined}
+                          className={`w-8 h-8 rounded-lg text-sm font-semibold transition-colors ${page === safePage
+                              ? "bg-primary text-primary-content"
+                              : "text-base-content/60 hover:bg-base-200"
+                            }`}
+                        >
+                          {page}
+                        </button>
+                      )
+                    )}
+
+                    <button
+                      onClick={() => goToPage(safePage + 1)}
+                      disabled={safePage === totalPages}
+                      className="flex items-center gap-1 text-sm font-semibold px-3 h-8 rounded-lg border border-base-300 text-base-content/70 transition-colors hover:border-primary/40 hover:text-base-content disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      <span className="hidden sm:inline">Next</span> <ChevronRight size={15} />
+                    </button>
+                    <button
+                      onClick={() => goToPage(totalPages)}
+                      disabled={safePage === totalPages}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-base-300 text-base-content/70 transition-colors hover:border-primary/40 hover:text-base-content disabled:opacity-40 disabled:pointer-events-none"
+                      aria-label="Last page"
+                    >
+                      <ChevronsRight size={15} />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

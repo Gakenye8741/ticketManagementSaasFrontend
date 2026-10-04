@@ -418,6 +418,13 @@ export const EventSlugPage = () => {
     }, 50);
   };
 
+  // Display-only date pieces for the calendar tile in the header
+  const eventDateObj = event?.date ? new Date(event.date) : null;
+  const hasValidDate = !!eventDateObj && !isNaN(eventDateObj.getTime());
+  const dateMonth = hasValidDate ? eventDateObj!.toLocaleDateString(undefined, { month: "short" }) : "";
+  const dateDay = hasValidDate ? eventDateObj!.getDate() : "";
+  const dateWeekday = hasValidDate ? eventDateObj!.toLocaleDateString(undefined, { weekday: "short" }) : "";
+
   // Ticket shape: two round cut-outs where the stub meets the main part (stub is 7rem wide)
   const ticketMask =
     "radial-gradient(circle 9px at calc(100% - 7rem) 0, #0000 98%, #000), radial-gradient(circle 9px at calc(100% - 7rem) 100%, #0000 98%, #000)";
@@ -429,13 +436,13 @@ export const EventSlugPage = () => {
   };
 
   const inputCls =
-    "input input-bordered w-full h-12 rounded-xl pl-10 text-sm bg-base-100 focus:border-primary focus:outline-none";
+    "input input-bordered w-full h-12 rounded-xl pl-10 text-base sm:text-sm bg-base-100 focus:border-primary focus:outline-none";
 
-  // Shared look for all popups: a sheet on phones, a centered card on bigger screens
+  // Shared look for all popups: a bottom sheet on phones, a centered card on bigger screens
   const overlayCls =
-    "fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200";
+    "fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200";
   const sheetCls =
-    "bg-base-100 w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain rounded-3xl shadow-2xl animate-in zoom-in-95 fade-in duration-300";
+    "bg-base-100 w-full sm:max-w-md max-h-[92dvh] sm:max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain rounded-t-3xl sm:rounded-3xl shadow-2xl pb-[env(safe-area-inset-bottom)] animate-in slide-in-from-bottom-8 sm:slide-in-from-bottom-0 sm:zoom-in-95 fade-in duration-300";
 
   const mpesaSteps = [
     { label: "Payment request sent", state: "done" },
@@ -658,56 +665,60 @@ export const EventSlugPage = () => {
       )}
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 sm:pt-28 pb-48 lg:pb-24 w-full">
-        {/* Top bar */}
-        <div className="flex items-center justify-between mb-5">
-          <Link to="/events" className="btn btn-ghost btn-sm h-10 gap-2 rounded-full px-4 font-semibold hover:bg-base-200">
-            <ArrowLeft size={16} />
-            <span>Events</span>
-          </Link>
+        {/* Top bar: breadcrumb on the left, actions on the right */}
+        <div className="flex items-center justify-between gap-3 mb-5">
+          <div className="flex items-center gap-2 min-w-0">
+            <Link
+              to="/events"
+              className="btn btn-ghost btn-circle w-10 h-10 min-h-0 shrink-0 bg-base-200/70 hover:bg-base-200 sm:hidden"
+              aria-label="Back to events"
+            >
+              <ArrowLeft size={18} />
+            </Link>
 
-          <div className="flex items-center gap-2">
+            <nav aria-label="Breadcrumb" className="min-w-0">
+              <ol className="flex items-center gap-1.5 text-sm text-base-content/60 whitespace-nowrap overflow-hidden">
+                <li className="shrink-0 hidden sm:block">
+                  <Link to="/" className="inline-flex items-center gap-1.5 hover:text-primary transition-colors">
+                    <Home size={14} />
+                    <span>Home</span>
+                  </Link>
+                </li>
+                <li className="shrink-0 hidden sm:flex items-center gap-1.5">
+                  <ChevronRight size={14} className="opacity-50" />
+                  <Link to="/events" className="hover:text-primary transition-colors">
+                    Events
+                  </Link>
+                </li>
+                <li className="min-w-0 flex items-center gap-1.5">
+                  <ChevronRight size={14} className="opacity-50 shrink-0 hidden sm:block" />
+                  <span aria-current="page" className="truncate font-semibold text-base-content">
+                    {event?.title || "Event"}
+                  </span>
+                </li>
+              </ol>
+            </nav>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={handleShare}
-              className="btn btn-ghost btn-circle w-10 h-10 min-h-0 hover:bg-base-200"
+              className="btn btn-ghost btn-circle w-10 h-10 min-h-0 bg-base-200/70 hover:bg-base-200"
               title="Share event"
               aria-label="Share event"
             >
-              <Share2 size={18} />
+              <Share2 size={17} />
             </button>
             <button
               onClick={() => setIsBookmarked(!isBookmarked)}
-              className={`btn btn-ghost btn-circle w-10 h-10 min-h-0 ${isBookmarked ? "text-primary bg-primary/10" : "hover:bg-base-200"}`}
+              className={`btn btn-ghost btn-circle w-10 h-10 min-h-0 ${isBookmarked ? "text-primary bg-primary/10" : "bg-base-200/70 hover:bg-base-200"}`}
               title="Bookmark event"
               aria-label="Bookmark event"
             >
-              <Bookmark size={18} className={isBookmarked ? "fill-primary" : ""} />
+              <Bookmark size={17} className={isBookmarked ? "fill-primary" : ""} />
             </button>
           </div>
         </div>
-
-        {/* Breadcrumb */}
-        <nav aria-label="Breadcrumb" className="-mt-2 mb-5">
-          <ol className="flex items-center gap-1.5 text-sm text-base-content/60 whitespace-nowrap overflow-hidden">
-            <li className="shrink-0">
-              <Link to="/" className="inline-flex items-center gap-1.5 hover:text-primary transition-colors">
-                <Home size={14} />
-                <span>Home</span>
-              </Link>
-            </li>
-            <li className="shrink-0 flex items-center gap-1.5">
-              <ChevronRight size={14} className="opacity-50" />
-              <Link to="/events" className="hover:text-primary transition-colors">
-                Events
-              </Link>
-            </li>
-            <li className="min-w-0 flex items-center gap-1.5">
-              <ChevronRight size={14} className="opacity-50 shrink-0" />
-              <span aria-current="page" className="truncate font-semibold text-base-content">
-                {event?.title || "Event"}
-              </span>
-            </li>
-          </ol>
-        </nav>
 
         {copiedLink && (
           <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 alert alert-success py-2.5 px-5 rounded-full text-sm font-semibold w-fit flex items-center gap-2 shadow-lg">
@@ -731,10 +742,10 @@ export const EventSlugPage = () => {
             </Link>
           </div>
         ) : (
-          <div className="space-y-8">
-            {/* Hero + Event Media */}
-            <section className="relative rounded-3xl overflow-hidden bg-base-300 shadow-xl">
-              <div className="h-[31rem] xs:h-[32rem] sm:h-[34rem] w-full relative">
+          <div className="space-y-8 sm:space-y-10">
+            {/* Hero: clean media carousel, details sit below it */}
+            <section className="space-y-5 sm:space-y-6">
+              <div className="relative w-full overflow-hidden rounded-3xl bg-base-300 shadow-lg aspect-[4/3] sm:aspect-[16/9] lg:aspect-[2/1] lg:max-h-[30rem]">
                 {mediaItems.length > 0 ? (
                   <div
                     ref={galleryRef}
@@ -771,25 +782,27 @@ export const EventSlugPage = () => {
                         className="absolute inset-0 w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="absolute inset-0 bg-gradient-to-br from-primary/40 via-secondary/20 to-base-300 flex items-center justify-center">
-                        <CalendarIcon className="w-20 h-20 text-base-content/20" />
+                      <div className="absolute inset-0 bg-base-200 flex items-center justify-center">
+                        <CalendarIcon className="w-16 h-16 sm:w-20 sm:h-20 text-base-content/20" />
                       </div>
                     )}
                   </>
                 )}
 
-                {/* Dark overlay keeps the event details readable over every media item */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/45 to-black/10 pointer-events-none"></div>
+                {/* Soft shade at the bottom so the dots stay visible on any photo */}
+                {mediaItems.length > 1 && (
+                  <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/50 to-transparent pointer-events-none"></div>
+                )}
 
                 {mediaItems.length > 1 && (
                   <>
-                    <span className="absolute top-4 right-4 z-10 text-xs font-bold text-white bg-black/50 backdrop-blur px-3 py-1.5 rounded-full">
+                    <span className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 text-xs font-bold text-white bg-black/55 backdrop-blur px-3 py-1.5 rounded-full">
                       {galleryIndex + 1} / {mediaItems.length}
                     </span>
 
                     <button
                       onClick={() => goToMedia(galleryIndex - 1)}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-base-100/90 shadow-md flex items-center justify-center active:scale-95"
+                      className="hidden sm:flex absolute left-4 top-1/2 -translate-y-1/2 z-10 w-11 h-11 rounded-full bg-base-100/90 shadow-md items-center justify-center hover:bg-base-100 active:scale-95 transition"
                       aria-label="Previous media"
                     >
                       <ChevronLeft size={20} />
@@ -797,13 +810,13 @@ export const EventSlugPage = () => {
 
                     <button
                       onClick={() => goToMedia(galleryIndex + 1)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-base-100/90 shadow-md flex items-center justify-center active:scale-95"
+                      className="hidden sm:flex absolute right-4 top-1/2 -translate-y-1/2 z-10 w-11 h-11 rounded-full bg-base-100/90 shadow-md items-center justify-center hover:bg-base-100 active:scale-95 transition"
                       aria-label="Next media"
                     >
                       <ChevronRight size={20} />
                     </button>
 
-                    <div className="absolute bottom-4 inset-x-0 z-10 flex justify-center gap-1.5">
+                    <div className="absolute bottom-3 sm:bottom-4 inset-x-0 z-10 flex justify-center gap-1.5">
                       {mediaItems.map((_, i) => (
                         <button
                           key={i}
@@ -817,57 +830,70 @@ export const EventSlugPage = () => {
                     </div>
                   </>
                 )}
+              </div>
 
-                <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col justify-end p-4 pb-6 sm:p-8 pointer-events-none">
-                  <div className="space-y-3 max-w-3xl">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="px-3 py-1 rounded-full bg-primary text-primary-content text-xs font-bold capitalize">
-                        {(event.category?.replace("_", " ") || "Featured event").toLowerCase()}
-                      </span>
-                      <span className="px-3 py-1 rounded-full bg-white/15 text-white text-xs font-semibold backdrop-blur-md flex items-center gap-1.5">
-                        <ShieldCheck size={13} /> Verified gate pass
-                      </span>
+              {/* Event header: calendar tile + title + quick facts */}
+              <div className="flex items-start gap-4 sm:gap-5">
+                {hasValidDate && (
+                  <div className="shrink-0 w-[4.25rem] sm:w-20 overflow-hidden rounded-2xl border border-base-300 bg-base-100 text-center shadow-sm">
+                    <div className="bg-primary text-primary-content text-xs font-bold py-1">{dateMonth}</div>
+                    <div className="py-2">
+                      <div className="text-3xl sm:text-4xl font-black leading-none">{dateDay}</div>
+                      <div className="text-[11px] font-medium text-base-content/60 mt-1">{dateWeekday}</div>
                     </div>
+                  </div>
+                )}
 
-                    <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight leading-[1.05] break-words">
-                      {event.title}
-                    </h1>
+                <div className="min-w-0 flex-1 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold capitalize">
+                      {(event.category?.replace("_", " ") || "Featured event").toLowerCase()}
+                    </span>
+                    <span className="px-3 py-1 rounded-full bg-success/10 text-success text-xs font-semibold flex items-center gap-1.5">
+                      <ShieldCheck size={13} /> Verified gate pass
+                    </span>
+                  </div>
 
-                    <div className="flex flex-col sm:flex-row sm:flex-wrap gap-x-5 gap-y-1.5 pt-1 text-sm font-medium text-white/90">
-                      <div className="flex items-center gap-2">
-                        <CalendarIcon size={16} className="text-primary shrink-0" />
-                        <span>{new Date(event.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Clock size={16} className="text-primary shrink-0" />
-                        <span>{event.time || "Time TBA"}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={openVenueOnMap}
-                        className="flex items-center gap-2 min-w-0 text-left pointer-events-auto hover:text-primary transition-colors"
-                        aria-label={`View ${venueName} on the map`}
-                      >
-                        <MapPin size={16} className="text-primary shrink-0" />
-                        <span className="truncate underline-offset-4 hover:underline">{venueName}</span>
-                      </button>
-                    </div>
+                  <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-[1.1] break-words">
+                    {event.title}
+                  </h1>
+
+                  <div className="flex flex-wrap gap-2 pt-1 text-sm font-medium">
+                    <span className="inline-flex items-center gap-2 rounded-full bg-base-200 px-3 py-1.5">
+                      <CalendarIcon size={15} className="text-primary shrink-0" />
+                      <span>{new Date(event.date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-2 rounded-full bg-base-200 px-3 py-1.5">
+                      <Clock size={15} className="text-primary shrink-0" />
+                      <span>{event.time || "Time TBA"}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={openVenueOnMap}
+                      className="inline-flex items-center gap-2 min-w-0 max-w-full rounded-full bg-base-200 px-3 py-1.5 text-left hover:bg-primary/10 hover:text-primary transition-colors"
+                      aria-label={`View ${venueName} on the map`}
+                    >
+                      <MapPin size={15} className="text-primary shrink-0" />
+                      <span className="truncate">{venueName}</span>
+                    </button>
                   </div>
                 </div>
               </div>
             </section>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-10 items-start">
               {/* LEFT */}
-              <div className="lg:col-span-2 space-y-8 min-w-0">
+              <div className="lg:col-span-2 space-y-10 min-w-0">
                 {/* Step 1: tickets */}
                 <section className="space-y-4">
-                  <div className="flex items-end justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-primary">Step 1</p>
-                      <h2 className="text-2xl font-black tracking-tight">Pick your ticket</h2>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="w-9 h-9 rounded-full bg-primary text-primary-content flex items-center justify-center font-black shrink-0">
+                        1
+                      </span>
+                      <h2 className="text-xl sm:text-2xl font-black tracking-tight">Pick your ticket</h2>
                     </div>
-                    <span className="text-sm text-base-content/60 font-medium shrink-0">{ticketTypes.length} to choose from</span>
+                    <span className="text-xs sm:text-sm text-base-content/60 font-medium shrink-0">{ticketTypes.length} to choose from</span>
                   </div>
 
                   {isTicketsLoading ? (
@@ -886,7 +912,7 @@ export const EventSlugPage = () => {
                       </p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
                       {ticketTypes.map((tier: any) => {
                         const isSoldOut = tier.sold >= tier.quantity || tier.isSoldOut;
                         const remaining = Math.max(0, (tier.quantity || 0) - (tier.sold || 0));
@@ -907,7 +933,7 @@ export const EventSlugPage = () => {
                               }
                             }}
                             className={`drop-shadow-md transition-transform duration-200 focus-visible:outline-none ${
-                              isSoldOut ? "opacity-60 grayscale cursor-not-allowed" : "cursor-pointer active:scale-[0.99]"
+                              isSoldOut ? "opacity-60 grayscale cursor-not-allowed" : "cursor-pointer hover:-translate-y-0.5 active:scale-[0.99]"
                             } ${isSelected ? "drop-shadow-xl" : ""}`}
                           >
                             <div
@@ -915,7 +941,7 @@ export const EventSlugPage = () => {
                               className="relative flex rounded-2xl bg-base-200 overflow-hidden"
                             >
                               {/* Left: ticket info */}
-                              <div className={`flex-1 min-w-0 px-4 py-4 flex flex-col justify-center gap-1.5 ${isSelected ? "bg-primary/10" : ""}`}>
+                              <div className={`flex-1 min-w-0 px-4 sm:px-5 py-4 flex flex-col justify-center gap-1.5 ${isSelected ? "bg-primary/10" : ""}`}>
                                 <h4 className="font-extrabold text-base leading-snug line-clamp-2 break-words">{tier.name}</h4>
                                 <p className="text-xs text-base-content/70 leading-snug line-clamp-2">
                                   {tier.description || "Entry to the event. Show your QR code at the gate."}
@@ -986,28 +1012,37 @@ export const EventSlugPage = () => {
                 {/* Step 2 */}
                 {selectedTicketType && (
                   <section id="holder-details" className="space-y-4 animate-in fade-in duration-300 scroll-mt-24">
-                    <div>
-                      <p className="text-sm font-semibold text-primary">Step 2</p>
-                      <h3 className="text-2xl font-black tracking-tight">Who is coming?</h3>
-                      <p className="text-sm text-base-content/60 mt-1">
-                        {ticketQuantity} {ticketQuantity === 1 ? "pass" : "passes"} · add the details for each pass
-                      </p>
+                    <div className="flex items-start gap-3">
+                      <span className="w-9 h-9 rounded-full bg-primary text-primary-content flex items-center justify-center font-black shrink-0">
+                        2
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="text-xl sm:text-2xl font-black tracking-tight">Who is coming?</h3>
+                        <p className="text-sm text-base-content/60 mt-0.5">
+                          {ticketQuantity} {ticketQuantity === 1 ? "pass" : "passes"} · add the details for each pass
+                        </p>
+                      </div>
                     </div>
 
                     <div className="space-y-3">
                       {attendeeDetails.map((attendee, index) => (
-                        <div key={index} className="p-4 sm:p-5 rounded-2xl bg-base-200/50 border border-base-300 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-bold">
-                              Pass {index + 1}
-                              {index === 0 && <span className="ml-2 text-xs font-semibold text-primary">Main contact</span>}
-                            </span>
-                            <span className="text-xs font-semibold text-base-content/50">
+                        <div key={index} className="p-4 sm:p-5 rounded-2xl bg-base-100 border border-base-300 shadow-sm space-y-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="w-8 h-8 rounded-full bg-primary/10 text-primary font-black text-sm flex items-center justify-center shrink-0">
+                                {index + 1}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold leading-tight">Pass {index + 1}</p>
+                                {index === 0 && <p className="text-xs font-semibold text-primary">Main contact</p>}
+                              </div>
+                            </div>
+                            <span className="text-xs font-semibold text-base-content/50 shrink-0">
                               KES {Number(selectedTicketType.price || 0).toLocaleString()}
                             </span>
                           </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div className="relative">
                               <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-base-content/40">
                                 <User size={16} />
@@ -1018,21 +1053,6 @@ export const EventSlugPage = () => {
                                 placeholder="Full name"
                                 value={attendee.name}
                                 onChange={(e) => handleAttendeeChange(index, "name", e.target.value)}
-                                className={inputCls}
-                                required
-                              />
-                            </div>
-                            <div className="relative">
-                              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-base-content/40">
-                                <Mail size={16} />
-                              </span>
-                              <input
-                                type="email"
-                                autoComplete="email"
-                                inputMode="email"
-                                placeholder="Email address"
-                                value={attendee.email}
-                                onChange={(e) => handleAttendeeChange(index, "email", e.target.value)}
                                 className={inputCls}
                                 required
                               />
@@ -1052,6 +1072,21 @@ export const EventSlugPage = () => {
                                 required
                               />
                             </div>
+                            <div className="relative sm:col-span-2">
+                              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-base-content/40">
+                                <Mail size={16} />
+                              </span>
+                              <input
+                                type="email"
+                                autoComplete="email"
+                                inputMode="email"
+                                placeholder="Email address"
+                                value={attendee.email}
+                                onChange={(e) => handleAttendeeChange(index, "email", e.target.value)}
+                                className={inputCls}
+                                required
+                              />
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -1060,8 +1095,8 @@ export const EventSlugPage = () => {
                 )}
 
                 {/* Info tabs */}
-                <section className="space-y-4">
-                  <div className="flex items-center gap-1 overflow-x-auto scrollbar-none border-b border-base-300">
+                <section className="space-y-5">
+                  <div className="inline-flex max-w-full overflow-x-auto scrollbar-none p-1 rounded-full bg-base-200 border border-base-300">
                     {[
                       { id: "overview", label: "About", icon: Info },
                       { id: "location", label: "Venue", icon: Building2 },
@@ -1072,8 +1107,8 @@ export const EventSlugPage = () => {
                         <button
                           key={tab.id}
                           onClick={() => setActiveTab(tab.id as any)}
-                          className={`flex items-center gap-2 shrink-0 h-12 px-4 text-sm font-bold border-b-2 -mb-px transition-colors ${
-                            active ? "border-primary text-primary" : "border-transparent text-base-content/60 hover:text-base-content"
+                          className={`flex items-center gap-2 shrink-0 h-10 px-4 sm:px-5 rounded-full text-sm font-bold transition-colors ${
+                            active ? "bg-base-100 text-primary shadow-sm" : "text-base-content/60 hover:text-base-content"
                           }`}
                         >
                           <IconComponent size={16} />
@@ -1089,7 +1124,7 @@ export const EventSlugPage = () => {
                         <h3 className="text-lg font-extrabold flex items-center gap-2">
                           <FileText size={18} className="text-primary" /> About this event
                         </h3>
-                        <p className="text-base text-base-content/80 leading-relaxed whitespace-pre-line max-w-prose">
+                        <p className="text-base text-base-content/80 leading-relaxed whitespace-pre-line max-w-prose break-words">
                           {event.description || "No full description provided for this event yet."}
                         </p>
                       </div>
@@ -1105,7 +1140,7 @@ export const EventSlugPage = () => {
                             href={googleMapsUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="btn btn-sm btn-outline rounded-full gap-2 w-full sm:w-auto"
+                            className="btn btn-sm h-10 btn-outline rounded-full gap-2 w-full sm:w-auto"
                           >
                             <MapPin size={15} />
                             Open in Google Maps
@@ -1115,10 +1150,10 @@ export const EventSlugPage = () => {
                         <button
                           type="button"
                           onClick={() => window.open(googleMapsUrl, "_blank", "noopener,noreferrer")}
-                          className="w-full text-left p-4 rounded-2xl bg-base-200/50 border border-base-300 hover:border-primary/40 hover:bg-base-200 transition-all"
+                          className="w-full text-left p-4 rounded-2xl bg-base-100 border border-base-300 shadow-sm hover:border-primary/40 transition-all"
                         >
                           <div className="flex items-start gap-4">
-                            <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                            <div className="w-11 h-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
                               <MapPin size={20} />
                             </div>
                             <div className="space-y-1 min-w-0">
@@ -1132,7 +1167,7 @@ export const EventSlugPage = () => {
                         </button>
 
                         {googleMapsEmbedUrl ? (
-                          <div className="relative w-full overflow-hidden rounded-2xl border border-base-300 bg-base-200 shadow-sm aspect-[16/10] sm:aspect-[16/9]">
+                          <div className="relative w-full overflow-hidden rounded-2xl border border-base-300 bg-base-200 shadow-sm aspect-[4/3] sm:aspect-[16/9]">
                             <iframe
                               title={`Map showing ${venueName}`}
                               src={googleMapsEmbedUrl}
@@ -1157,180 +1192,185 @@ export const EventSlugPage = () => {
               </div>
 
               {/* RIGHT: checkout */}
-              <aside id="checkout" className="lg:col-span-1 lg:sticky lg:top-28 scroll-mt-24">
-                <div className="bg-base-200/60 border border-base-300 p-5 sm:p-6 rounded-3xl shadow-xl space-y-5">
-                  <div className="flex items-center justify-between">
+              <aside id="checkout" className="lg:col-span-1 lg:sticky lg:top-28 scroll-mt-24 min-w-0">
+                <div className="bg-base-100 border border-base-300 rounded-3xl shadow-xl overflow-hidden">
+                  <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 bg-base-200/70 border-b border-base-300">
                     <h3 className="text-lg font-extrabold">Your order</h3>
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-success bg-success/10 px-2.5 py-1 rounded-full">
+                    <span className="inline-flex items-center gap-1 text-xs font-bold text-success bg-success/10 px-2.5 py-1 rounded-full shrink-0">
                       <ShieldCheck size={13} /> Instant pass
                     </span>
                   </div>
 
-                  {checkoutSuccessMessage && !showSuccessModal && (
-                    <div className="alert alert-success p-3 rounded-2xl text-sm font-medium flex items-start gap-2">
-                      <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
-                      <span>{checkoutSuccessMessage}</span>
-                    </div>
-                  )}
-
-                  {selectedTicketType ? (
-                    <div className="space-y-5 animate-in fade-in duration-300">
-                      <div className="p-4 rounded-2xl bg-base-100 border border-base-300">
-                        <h4 className="font-extrabold">{selectedTicketType.name}</h4>
-                        <p className="text-sm text-base-content/70">
-                          KES {Number(selectedTicketType.price || 0).toLocaleString()} per pass
-                        </p>
+                  <div className="p-5 sm:p-6 space-y-5">
+                    {checkoutSuccessMessage && !showSuccessModal && (
+                      <div className="alert alert-success p-3 rounded-2xl text-sm font-medium flex items-start gap-2">
+                        <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
+                        <span>{checkoutSuccessMessage}</span>
                       </div>
+                    )}
 
-                      <div className="space-y-2">
-                        <label className="text-sm font-bold">How many passes?</label>
-                        <div className="flex items-center justify-between bg-base-100 p-2 rounded-2xl border border-base-300">
-                          <button
-                            onClick={decrementQuantity}
-                            disabled={ticketQuantity <= 1 || isProcessing}
-                            className="btn btn-ghost w-12 h-12 min-h-0 rounded-xl disabled:opacity-30"
-                            title="Fewer passes"
-                            aria-label="Fewer passes"
-                          >
-                            <Minus size={18} />
-                          </button>
-                          <div className="flex flex-col items-center">
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              aria-label="Number of passes"
-                              value={quantityText}
-                              disabled={isProcessing}
-                              onChange={(e) => {
-                                const digits = e.target.value.replace(/\D/g, "");
-                                if (digits === "") {
-                                  setQuantityText("");
-                                  return;
-                                }
-                                const n = Math.max(1, Math.min(parseInt(digits, 10), maxAvailable));
-                                setQuantityText(String(n));
-                                handleQuantityChange(n);
-                              }}
-                              onBlur={() => setQuantityText(String(ticketQuantity))}
-                              className="w-16 text-center text-2xl font-black leading-none bg-transparent rounded-lg focus:outline-none focus:bg-base-200"
-                            />
-                            <span className="text-xs text-base-content/50 mt-1">{ticketQuantity === 1 ? "pass" : "passes"}</span>
+                    {selectedTicketType ? (
+                      <div className="space-y-5 animate-in fade-in duration-300">
+                        <div className="flex items-center justify-between gap-3 p-4 rounded-2xl bg-base-200/60 border border-base-300">
+                          <div className="min-w-0">
+                            <h4 className="font-extrabold break-words">{selectedTicketType.name}</h4>
+                            <p className="text-sm text-base-content/70">
+                              KES {Number(selectedTicketType.price || 0).toLocaleString()} per pass
+                            </p>
                           </div>
-                          <button
-                            onClick={incrementQuantity}
-                            disabled={isProcessing || atMax}
-                            className="btn btn-ghost w-12 h-12 min-h-0 rounded-xl disabled:opacity-30"
-                            title="More passes"
-                            aria-label="More passes"
-                          >
-                            <Plus size={18} />
-                          </button>
+                          <Ticket size={22} className="text-primary shrink-0" />
                         </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <p className={`text-xs ${atMax ? "text-warning font-semibold" : "text-base-content/50"}`}>
-                            {atMax ? "That's all the tickets left" : `${maxAvailable} tickets available`}
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-bold">How many passes?</label>
+                          <div className="flex items-center justify-between bg-base-200/60 p-2 rounded-2xl border border-base-300">
+                            <button
+                              onClick={decrementQuantity}
+                              disabled={ticketQuantity <= 1 || isProcessing}
+                              className="btn btn-ghost w-12 h-12 min-h-0 rounded-xl disabled:opacity-30"
+                              title="Fewer passes"
+                              aria-label="Fewer passes"
+                            >
+                              <Minus size={18} />
+                            </button>
+                            <div className="flex flex-col items-center">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                aria-label="Number of passes"
+                                value={quantityText}
+                                disabled={isProcessing}
+                                onChange={(e) => {
+                                  const digits = e.target.value.replace(/\D/g, "");
+                                  if (digits === "") {
+                                    setQuantityText("");
+                                    return;
+                                  }
+                                  const n = Math.max(1, Math.min(parseInt(digits, 10), maxAvailable));
+                                  setQuantityText(String(n));
+                                  handleQuantityChange(n);
+                                }}
+                                onBlur={() => setQuantityText(String(ticketQuantity))}
+                                className="w-16 text-center text-2xl font-black leading-none bg-transparent rounded-lg focus:outline-none focus:bg-base-100"
+                              />
+                              <span className="text-xs text-base-content/50 mt-1">{ticketQuantity === 1 ? "pass" : "passes"}</span>
+                            </div>
+                            <button
+                              onClick={incrementQuantity}
+                              disabled={isProcessing || atMax}
+                              className="btn btn-ghost w-12 h-12 min-h-0 rounded-xl disabled:opacity-30"
+                              title="More passes"
+                              aria-label="More passes"
+                            >
+                              <Plus size={18} />
+                            </button>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className={`text-xs ${atMax ? "text-warning font-semibold" : "text-base-content/50"}`}>
+                              {atMax ? "That's all the tickets left" : `${maxAvailable} tickets available`}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => handleQuantityChange(maxAvailable)}
+                              disabled={isProcessing || atMax}
+                              className="btn btn-ghost btn-xs rounded-full text-primary disabled:opacity-30"
+                            >
+                              Get the max
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-bold">Pay with</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setPaymentMethod("mpesa")}
+                              className={`btn h-12 rounded-xl font-bold gap-1.5 ${paymentMethod === "mpesa" ? "btn-primary" : "btn-outline border-base-300"}`}
+                            >
+                              <Smartphone size={16} /> M-Pesa
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPaymentMethod("stripe")}
+                              className={`btn h-12 rounded-xl font-bold gap-1.5 ${paymentMethod === "stripe" ? "btn-primary" : "btn-outline border-base-300"}`}
+                            >
+                              <CreditCard size={16} /> Card
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-dashed border-base-300 space-y-2">
+                          <div className="flex items-center justify-between gap-3 text-sm">
+                            <span className="text-base-content/70">Subtotal ({ticketQuantity} {ticketQuantity === 1 ? "pass" : "passes"})</span>
+                            <span className="font-bold shrink-0">KES {total.toLocaleString()}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-base-content/70">Fees</span>
+                            <span className="font-bold text-success">Free</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 text-xl font-black pt-3 border-t border-base-300">
+                            <span>Total</span>
+                            <span className="text-primary shrink-0">KES {total.toLocaleString()}</span>
+                          </div>
+                        </div>
+
+                        {paymentMethod === "mpesa" ? (
+                          <button
+                            onClick={handleMpesaCheckout}
+                            disabled={isProcessing}
+                            className="btn btn-primary w-full h-14 rounded-2xl font-black text-base shadow-lg shadow-primary/25 gap-2"
+                          >
+                            {isProcessing ? (
+                              <>
+                                <Loader2 size={18} className="animate-spin" /> Sending request...
+                              </>
+                            ) : (
+                              <>
+                                <Smartphone size={18} /> Pay with M-Pesa
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={handleStripeCheckout}
+                            disabled={isProcessing}
+                            className="btn btn-primary w-full h-14 rounded-2xl font-black text-base shadow-lg shadow-primary/25 gap-2"
+                          >
+                            {isProcessing ? (
+                              <>
+                                <Loader2 size={18} className="animate-spin" /> Opening card page...
+                              </>
+                            ) : (
+                              <>
+                                <CreditCard size={18} /> Pay with card
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 space-y-3">
+                        <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                          <Ticket size={26} />
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="font-extrabold">No ticket picked</h4>
+                          <p className="text-sm text-base-content/70 max-w-xs mx-auto">
+                            Pick a ticket above to choose how many passes you want and pay.
                           </p>
-                          <button
-                            type="button"
-                            onClick={() => handleQuantityChange(maxAvailable)}
-                            disabled={isProcessing || atMax}
-                            className="btn btn-ghost btn-xs rounded-full text-primary disabled:opacity-30"
-                          >
-                            Get the max
-                          </button>
                         </div>
                       </div>
+                    )}
 
-                      <div className="space-y-2">
-                        <label className="text-sm font-bold">Pay with</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setPaymentMethod("mpesa")}
-                            className={`btn h-12 rounded-xl font-bold gap-1.5 ${paymentMethod === "mpesa" ? "btn-primary" : "btn-outline border-base-300"}`}
-                          >
-                            <Smartphone size={16} /> M-Pesa
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setPaymentMethod("stripe")}
-                            className={`btn h-12 rounded-xl font-bold gap-1.5 ${paymentMethod === "stripe" ? "btn-primary" : "btn-outline border-base-300"}`}
-                          >
-                            <CreditCard size={16} /> Card
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="pt-4 border-t border-dashed border-base-300 space-y-2">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-base-content/70">Subtotal ({ticketQuantity} {ticketQuantity === 1 ? "pass" : "passes"})</span>
-                          <span className="font-bold">KES {total.toLocaleString()}</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-base-content/70">Fees</span>
-                          <span className="font-bold text-success">Free</span>
-                        </div>
-                        <div className="flex items-center justify-between text-xl font-black pt-3 border-t border-base-300">
-                          <span>Total</span>
-                          <span className="text-primary">KES {total.toLocaleString()}</span>
-                        </div>
-                      </div>
-
-                      {paymentMethod === "mpesa" ? (
-                        <button
-                          onClick={handleMpesaCheckout}
-                          disabled={isProcessing}
-                          className="btn btn-primary w-full h-14 rounded-2xl font-black text-base shadow-lg shadow-primary/25 gap-2"
-                        >
-                          {isProcessing ? (
-                            <>
-                              <Loader2 size={18} className="animate-spin" /> Sending request...
-                            </>
-                          ) : (
-                            <>
-                              <Smartphone size={18} /> Pay with M-Pesa
-                            </>
-                          )}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={handleStripeCheckout}
-                          disabled={isProcessing}
-                          className="btn btn-primary w-full h-14 rounded-2xl font-black text-base shadow-lg shadow-primary/25 gap-2"
-                        >
-                          {isProcessing ? (
-                            <>
-                              <Loader2 size={18} className="animate-spin" /> Opening card page...
-                            </>
-                          ) : (
-                            <>
-                              <CreditCard size={18} /> Pay with card
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 space-y-3">
-                      <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
-                        <Ticket size={26} />
-                      </div>
-                      <div className="space-y-1">
-                        <h4 className="font-extrabold">No ticket picked</h4>
-                        <p className="text-sm text-base-content/70 max-w-xs mx-auto">
-                          Pick a ticket above to choose how many passes you want and pay.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={handleShare}
-                    className="btn btn-ghost border border-base-300 w-full h-11 rounded-2xl font-semibold gap-2 text-sm"
-                  >
-                    <Share2 size={15} /> Share event link
-                  </button>
+                    <button
+                      onClick={handleShare}
+                      className="btn btn-ghost border border-base-300 w-full h-11 rounded-2xl font-semibold gap-2 text-sm"
+                    >
+                      <Share2 size={15} /> Share event link
+                    </button>
+                  </div>
                 </div>
               </aside>
             </div>

@@ -8,6 +8,7 @@ import {
   ChevronRight,
   HelpCircle,
   Building2,
+  MapPin,
   Calendar,
   Ticket,
   Images,
@@ -15,61 +16,132 @@ import {
   Wallet,
   QrCode,
   Banknote,
+  ShieldCheck,
+  ArrowRight,
+  Check,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 // ---------------------------------------------------------------------------
-// HOW IT WORKS: short steps shown in the guide (paths match the sidebar links)
+// HOW IT WORKS: detailed steps shown in the guide (paths match the sidebar links)
 // ---------------------------------------------------------------------------
 const GUIDE_STORAGE_KEY = "organizer_guide_seen";
 
-const guideSteps = [
+// Height of your fixed top navbar. Change this one value if your navbar is taller or shorter.
+const NAVBAR_HEIGHT = "5rem";
+
+interface GuideStep {
+  icon: typeof Building2;
+  phase: string;
+  title: string;
+  text: string;
+  details: string[];
+  path: string;
+  badge?: string;
+}
+
+const guideSteps: GuideStep[] = [
   {
     icon: Building2,
+    phase: "Get set up",
     title: "Set up your organization",
-    text: "Add your name, logo and payout details, and invite your team.",
+    text: "This is your home on the platform. Everything else is created under it.",
+    details: [
+      "Add your name, logo and support contacts.",
+      "Set your payout details so you can get paid.",
+      "Invite your team: managers, admins and gate scanners.",
+      "Verify your organization. This is required first, and approval takes about 10 to 60 minutes.",
+    ],
     path: "/organizer-dashboard/my-organization",
+    badge: "Start here",
+  },
+  {
+    icon: MapPin,
+    phase: "Get set up",
+    title: "Add your venues",
+    text: "Create the places where your events will be hosted.",
+    details: [
+      "Add the venue name, address, city and capacity.",
+      "Pin the location so attendees can find it easily.",
+      "Create one venue for each place you host at.",
+      "You will pick a venue from this list when you create an event.",
+    ],
+    path: "/organizer-dashboard/venues",
+    badge: "Do next",
   },
   {
     icon: Calendar,
+    phase: "Create your event",
     title: "Create your event",
     text: "Add the date, venue and description attendees will see.",
+    details: [
+      "Give your event a clear title, date and start time.",
+      "Choose one of your saved venues.",
+      "Write a description that tells people what to expect.",
+    ],
     path: "/organizer-dashboard/my-events",
   },
   {
     icon: Ticket,
+    phase: "Create your event",
     title: "Add ticket types",
     text: "Create tiers like Regular or VIP with a price and quantity.",
+    details: [
+      "Set a price and how many tickets are available for each tier.",
+      "Add as many tiers as you need, for example Early Bird, Regular and VIP.",
+    ],
     path: "/organizer-dashboard/ticket-types",
   },
   {
     icon: Images,
+    phase: "Create your event",
     title: "Add photos and videos",
     text: "Upload event media and choose the main banner.",
+    details: [
+      "Upload photos and videos that show off your event.",
+      "Pick the banner image shown first to attendees.",
+    ],
     path: "/organizer-dashboard/media",
   },
   {
     icon: CalendarCheck,
+    phase: "Run your event",
     title: "Track bookings",
     text: "See who booked, then confirm or cancel bookings.",
+    details: [
+      "Review every booking as it comes in.",
+      "Confirm or cancel a booking when needed.",
+    ],
     path: "/organizer-dashboard/bookings",
   },
   {
     icon: Wallet,
+    phase: "Run your event",
     title: "Watch payments",
     text: "View every payment made for your events.",
+    details: ["See each payment, its status and which event it belongs to."],
     path: "/organizer-dashboard/payments",
   },
   {
     icon: QrCode,
+    phase: "Run your event",
     title: "Scan tickets at the gate",
     text: "Your scanners check attendees in with the Gate Pass Scanner.",
+    details: [
+      "Add scanners to your team first.",
+      "Scanners check tickets in on the day, and each ticket works only once.",
+    ],
     path: "/organizer/scanner",
   },
   {
     icon: Banknote,
+    phase: "Get paid",
     title: "Get paid",
     text: "Check your earnings and payouts to your account.",
+    details: [
+      "See what you have earned and what has been paid out.",
+      "Payouts go to the payout details saved on your organization.",
+    ],
     path: "/organizer/payouts",
   },
 ];
@@ -121,7 +193,8 @@ export const OrganizerLayout = () => {
       {!sidebarOpen && (
         <button
           onClick={() => setSidebarOpen(true)}
-          className="lg:hidden fixed top-20 left-4 z-[60] p-2.5 bg-primary text-primary-content rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center"
+          style={{ top: `calc(${NAVBAR_HEIGHT} + 0.75rem)` }}
+          className="lg:hidden fixed left-4 z-[60] p-2.5 bg-primary text-primary-content rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center"
           aria-label="Open Sidebar"
         >
           <Menu size={20} strokeWidth={2.5} />
@@ -133,14 +206,15 @@ export const OrganizerLayout = () => {
         initial={false}
         animate={{ width: isCollapsed ? "80px" : "272px" }}
         transition={{ duration: 0.3, type: "spring", stiffness: 300, damping: 30 }}
-        className="hidden lg:block h-full fixed top-0 left-0 z-30 bg-base-100 border-r border-base-200 shadow-xl overflow-visible"
+        style={{ top: NAVBAR_HEIGHT, height: `calc(100vh - ${NAVBAR_HEIGHT})` }}
+        className="hidden lg:block fixed left-0 z-30 bg-base-100 border-r border-base-200 shadow-xl overflow-visible"
       >
         <div className="h-full flex flex-col relative">
           
           {/* Sleek Collapse / Expand Toggle Button */}
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="absolute -right-3.5 top-24 z-50 bg-primary text-primary-content p-1.5 rounded-full shadow-md hover:scale-110 active:scale-95 transition-transform hidden lg:flex items-center justify-center border-2 border-base-100"
+            className="absolute -right-3.5 top-6 z-50 bg-primary text-primary-content p-1.5 rounded-full shadow-md hover:scale-110 active:scale-95 transition-transform hidden lg:flex items-center justify-center border-2 border-base-100"
             aria-label={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
           >
             {isCollapsed ? <ChevronRight size={14} strokeWidth={3} /> : <ChevronLeft size={14} strokeWidth={3} />}
@@ -163,7 +237,8 @@ export const OrganizerLayout = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSidebarOpen(false)}
-              className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm lg:hidden"
+              style={{ top: NAVBAR_HEIGHT }}
+              className="fixed inset-x-0 bottom-0 z-[70] bg-black/70 backdrop-blur-sm lg:hidden"
             />
 
             {/* Sliding Mobile Sidebar */}
@@ -242,49 +317,121 @@ export const OrganizerLayout = () => {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 10 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-base-100 border border-base-200 w-full max-w-lg max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+              className="bg-base-100 border border-base-200 w-full max-w-2xl max-h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden"
               role="dialog"
               aria-label="How the organizer portal works"
             >
-              <div className="flex justify-between items-start gap-3 p-4 sm:p-5 border-b border-base-200">
-                <div className="flex flex-col gap-0.5">
-                  <h3 className="font-black text-sm text-base-content tracking-tight">How it works</h3>
-                  <p className="text-[11px] text-base-content/60">
-                    From setup to payout, here is the usual order. Tap a step to open that page.
-                  </p>
+              {/* Header */}
+              <div className="flex justify-between items-start gap-3 p-5 sm:p-6 border-b border-base-200 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent">
+                <div className="flex items-start gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-primary text-primary-content flex items-center justify-center shadow-md shrink-0">
+                    <HelpCircle size={22} />
+                  </div>
+
+                  <div className="flex flex-col gap-0.5">
+                    <h3 className="font-black text-base sm:text-lg text-base-content tracking-tight">How it works</h3>
+                    <p className="text-[11px] sm:text-xs text-base-content/60 leading-snug">
+                      From setup to payout, here is the usual order. Tap a step to open that page.
+                    </p>
+                  </div>
                 </div>
-                <button onClick={closeGuide} className="btn btn-ghost btn-xs btn-square rounded-lg" aria-label="Close guide">
-                  <X size={14} />
+
+                <button onClick={closeGuide} className="btn btn-ghost btn-sm btn-square rounded-xl" aria-label="Close guide">
+                  <X size={16} />
                 </button>
               </div>
 
-              <ol className="overflow-y-auto p-3 sm:p-4 flex flex-col gap-1.5">
-                {guideSteps.map((step, i) => (
-                  <li key={step.path}>
-                    <Link
-                      to={step.path}
-                      onClick={closeGuide}
-                      className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-base-200/70 transition-colors"
-                    >
-                      <div className="relative shrink-0">
-                        <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                          <step.icon size={18} />
-                        </div>
-                        <span className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-primary text-primary-content text-[9px] font-black flex items-center justify-center">
-                          {i + 1}
-                        </span>
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-xs font-bold text-base-content">{step.title}</span>
-                        <span className="text-[11px] text-base-content/60 leading-snug">{step.text}</span>
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ol>
+              {/* Scrollable body */}
+              <div className="overflow-y-auto flex-1 min-h-0 p-4 sm:p-6 flex flex-col gap-5">
+                {/* Verification reminder */}
+                <div className="rounded-2xl border border-warning/40 bg-warning/10 p-3.5 flex gap-3">
+                  <ShieldCheck size={20} className="text-warning shrink-0 mt-0.5" />
 
-              <div className="flex justify-end p-3 sm:p-4 border-t border-base-200">
-                <button onClick={closeGuide} className="btn btn-primary btn-sm rounded-xl text-xs font-bold">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs font-black text-base-content">Verify first</span>
+                    <span className="text-[11px] sm:text-xs text-base-content/70 leading-snug">
+                      Your organization must be verified before you can do anything else. Approval usually takes about
+                      10 to 60 minutes after you submit.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Steps */}
+                <ol className="flex flex-col">
+                  {guideSteps.map((step, i) => {
+                    const showPhase = i === 0 || guideSteps[i - 1].phase !== step.phase;
+                    const isLast = i === guideSteps.length - 1;
+
+                    return (
+                      <li key={step.path}>
+                        {showPhase && (
+                          <p className="text-[10px] font-black uppercase tracking-widest text-primary/70 pl-1 mb-2 mt-1">
+                            {step.phase}
+                          </p>
+                        )}
+
+                        <div className="flex gap-3">
+                          {/* Icon + connecting line */}
+                          <div className="flex flex-col items-center shrink-0">
+                            <div className="relative">
+                              <div className="w-10 h-10 rounded-xl bg-primary text-primary-content flex items-center justify-center shadow-sm">
+                                <step.icon size={18} />
+                              </div>
+
+                              <span className="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-base-100 border border-primary/40 text-primary text-[10px] font-black flex items-center justify-center">
+                                {i + 1}
+                              </span>
+                            </div>
+
+                            {!isLast && <div className="w-px flex-1 my-1 bg-gradient-to-b from-primary/40 to-base-300" />}
+                          </div>
+
+                          {/* Card */}
+                          <Link
+                            to={step.path}
+                            onClick={closeGuide}
+                            className="group flex-1 min-w-0 mb-3 p-3.5 rounded-2xl border border-base-200 bg-base-200/30 hover:border-primary/40 hover:bg-primary/5 transition-all"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                                <span className="text-sm font-bold text-base-content">{step.title}</span>
+
+                                {step.badge && (
+                                  <span className="badge badge-sm badge-primary font-bold text-[10px]">{step.badge}</span>
+                                )}
+                              </div>
+
+                              <ArrowRight
+                                size={16}
+                                className="text-base-content/30 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-0.5"
+                              />
+                            </div>
+
+                            <p className="text-[11px] sm:text-xs text-base-content/60 leading-snug mt-1">{step.text}</p>
+
+                            <ul className="flex flex-col gap-1 mt-2.5">
+                              {step.details.map((detail) => (
+                                <li key={detail} className="flex items-start gap-2 text-[11px] sm:text-xs text-base-content/70">
+                                  <Check size={12} className="text-primary shrink-0 mt-0.5" />
+                                  <span className="leading-snug">{detail}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </Link>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between gap-3 p-4 sm:p-5 border-t border-base-200 bg-base-100">
+                <span className="hidden sm:block text-[11px] text-base-content/50">
+                  You can open this guide any time with the How it works button.
+                </span>
+
+                <button onClick={closeGuide} className="btn btn-primary btn-sm rounded-xl text-xs font-bold ml-auto">
                   Got it
                 </button>
               </div>

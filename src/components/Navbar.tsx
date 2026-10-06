@@ -119,7 +119,7 @@ export const Navbar = () => {
 
   // Determine dashboard link and label based on user role
   const getDashboardRoute = () => {
-    if (role === "admin") return "/AdminDashBoard/analytics";
+    if (role === "admin") return "/admin-dashboard/";
     if (role === "organizer") return "/organizer-dashboard/";
     return "/dashboard/analytics";
   };

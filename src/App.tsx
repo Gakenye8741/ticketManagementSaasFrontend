@@ -10,14 +10,13 @@ import ProtectedRoutes from './components/ProtectedRoutes';
 import Error from './pages/Error';
 // import UserProfile from './DashBoards/dashboard/UserProfile';
 import { Analytics } from './DashBoards/adminDashboard/Analytics';
-import { AllUsers } from './DashBoards/adminDashboard/AllUsers';
+import AdminManageUsers from './DashBoards/adminDashboard/AllUsers';
 import { AllVenues } from './DashBoards/adminDashboard/AllVenues';
 import { EventDetailsPage } from './DashBoards/adminDashboard/AllEvents';
 // import BookingsByNationalId from './DashBoards/dashboard/BookingsById';
 import { TicketTypes } from './DashBoards/adminDashboard/getAllTicketTypes';
 import { AllBookings } from './DashBoards/adminDashboard/AllBookings';
 // import { EventDetailPage } from './content-folders/Events/eventPage';
-import AllMedia from './DashBoards/adminDashboard/AllMedias';
 import UserSupportTickets from './DashBoards/dashboard/SupportTickets';
 import AdminSupportTickets from './DashBoards/adminDashboard/AllTicketSupport';
 import ContactForm from './pages/Contact';
@@ -51,6 +50,7 @@ import AnalyticsManager from './DashBoards/OrganizerDashboard/AnalyticsManager';
 import WalletManager from './DashBoards/OrganizerDashboard/WalletManager';
 import OrganizerProfileManager from './DashBoards/OrganizerDashboard/OrganizerProfileManager';
 import VenueManager from './DashBoards/OrganizerDashboard/VenueManager';
+import AdminVerificationManager from './DashBoards/adminDashboard/Adminverificationmanager';
 
 function App() {
   const Router = createBrowserRouter([
@@ -96,7 +96,7 @@ function App() {
       ],
     },
     {
-      path: 'admindashboard',
+      path: 'admin-dashboard',
       element: (
         <ProtectedRoutes>
           <AdminDashBoard />
@@ -105,10 +105,10 @@ function App() {
       errorElement: <Error />,
       children: [
         { path: 'analytics', element: <Analytics /> },
-        { path: 'AllMedia', element: <AllMedia /> },
+        { path: 'verification', element: <AdminVerificationManager /> },
         { path: 'AllBookings', element: <AllBookings /> },
         { path: 'supportTickets', element: <AdminSupportTickets /> },
-        { path: 'allusers', element: <AllUsers /> },
+        { path: 'users', element: <AdminManageUsers/> },
         { path: 'AllVenues', element: <AllVenues /> },
         { path: 'AllEvents', element: <EventDetailsPage /> },
         { path: 'ticketTypes', element: <TicketTypes /> },

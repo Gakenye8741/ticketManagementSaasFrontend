@@ -34,10 +34,10 @@ const navSections = [
   {
     title: "Event Pipeline",
     items: [
-      { name: "Manage Venues", path: "Allvenues", icon: House },
-      { name: "Manage Events", path: "AllEvents", icon: Calendar },
-      { name: "Manage Medias", path: "AllMedia", icon: Camera },
-      { name: "Ticket Types", path: "ticketTypes", icon: FileText },
+      // { name: "Manage Venues", path: "Allvenues", icon: House },
+      { name: "Manage Events", path: "events", icon: Calendar },
+      // { name: "Manage Medias", path: "AllMedia", icon: Camera },
+      // { name: "Ticket Types", path: "ticketTypes", icon: FileText },
     ],
   },
   {
@@ -45,16 +45,16 @@ const navSections = [
     items: [
       { name: "Manage Users", path: "users", icon: Users },
       { name: "Manage verification", path: "verification", icon: MdOutlineDomainVerification },
-      { name: "Manage Bookings", path: "AllBookings", icon: ClipboardList },
-      { name: "Manage Payments", path: "AllPayments", icon: DollarSign },
-      { name: "Support Tickets", path: "supportTickets", icon: Ticket },
+      // { name: "Manage Bookings", path: "AllBookings", icon: ClipboardList },
+      // { name: "Manage Payments", path: "AllPayments", icon: DollarSign },
+      // { name: "Support Tickets", path: "supportTickets", icon: Ticket },
     ],
   },
   {
     title: "Reports & Profile",
     items: [
       { name: "Sales Report", path: "SalesReports", icon: LayoutDashboard },
-      { name: "My Profile", path: "adminprofile", icon: User },
+      { name: "My Profile", path: "profile", icon: User },
     ],
   },
 ];

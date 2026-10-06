@@ -25,10 +25,11 @@ import {
   CalendarCheck
 } from "lucide-react";
 
-import "./animate.css"; 
+import "./animate.css";
 import { ThemeToggle } from "./ThemeToggle";
 import { useGetEventsByTitleQuery } from "../features/APIS/EventsApi";
 import { useGetUserByDigitalIdQuery } from "../features/APIS/UserApi";
+import { useGetPrimaryMediaByEventIdQuery } from "../features/APIS/mediaApi";
 
 export const Navbar = () => {
   const location = useLocation();
@@ -43,16 +44,16 @@ export const Navbar = () => {
   const dispatch = useDispatch();
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
   const user = useSelector((state: RootState) => state.auth.user);
-  const role = useSelector((state: RootState) => state.auth.role); // e.g., "admin", "organizer", "user"
+  const role = useSelector((state: RootState) => state.auth.role);
 
   // Fetch the logged-in user's latest profile so the photo is always up to date
-  // (this shares the same cache as the profile page, so it refreshes after an upload)
   const digitalId = user?.digitalId || user?.userId;
   const { data: profileData } = useGetUserByDigitalIdQuery(digitalId, {
     skip: !isAuthenticated || !digitalId,
   });
+
   const profile: any = (profileData as any)?.data || profileData;
-  // Fresh value from the API first, then the value saved at login
+
   const avatarUrl = profile?.profileImageUrl || user?.profileImageUrl || "";
   const avatarInitial = (profile?.firstName || user?.firstName)?.charAt(0) || "U";
 
@@ -61,18 +62,22 @@ export const Navbar = () => {
     const timer = setTimeout(() => {
       setDebouncedQuery(searchQuery.trim());
     }, 300);
+
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
   // Fetch events using RTK Query based on search title/slug
-  const { data: searchResults, isFetching: isSearching } = useGetEventsByTitleQuery(debouncedQuery, {
-    skip: debouncedQuery.length < 2,
-  });
+  const { data: searchResults, isFetching: isSearching } =
+    useGetEventsByTitleQuery(debouncedQuery, {
+      skip: debouncedQuery.length < 2,
+    });
 
   // Handle scroll effect
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10);
+
     window.addEventListener("scroll", handleScroll);
+
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
@@ -86,12 +91,16 @@ export const Navbar = () => {
   // Search modal: close with Escape and lock page scroll while it is open
   useEffect(() => {
     if (!isSearchOpen) return;
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") setIsSearchOpen(false);
     };
+
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
     window.addEventListener("keydown", onKeyDown);
+
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
@@ -105,15 +114,20 @@ export const Navbar = () => {
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
     if (searchQuery.trim()) {
       setIsSearchOpen(false);
-      navigate(`/events?search=${encodeURIComponent(searchQuery.trim())}`);
+
+      navigate(
+        `/events?search=${encodeURIComponent(searchQuery.trim())}`
+      );
     }
   };
 
   const handleSelectEvent = (slug: string) => {
     setIsSearchOpen(false);
     setSearchQuery("");
+
     navigate(`/events/${slug}`);
   };
 
@@ -121,29 +135,109 @@ export const Navbar = () => {
   const getDashboardRoute = () => {
     if (role === "admin") return "/admin-dashboard/";
     if (role === "organizer") return "/organizer-dashboard/";
+
     return "/dashboard/analytics";
   };
 
   const getDashboardLabel = () => {
     if (role === "admin") return "Admin Control Center";
     if (role === "organizer") return "Organizer Dashboard";
+
     return "My Dashboard";
   };
 
   const getDashboardIcon = () => {
-    if (role === "admin") return <ShieldCheck size={15} className="text-primary" />;
-    if (role === "organizer") return <CalendarCheck size={15} className="text-primary" />;
+    if (role === "admin") {
+      return <ShieldCheck size={15} className="text-primary" />;
+    }
+
+    if (role === "organizer") {
+      return <CalendarCheck size={15} className="text-primary" />;
+    }
+
     return <LayoutDashboard size={15} className="text-primary" />;
+  };
+
+  /*
+   * Small component used only by the search results.
+   *
+   * It asks the media API for the PRIMARY media belonging to the event.
+   * If the primary media is unavailable, we fall back to the image
+   * already returned by the events API.
+   */
+  const EventSearchThumbnail = ({
+    event,
+  }: {
+    event: any;
+  }) => {
+    const eventId = event?.id ?? event?._id ?? event?.eventId;
+
+    const { data: primaryMediaData } = useGetPrimaryMediaByEventIdQuery(
+      Number(eventId),
+      {
+        skip: !eventId || Number.isNaN(Number(eventId)),
+      }
+    );
+
+    /*
+     * Different APIs sometimes wrap the response differently.
+     * These checks allow the existing API response to work whether it is:
+     *
+     * { data: { url: "..." } }
+     * { data: { media: { url: "..." } } }
+     * { data: { data: { url: "..." } } }
+     * { url: "..." }
+     */
+    const primaryMedia: any =
+      (primaryMediaData as any)?.data?.data ||
+      (primaryMediaData as any)?.data?.media ||
+      (primaryMediaData as any)?.data ||
+      primaryMediaData;
+
+    const primaryImage =
+      primaryMedia?.url ||
+      primaryMedia?.mediaUrl ||
+      primaryMedia?.imageUrl ||
+      primaryMedia?.fileUrl ||
+      "";
+
+    const fallbackImage =
+      event?.bannerImage ||
+      event?.imageUrl ||
+      event?.primaryImage ||
+      "";
+
+    const imageUrl = primaryImage || fallbackImage;
+
+    if (imageUrl) {
+      return (
+        <img
+          src={imageUrl}
+          alt={event?.title || "Event"}
+          className="w-12 h-12 rounded-xl object-cover shrink-0"
+        />
+      );
+    }
+
+    return (
+      <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+        <Compass size={18} />
+      </div>
+    );
   };
 
   return (
     <>
       {/* --- TOP NAVBAR --- */}
-      <nav className={`fixed top-0 left-0 w-full z-[100] transition-all duration-200 bg-base-100 ${
-        scrolled ? "border-b border-base-200 shadow-sm py-2.5" : "border-b border-base-200/60 py-3.5"
-      }`}>
+      <nav
+        className={`fixed top-0 left-0 w-full z-[100] transition-all duration-200 bg-base-100 ${
+          scrolled
+            ? "border-b border-base-200 shadow-sm py-2.5"
+            : "border-b border-base-200/60 py-3.5"
+        }`}
+      >
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex justify-between items-center gap-2">
-          
+
           {/* Left: Mobile Hamburger & Brand Logo */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <button
@@ -158,10 +252,12 @@ export const Navbar = () => {
               <div className="w-8 h-8 sm:w-9 sm:h-9 bg-primary text-primary-content rounded-xl flex items-center justify-center font-black shadow-sm tracking-tighter shrink-0">
                 <Store className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
+
               <div className="flex flex-col">
                 <span className="text-xs sm:text-lg font-black tracking-tight uppercase text-base-content leading-none">
                   TicketStream
                 </span>
+
                 <span className="text-[8px] sm:text-[10px] font-bold tracking-widest text-primary uppercase mt-0.5">
                   Event Ticketing
                 </span>
@@ -169,7 +265,7 @@ export const Navbar = () => {
             </Link>
           </div>
 
-          {/* Center: Search trigger - opens the search modal */}
+          {/* Center: Search trigger */}
           <div className="flex flex-1 max-w-[150px] sm:max-w-xs md:max-w-md mx-1 sm:mx-4 relative">
             <button
               type="button"
@@ -191,12 +287,12 @@ export const Navbar = () => {
               { path: "/about", label: "About", icon: Info },
               { path: "/contact", label: "Support", icon: Phone },
             ].map((link) => (
-              <Link 
+              <Link
                 key={link.path}
-                to={link.path} 
+                to={link.path}
                 className={`px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-                  location.pathname === link.path 
-                    ? "bg-primary/10 text-primary font-bold" 
+                  location.pathname === link.path
+                    ? "bg-primary/10 text-primary font-bold"
                     : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
                 }`}
               >
@@ -206,11 +302,11 @@ export const Navbar = () => {
             ))}
 
             {isAuthenticated && (
-              <Link 
-                to="/tickets" 
+              <Link
+                to="/tickets"
                 className={`px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
-                  location.pathname === "/tickets" 
-                    ? "bg-primary/10 text-primary font-bold" 
+                  location.pathname === "/tickets"
+                    ? "bg-primary/10 text-primary font-bold"
                     : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
                 }`}
               >
@@ -225,52 +321,74 @@ export const Navbar = () => {
             <ThemeToggle />
 
             {/* Launch Event Button */}
-            <Link 
-              to={isAuthenticated ? "/events/create" : "/login"} 
+            <Link
+              to={isAuthenticated ? "/events/create" : "/login"}
               className="hidden sm:flex items-center gap-1.5 btn btn-xs sm:btn-sm btn-primary rounded-xl font-bold text-[11px] sm:text-xs shadow-sm hover:scale-[1.02] transition-transform"
             >
               <Sparkles size={14} />
               <span>Launch</span>
             </Link>
-            
+
             {isAuthenticated ? (
               <div className="dropdown dropdown-end">
                 <label tabIndex={0} className="cursor-pointer">
                   <div className="flex items-center gap-1.5 sm:gap-2 bg-base-200/70 hover:bg-base-200 p-1 pl-1.5 pr-2 sm:pr-3 rounded-xl border border-base-300 transition-all">
                     <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg overflow-hidden bg-primary/20 text-primary flex items-center justify-center font-bold text-xs">
                       {avatarUrl ? (
-                        <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                        <img
+                          src={avatarUrl}
+                          alt="Profile"
+                          className="w-full h-full object-cover"
+                        />
                       ) : (
                         avatarInitial
                       )}
                     </div>
+
                     <span className="hidden xl:inline text-xs font-bold uppercase tracking-wider">
                       {user?.firstName || "Account"}
                     </span>
-                    
+
                     <ChevronDown size={14} className="opacity-50" />
                   </div>
                 </label>
-                <ul tabIndex={0} className="menu dropdown-content mt-2 p-1.5 shadow-xl bg-base-100 rounded-2xl w-56 border border-base-200 z-[110]">
+
+                <ul
+                  tabIndex={0}
+                  className="menu dropdown-content mt-2 p-1.5 shadow-xl bg-base-100 rounded-2xl w-56 border border-base-200 z-[110]"
+                >
                   <li className="menu-title text-[10px] uppercase font-bold tracking-widest px-3 py-1.5 opacity-40">
                     {role ? `${role.toUpperCase()} MENU` : "DASHBOARD"}
                   </li>
+
                   <li>
-                    <Link to={getDashboardRoute()} className="flex items-center gap-2.5 py-2 px-3 rounded-lg text-xs font-semibold">
-                      {getDashboardIcon()} 
+                    <Link
+                      to={getDashboardRoute()}
+                      className="flex items-center gap-2.5 py-2 px-3 rounded-lg text-xs font-semibold"
+                    >
+                      {getDashboardIcon()}
                       <span>{getDashboardLabel()}</span>
                     </Link>
                   </li>
+
                   <li>
-                    <Link to="/tickets" className="flex items-center gap-2.5 py-2 px-3 rounded-lg text-xs font-semibold">
-                      <Ticket size={15} className="text-primary" /> 
+                    <Link
+                      to="/tickets"
+                      className="flex items-center gap-2.5 py-2 px-3 rounded-lg text-xs font-semibold"
+                    >
+                      <Ticket size={15} className="text-primary" />
                       <span>My Purchases</span>
                     </Link>
                   </li>
+
                   <div className="h-[1px] bg-base-200 my-1" />
+
                   <li>
-                    <button onClick={handleLogout} className="flex items-center gap-2.5 py-2 px-3 rounded-lg text-xs font-semibold text-error hover:bg-error/10">
-                      <LogOut size={15} /> 
+                    <button
+                      onClick={handleLogout}
+                      className="flex items-center gap-2.5 py-2 px-3 rounded-lg text-xs font-semibold text-error hover:bg-error/10"
+                    >
+                      <LogOut size={15} />
                       <span>Sign Out</span>
                     </button>
                   </li>
@@ -278,7 +396,10 @@ export const Navbar = () => {
               </div>
             ) : (
               <div className="hidden sm:flex items-center gap-2">
-                <Link to="/login" className="btn btn-ghost btn-xs sm:btn-sm text-[11px] sm:text-xs font-bold uppercase tracking-wider">
+                <Link
+                  to="/login"
+                  className="btn btn-ghost btn-xs sm:btn-sm text-[11px] sm:text-xs font-bold uppercase tracking-wider"
+                >
                   Sign In
                 </Link>
               </div>
@@ -298,8 +419,12 @@ export const Navbar = () => {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Search input */}
-            <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 p-3 border-b border-base-200">
+            <form
+              onSubmit={handleSearchSubmit}
+              className="flex items-center gap-2 p-3 border-b border-base-200"
+            >
               <Search className="text-base-content/40 w-4 h-4 shrink-0" />
+
               <input
                 autoFocus
                 type="text"
@@ -308,7 +433,11 @@ export const Navbar = () => {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="flex-1 min-w-0 bg-transparent text-base sm:text-sm text-base-content placeholder:text-base-content/40 focus:outline-none"
               />
-              {isSearching && <Loader2 className="text-primary w-4 h-4 animate-spin shrink-0" />}
+
+              {isSearching && (
+                <Loader2 className="text-primary w-4 h-4 animate-spin shrink-0" />
+              )}
+
               <button
                 type="button"
                 onClick={() => setIsSearchOpen(false)}
@@ -324,46 +453,58 @@ export const Navbar = () => {
               {debouncedQuery.length < 2 ? (
                 <div className="p-6 text-center text-xs text-base-content/50 flex flex-col items-center gap-2">
                   <Search size={22} className="text-primary/40" />
-                  <span>Type at least 2 characters to search events.</span>
+                  <span>
+                    Type at least 2 characters to search events.
+                  </span>
                 </div>
-              ) : isSearching && (!searchResults || searchResults.length === 0) ? (
+              ) : isSearching &&
+                (!searchResults || searchResults.length === 0) ? (
                 <div className="p-6 text-center text-xs text-base-content/60 flex items-center justify-center gap-2">
-                  <Loader2 size={14} className="animate-spin text-primary" /> Searching events...
+                  <Loader2
+                    size={14}
+                    className="animate-spin text-primary"
+                  />
+                  Searching events...
                 </div>
               ) : searchResults && searchResults.length > 0 ? (
                 <div className="py-1">
                   <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-base-content/40 border-b border-base-100">
                     Matching Events ({searchResults.length})
                   </div>
+
                   {searchResults.map((event: any) => (
                     <button
                       key={event._id || event.id}
                       onClick={() => handleSelectEvent(event.slug)}
                       className="w-full text-left px-3 py-3 hover:bg-base-200 flex items-center gap-3 transition-colors border-b border-base-100/50 last:border-none"
                     >
-                      {event.bannerImage || event.imageUrl ? (
-                        <img
-                          src={event.bannerImage || event.imageUrl}
-                          alt={event.title}
-                          className="w-12 h-12 rounded-xl object-cover shrink-0"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
-                          <Compass size={18} />
-                        </div>
-                      )}
+                      {/* PRIMARY EVENT MEDIA */}
+                      <EventSearchThumbnail event={event} />
+
                       <div className="flex flex-col overflow-hidden">
-                        <span className="text-xs font-bold text-base-content truncate">{event.title}</span>
-                        <span className="text-[10px] text-base-content/60 truncate">{event.category || event.location || "Event"}</span>
+                        <span className="text-xs font-bold text-base-content truncate">
+                          {event.title}
+                        </span>
+
+                        <span className="text-[10px] text-base-content/60 truncate">
+                          {event.category ||
+                            event.location ||
+                            "Event"}
+                        </span>
                       </div>
                     </button>
                   ))}
+
                   <div className="p-2 border-t border-base-100">
                     <button
                       type="button"
                       onClick={() => {
                         setIsSearchOpen(false);
-                        navigate(`/events?search=${encodeURIComponent(searchQuery.trim())}`);
+                        navigate(
+                          `/events?search=${encodeURIComponent(
+                            searchQuery.trim()
+                          )}`
+                        );
                       }}
                       className="btn btn-ghost btn-xs w-full text-primary rounded-lg text-[11px]"
                     >
@@ -373,7 +514,10 @@ export const Navbar = () => {
                 </div>
               ) : (
                 <div className="p-6 text-center text-xs text-base-content/60 flex flex-col items-center gap-2">
-                  <span>No events found matching "{searchQuery}"</span>
+                  <span>
+                    No events found matching "{searchQuery}"
+                  </span>
+
                   <button
                     type="button"
                     onClick={() => setSearchQuery("")}
@@ -392,7 +536,10 @@ export const Navbar = () => {
       {mobileMenuOpen && (
         <div className="fixed inset-0 top-[57px] bg-base-100/95 backdrop-blur-xl z-[90] lg:hidden flex flex-col p-6 overflow-y-auto animate-in fade-in duration-200">
           <div className="flex flex-col gap-3 font-bold text-sm tracking-wide">
-            <span className="text-[10px] uppercase tracking-widest text-base-content/40 mb-1">Navigation</span>
+            <span className="text-[10px] uppercase tracking-widest text-base-content/40 mb-1">
+              Navigation
+            </span>
+
             {[
               { path: "/", label: "Home", icon: Home },
               { path: "/events", label: "Explore Events", icon: Compass },
@@ -400,12 +547,12 @@ export const Navbar = () => {
               { path: "/about", label: "About", icon: Info },
               { path: "/contact", label: "Support", icon: Phone },
             ].map((link) => (
-              <Link 
+              <Link
                 key={link.path}
-                to={link.path} 
+                to={link.path}
                 className={`p-3 rounded-xl flex items-center gap-3 transition-all ${
-                  location.pathname === link.path 
-                    ? "bg-primary text-primary-content shadow-sm" 
+                  location.pathname === link.path
+                    ? "bg-primary text-primary-content shadow-sm"
                     : "bg-base-200/60 text-base-content hover:bg-base-200"
                 }`}
               >
@@ -416,22 +563,23 @@ export const Navbar = () => {
 
             {isAuthenticated && (
               <>
-                <Link 
-                  to={getDashboardRoute()} 
+                <Link
+                  to={getDashboardRoute()}
                   className={`p-3 rounded-xl flex items-center gap-3 transition-all ${
-                    location.pathname.includes("dashboard") 
-                      ? "bg-primary text-primary-content shadow-sm" 
+                    location.pathname.includes("dashboard")
+                      ? "bg-primary text-primary-content shadow-sm"
                       : "bg-base-200/60 text-base-content hover:bg-base-200"
                   }`}
                 >
                   <LayoutDashboard size={18} />
                   <span>{getDashboardLabel()}</span>
                 </Link>
-                <Link 
-                  to="/tickets" 
+
+                <Link
+                  to="/tickets"
                   className={`p-3 rounded-xl flex items-center gap-3 transition-all ${
-                    location.pathname === "/tickets" 
-                      ? "bg-primary text-primary-content shadow-sm" 
+                    location.pathname === "/tickets"
+                      ? "bg-primary text-primary-content shadow-sm"
                       : "bg-base-200/60 text-base-content hover:bg-base-200"
                   }`}
                 >
@@ -441,18 +589,20 @@ export const Navbar = () => {
               </>
             )}
 
-            <Link 
-              to={isAuthenticated ? "/events/create" : "/login"} 
+            <Link
+              to={isAuthenticated ? "/events/create" : "/login"}
               className="mt-2 p-3 rounded-xl flex items-center gap-3 bg-primary text-primary-content shadow-md"
             >
               <Sparkles size={18} />
               <span>Launch Event</span>
             </Link>
 
-            {/* Mobile Auth Actions */}
             {!isAuthenticated && (
               <div className="mt-4 pt-4 border-t border-base-200 flex flex-col gap-2">
-                <Link to="/login" className="p-3 rounded-xl flex items-center justify-center gap-2 bg-primary text-primary-content text-xs uppercase font-bold shadow-sm">
+                <Link
+                  to="/login"
+                  className="p-3 rounded-xl flex items-center justify-center gap-2 bg-primary text-primary-content text-xs uppercase font-bold shadow-sm"
+                >
                   <LogIn size={16} />
                   <span>Sign In / Register</span>
                 </Link>
@@ -468,30 +618,47 @@ export const Navbar = () => {
           {[
             { path: "/", icon: Home, label: "Home" },
             { path: "/events", icon: Compass, label: "Explore" },
-            { path: isAuthenticated ? "/tickets" : "/login", icon: Ticket, label: "Tickets", hide: !isAuthenticated },
+            {
+              path: isAuthenticated ? "/tickets" : "/login",
+              icon: Ticket,
+              label: "Tickets",
+              hide: !isAuthenticated,
+            },
             { path: "/pricing", icon: Tag, label: "Pricing" },
-            { path: "/events/create", icon: PlusCircle, label: "Launch", highlight: true },
-            { path: "/login", icon: LogIn, label: "Sign In", hide: isAuthenticated },
-          ].map((item) => (
-            !item.hide && (
-              <Link 
-                key={item.path}
-                to={item.path} 
-                className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-all ${
-                  item.highlight 
-                    ? "text-primary scale-105" 
-                    : location.pathname === item.path 
-                      ? "text-primary font-bold" 
+            {
+              path: "/events/create",
+              icon: PlusCircle,
+              label: "Launch",
+              highlight: true,
+            },
+            {
+              path: "/login",
+              icon: LogIn,
+              label: "Sign In",
+              hide: isAuthenticated,
+            },
+          ].map(
+            (item) =>
+              !item.hide && (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-all ${
+                    item.highlight
+                      ? "text-primary scale-105"
+                      : location.pathname === item.path
+                      ? "text-primary font-bold"
                       : "text-base-content/60"
-                }`}
-              >
-                <item.icon size={20} />
-                <span className="text-[9px] tracking-tight mt-0.5 font-semibold">
-                  {item.label}
-                </span>
-              </Link>
-            )
-          ))}
+                  }`}
+                >
+                  <item.icon size={20} />
+
+                  <span className="text-[9px] tracking-tight mt-0.5 font-semibold">
+                    {item.label}
+                  </span>
+                </Link>
+              )
+          )}
         </div>
       </div>
     </>

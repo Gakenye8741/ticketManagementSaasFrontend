@@ -23,11 +23,12 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 
 // ---------------------------------------------------------------------------
-// HOW IT WORKS: detailed steps shown in the guide (paths match the sidebar links)
+// HOW IT WORKS
 // ---------------------------------------------------------------------------
 const GUIDE_STORAGE_KEY = "organizer_guide_seen";
 
-// Height of your fixed top navbar. Change this one value if your navbar is taller or shorter.
+// Fixed navbar height.
+// Keep this synchronized with your actual Navbar height.
 const NAVBAR_HEIGHT = "5rem";
 
 interface GuideStep {
@@ -119,7 +120,9 @@ const guideSteps: GuideStep[] = [
     phase: "Run your event",
     title: "Watch payments",
     text: "View every payment made for your events.",
-    details: ["See each payment, its status and which event it belongs to."],
+    details: [
+      "See each payment, its status and which event it belongs to.",
+    ],
     path: "/organizer-dashboard/payments",
   },
   {
@@ -147,15 +150,26 @@ const guideSteps: GuideStep[] = [
 ];
 
 export const OrganizerLayout = () => {
-  const [sidebarOpen, setSidebarOpen] = useState(false); // Mobile drawer state
-  
-  // Desktop collapse state loaded from localStorage (defaulting to false)
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // ---------------------------------------------------------------------------
+  // DESKTOP SIDEBAR COLLAPSE
+  // ---------------------------------------------------------------------------
   const [isCollapsed, setIsCollapsed] = useState(() => {
-    const savedState = localStorage.getItem("organizer_sidebar_collapsed");
-    return savedState ? JSON.parse(savedState) : false;
+    try {
+      const savedState = localStorage.getItem(
+        "organizer_sidebar_collapsed"
+      );
+
+      return savedState ? JSON.parse(savedState) : false;
+    } catch {
+      return false;
+    }
   });
 
-  // "How it works" guide: opens by itself the first time, then only from the help button
+  // ---------------------------------------------------------------------------
+  // GUIDE MODAL
+  // ---------------------------------------------------------------------------
   const [guideOpen, setGuideOpen] = useState(() => {
     try {
       return !localStorage.getItem(GUIDE_STORAGE_KEY);
@@ -164,103 +178,294 @@ export const OrganizerLayout = () => {
     }
   });
 
+  // ---------------------------------------------------------------------------
+  // SAVE SIDEBAR STATE
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "organizer_sidebar_collapsed",
+        JSON.stringify(isCollapsed)
+      );
+    } catch {
+      // Ignore localStorage errors.
+    }
+  }, [isCollapsed]);
+
+  // ---------------------------------------------------------------------------
+  // CLOSE GUIDE
+  // ---------------------------------------------------------------------------
   const closeGuide = () => {
     setGuideOpen(false);
+
     try {
       localStorage.setItem(GUIDE_STORAGE_KEY, "true");
     } catch {
-      /* storage unavailable, ignore */
+      // Ignore storage errors.
     }
   };
 
-  // Save state to localStorage whenever isCollapsed changes
-  useEffect(() => {
-    localStorage.setItem("organizer_sidebar_collapsed", JSON.stringify(isCollapsed));
-  }, [isCollapsed]);
-
-  // Close the guide with the Escape key
+  // ---------------------------------------------------------------------------
+  // ESCAPE KEY FOR GUIDE
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!guideOpen) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeGuide();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeGuide();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [guideOpen]);
 
+  // ---------------------------------------------------------------------------
+  // LOCK BODY SCROLL WHEN GUIDE IS OPEN
+  //
+  // This prevents the page behind the modal from scrolling while the modal
+  // itself remains scrollable.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!guideOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [guideOpen]);
+
+  // ---------------------------------------------------------------------------
+  // CLOSE MOBILE SIDEBAR WHEN SCREEN BECOMES DESKTOP
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setSidebarOpen(false);
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
   return (
-    <div className="flex h-screen bg-base-100 text-base-content relative overflow-hidden">
-      
-      {/*MOBILE HAMBURGER BUTTON - Appears on small screens*/}
+    <div className="min-h-screen w-full bg-base-100 text-base-content">
+      {/* ===================================================================== */}
+      {/* MOBILE HAMBURGER                                                     */}
+      {/* ===================================================================== */}
+
       {!sidebarOpen && (
         <button
           onClick={() => setSidebarOpen(true)}
-          style={{ top: `calc(${NAVBAR_HEIGHT} + 0.75rem)` }}
-          className="lg:hidden fixed left-4 z-[60] p-2.5 bg-primary text-primary-content rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center"
+          style={{
+            top: `calc(${NAVBAR_HEIGHT} + 0.75rem)`,
+          }}
+          className="
+            lg:hidden
+            fixed
+            left-4
+            z-[60]
+            p-2.5
+            bg-primary
+            text-primary-content
+            rounded-xl
+            shadow-lg
+            active:scale-95
+            transition-transform
+            flex
+            items-center
+            justify-center
+          "
           aria-label="Open Sidebar"
         >
           <Menu size={20} strokeWidth={2.5} />
         </button>
       )}
 
-      {/* 2. DESKTOP COLLAPSIBLE SIDEBAR */}
+      {/* ===================================================================== */}
+      {/* DESKTOP SIDEBAR                                                       */}
+      {/* ===================================================================== */}
+
       <motion.aside
         initial={false}
-        animate={{ width: isCollapsed ? "80px" : "272px" }}
-        transition={{ duration: 0.3, type: "spring", stiffness: 300, damping: 30 }}
-        style={{ top: NAVBAR_HEIGHT, height: `calc(100vh - ${NAVBAR_HEIGHT})` }}
-        className="hidden lg:block fixed left-0 z-30 bg-base-100 border-r border-base-200 shadow-xl overflow-visible"
+        animate={{
+          width: isCollapsed ? "80px" : "272px",
+        }}
+        transition={{
+          duration: 0.3,
+          type: "spring",
+          stiffness: 300,
+          damping: 30,
+        }}
+        style={{
+          top: NAVBAR_HEIGHT,
+          height: `calc(100dvh - ${NAVBAR_HEIGHT})`,
+        }}
+        className="
+          hidden
+          lg:block
+          fixed
+          left-0
+          z-30
+          bg-base-100
+          border-r
+          border-base-200
+          shadow-xl
+          overflow-visible
+        "
       >
-        <div className="h-full flex flex-col relative">
-          
-          {/* Sleek Collapse / Expand Toggle Button */}
+        <div className="h-full flex flex-col relative min-h-0">
+          {/* Collapse button */}
           <button
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className="absolute -right-3.5 top-6 z-50 bg-primary text-primary-content p-1.5 rounded-full shadow-md hover:scale-110 active:scale-95 transition-transform hidden lg:flex items-center justify-center border-2 border-base-100"
-            aria-label={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            onClick={() => setIsCollapsed((previous:any) => !previous)}
+            className="
+              absolute
+              -right-3.5
+              top-6
+              z-50
+              bg-primary
+              text-primary-content
+              p-1.5
+              rounded-full
+              shadow-md
+              hover:scale-110
+              active:scale-95
+              transition-transform
+              hidden
+              lg:flex
+              items-center
+              justify-center
+              border-2
+              border-base-100
+            "
+            aria-label={
+              isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"
+            }
           >
-            {isCollapsed ? <ChevronRight size={14} strokeWidth={3} /> : <ChevronLeft size={14} strokeWidth={3} />}
+            {isCollapsed ? (
+              <ChevronRight size={14} strokeWidth={3} />
+            ) : (
+              <ChevronLeft size={14} strokeWidth={3} />
+            )}
           </button>
 
-          {/* Sidebar Content Component (Passing collapsed state) */}
-          <div className="h-full overflow-y-auto custom-scrollbar">
-             <OrganizerSidebar isCollapsed={isCollapsed} />
+          {/* Sidebar scrolling happens here only */}
+          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+            <OrganizerSidebar isCollapsed={isCollapsed} />
           </div>
         </div>
       </motion.aside>
 
-      {/* 3. MOBILE SLIDING DRAWER & OVERLAY */}
+      {/* ===================================================================== */}
+      {/* MOBILE SIDEBAR OVERLAY + DRAWER                                      */}
+      {/* ===================================================================== */}
+
       <AnimatePresence>
         {sidebarOpen && (
           <>
-            {/* Dark Blur Overlay */}
+            {/* Overlay starts BELOW navbar */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSidebarOpen(false)}
-              style={{ top: NAVBAR_HEIGHT }}
-              className="fixed inset-x-0 bottom-0 z-[70] bg-black/70 backdrop-blur-sm lg:hidden"
+              style={{
+                top: NAVBAR_HEIGHT,
+              }}
+              className="
+                fixed
+                inset-x-0
+                bottom-0
+                z-[70]
+                bg-black/70
+                backdrop-blur-sm
+                lg:hidden
+              "
             />
 
-            {/* Sliding Mobile Sidebar */}
+            {/* Mobile sidebar also starts BELOW navbar */}
             <motion.aside
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed top-0 left-0 z-[80] w-72 h-full bg-base-100 text-base-content border-r border-base-200 shadow-2xl lg:hidden flex flex-col"
+              transition={{
+                type: "spring",
+                damping: 25,
+                stiffness: 200,
+              }}
+              style={{
+                top: NAVBAR_HEIGHT,
+                height: `calc(100dvh - ${NAVBAR_HEIGHT})`,
+              }}
+              className="
+                fixed
+                left-0
+                z-[80]
+                w-72
+                bg-base-100
+                text-base-content
+                border-r
+                border-base-200
+                shadow-2xl
+                lg:hidden
+                flex
+                flex-col
+                min-h-0
+              "
             >
-              <div className="p-4 flex justify-between items-center border-b border-base-200">
-                <span className="font-black italic uppercase tracking-tighter text-primary text-xs">Organizer Menu</span>
-                <button 
+              {/* Mobile sidebar header */}
+              <div
+                className="
+                  shrink-0
+                  p-4
+                  flex
+                  justify-between
+                  items-center
+                  border-b
+                  border-base-200
+                "
+              >
+                <span
+                  className="
+                    font-black
+                    italic
+                    uppercase
+                    tracking-tighter
+                    text-primary
+                    text-xs
+                  "
+                >
+                  Organizer Menu
+                </span>
+
+                <button
                   onClick={() => setSidebarOpen(false)}
-                  className="p-2 hover:bg-base-200 rounded-xl transition-colors text-base-content/50"
+                  className="
+                    p-2
+                    hover:bg-base-200
+                    rounded-xl
+                    transition-colors
+                    text-base-content/50
+                  "
                   aria-label="Close Sidebar"
                 >
                   <X size={20} />
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto pb-32">
+              {/* Only sidebar content scrolls */}
+              <div className="flex-1 min-h-0 overflow-y-auto pb-8">
                 <OrganizerSidebar isCollapsed={false} />
               </div>
             </motion.aside>
@@ -268,175 +473,580 @@ export const OrganizerLayout = () => {
         )}
       </AnimatePresence>
 
-      {/* 4. MAIN CONTENT AREA (Dynamically shifts based on desktop sidebar width) */}
-      <motion.main 
+      {/* ===================================================================== */}
+      {/* DESKTOP MAIN CONTENT                                                  */}
+      {/* ===================================================================== */}
+
+      <motion.main
         initial={false}
-        animate={{ marginLeft: isCollapsed ? "80px" : "272px" }}
-        transition={{ duration: 0.3, type: "spring", stiffness: 300, damping: 30 }}
-        className={`
-          flex-1 h-full overflow-y-auto transition-colors
-          hidden lg:block bg-base-100
-          pt-24 pb-32 px-4 md:px-10
-        `}
+        animate={{
+          marginLeft: isCollapsed ? "80px" : "272px",
+        }}
+        transition={{
+          duration: 0.3,
+          type: "spring",
+          stiffness: 300,
+          damping: 30,
+        }}
+        style={{
+          minHeight: `calc(100dvh - ${NAVBAR_HEIGHT})`,
+          paddingTop: NAVBAR_HEIGHT,
+        }}
+        className="
+          hidden
+          lg:block
+          bg-base-100
+          overflow-x-hidden
+        "
       >
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-7xl mx-auto"
+        <div
+          className="
+            min-h-[calc(100dvh-5rem)]
+            px-4
+            md:px-8
+            xl:px-10
+            pb-32
+          "
         >
-          <Outlet />
-        </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+            className="max-w-7xl mx-auto w-full"
+          >
+            <Outlet />
+          </motion.div>
+        </div>
       </motion.main>
 
-      {/* Mobile Main Content View (No margin shifting required for small viewports) */}
-      <main className="lg:hidden flex-1 h-full overflow-y-auto bg-base-100 pt-24 pb-32 px-4">
-        <div className="max-w-7xl mx-auto">
-          <Outlet />
+      {/* ===================================================================== */}
+      {/* MOBILE MAIN CONTENT                                                   */}
+      {/* ===================================================================== */}
+
+      <main
+        className="
+          lg:hidden
+          min-h-screen
+          bg-base-100
+          overflow-x-hidden
+        "
+        style={{
+          paddingTop: NAVBAR_HEIGHT,
+        }}
+      >
+        <div className="w-full px-4 pb-32">
+          <div className="max-w-7xl mx-auto w-full">
+            <Outlet />
+          </div>
         </div>
       </main>
 
-      {/* 5. HOW IT WORKS: help button */}
+      {/* ===================================================================== */}
+      {/* HOW IT WORKS BUTTON                                                   */}
+      {/* ===================================================================== */}
+
       <button
         onClick={() => setGuideOpen(true)}
-        className="fixed bottom-5 right-5 z-[55] btn btn-primary btn-sm rounded-full shadow-lg gap-1.5 text-xs font-bold"
+        className="
+          fixed
+          bottom-5
+          right-5
+          z-[55]
+          btn
+          btn-primary
+          btn-sm
+          rounded-full
+          shadow-lg
+          gap-1.5
+          text-xs
+          font-bold
+        "
         aria-label="How it works"
       >
         <HelpCircle size={16} />
-        <span className="hidden sm:inline">How it works</span>
+
+        <span className="hidden sm:inline">
+          How it works
+        </span>
       </button>
 
-      {/* 6. HOW IT WORKS: guide modal */}
+      {/* ===================================================================== */}
+      {/* HOW IT WORKS MODAL                                                    */}
+      {/* ===================================================================== */}
+
       <AnimatePresence>
         {guideOpen && (
-          <div
-            className="fixed inset-0 z-[90] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm"
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="
+              fixed
+              inset-0
+              z-[100]
+              bg-black/60
+              backdrop-blur-sm
+              flex
+              items-center
+              justify-center
+              p-2
+              sm:p-4
+            "
             onClick={closeGuide}
           >
             <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 10 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-base-100 border border-base-200 w-full max-w-2xl max-h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden"
+              initial={{
+                opacity: 0,
+                scale: 0.96,
+                y: 10,
+              }}
+              animate={{
+                opacity: 1,
+                scale: 1,
+                y: 0,
+              }}
+              exit={{
+                opacity: 0,
+                scale: 0.96,
+                y: 10,
+              }}
+              transition={{
+                duration: 0.2,
+              }}
+              onClick={(event) => event.stopPropagation()}
+              className="
+                relative
+                bg-base-100
+                border
+                border-base-200
+                w-full
+                max-w-2xl
+                h-auto
+                max-h-[calc(100dvh-1rem)]
+                sm:max-h-[90dvh]
+                rounded-2xl
+                sm:rounded-3xl
+                shadow-2xl
+                flex
+                flex-col
+                overflow-hidden
+              "
               role="dialog"
+              aria-modal="true"
               aria-label="How the organizer portal works"
             >
-              {/* Header */}
-              <div className="flex justify-between items-start gap-3 p-5 sm:p-6 border-b border-base-200 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent">
-                <div className="flex items-start gap-3">
-                  <div className="w-11 h-11 rounded-2xl bg-primary text-primary-content flex items-center justify-center shadow-md shrink-0">
-                    <HelpCircle size={22} />
+              {/* ---------------------------------------------------------------- */}
+              {/* MODAL HEADER                                                     */}
+              {/* ---------------------------------------------------------------- */}
+
+              <div
+                className="
+                  shrink-0
+                  flex
+                  justify-between
+                  items-start
+                  gap-3
+                  p-4
+                  sm:p-6
+                  border-b
+                  border-base-200
+                  bg-gradient-to-br
+                  from-primary/15
+                  via-primary/5
+                  to-transparent
+                "
+              >
+                <div className="flex items-start gap-3 min-w-0">
+                  <div
+                    className="
+                      w-10
+                      h-10
+                      sm:w-11
+                      sm:h-11
+                      rounded-2xl
+                      bg-primary
+                      text-primary-content
+                      flex
+                      items-center
+                      justify-center
+                      shadow-md
+                      shrink-0
+                    "
+                  >
+                    <HelpCircle size={21} />
                   </div>
 
-                  <div className="flex flex-col gap-0.5">
-                    <h3 className="font-black text-base sm:text-lg text-base-content tracking-tight">How it works</h3>
-                    <p className="text-[11px] sm:text-xs text-base-content/60 leading-snug">
-                      From setup to payout, here is the usual order. Tap a step to open that page.
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <h3
+                      className="
+                        font-black
+                        text-base
+                        sm:text-lg
+                        text-base-content
+                        tracking-tight
+                      "
+                    >
+                      How it works
+                    </h3>
+
+                    <p
+                      className="
+                        text-[11px]
+                        sm:text-xs
+                        text-base-content/60
+                        leading-snug
+                      "
+                    >
+                      From setup to payout, here is the usual order. Tap a
+                      step to open that page.
                     </p>
                   </div>
                 </div>
 
-                <button onClick={closeGuide} className="btn btn-ghost btn-sm btn-square rounded-xl" aria-label="Close guide">
+                <button
+                  onClick={closeGuide}
+                  className="
+                    btn
+                    btn-ghost
+                    btn-sm
+                    btn-square
+                    rounded-xl
+                    shrink-0
+                  "
+                  aria-label="Close guide"
+                >
                   <X size={16} />
                 </button>
               </div>
 
-              {/* Scrollable body */}
-              <div className="overflow-y-auto flex-1 min-h-0 p-4 sm:p-6 flex flex-col gap-5">
-                {/* Verification reminder */}
-                <div className="rounded-2xl border border-warning/40 bg-warning/10 p-3.5 flex gap-3">
-                  <ShieldCheck size={20} className="text-warning shrink-0 mt-0.5" />
+              {/* ---------------------------------------------------------------- */}
+              {/* MODAL BODY                                                       */}
+              {/* ---------------------------------------------------------------- */}
 
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-xs font-black text-base-content">Verify first</span>
-                    <span className="text-[11px] sm:text-xs text-base-content/70 leading-snug">
-                      Your organization must be verified before you can do anything else. Approval usually takes about
-                      10 to 60 minutes after you submit.
-                    </span>
+              <div
+                className="
+                  flex-1
+                  min-h-0
+                  overflow-y-auto
+                  overscroll-contain
+                  p-3
+                  sm:p-6
+                "
+              >
+                <div className="flex flex-col gap-4 sm:gap-5">
+                  {/* Verification reminder */}
+                  <div
+                    className="
+                      rounded-2xl
+                      border
+                      border-warning/40
+                      bg-warning/10
+                      p-3
+                      sm:p-3.5
+                      flex
+                      gap-3
+                    "
+                  >
+                    <ShieldCheck
+                      size={20}
+                      className="text-warning shrink-0 mt-0.5"
+                    />
+
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <span className="text-xs font-black text-base-content">
+                        Verify first
+                      </span>
+
+                      <span
+                        className="
+                          text-[11px]
+                          sm:text-xs
+                          text-base-content/70
+                          leading-snug
+                        "
+                      >
+                        Your organization must be verified before you can do
+                        anything else. Approval usually takes about 10 to 60
+                        minutes after you submit.
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                {/* Steps */}
-                <ol className="flex flex-col">
-                  {guideSteps.map((step, i) => {
-                    const showPhase = i === 0 || guideSteps[i - 1].phase !== step.phase;
-                    const isLast = i === guideSteps.length - 1;
+                  {/* Steps */}
+                  <ol className="flex flex-col">
+                    {guideSteps.map((step, i) => {
+                      const showPhase =
+                        i === 0 ||
+                        guideSteps[i - 1].phase !== step.phase;
 
-                    return (
-                      <li key={step.path}>
-                        {showPhase && (
-                          <p className="text-[10px] font-black uppercase tracking-widest text-primary/70 pl-1 mb-2 mt-1">
-                            {step.phase}
-                          </p>
-                        )}
+                      const isLast =
+                        i === guideSteps.length - 1;
 
-                        <div className="flex gap-3">
-                          {/* Icon + connecting line */}
-                          <div className="flex flex-col items-center shrink-0">
-                            <div className="relative">
-                              <div className="w-10 h-10 rounded-xl bg-primary text-primary-content flex items-center justify-center shadow-sm">
-                                <step.icon size={18} />
+                      return (
+                        <li key={step.path}>
+                          {/* Phase */}
+                          {showPhase && (
+                            <p
+                              className="
+                                text-[10px]
+                                font-black
+                                uppercase
+                                tracking-widest
+                                text-primary/70
+                                pl-1
+                                mb-2
+                                mt-1
+                              "
+                            >
+                              {step.phase}
+                            </p>
+                          )}
+
+                          <div className="flex gap-2.5 sm:gap-3">
+                            {/* Icon + line */}
+                            <div
+                              className="
+                                flex
+                                flex-col
+                                items-center
+                                shrink-0
+                              "
+                            >
+                              <div className="relative">
+                                <div
+                                  className="
+                                    w-9
+                                    h-9
+                                    sm:w-10
+                                    sm:h-10
+                                    rounded-xl
+                                    bg-primary
+                                    text-primary-content
+                                    flex
+                                    items-center
+                                    justify-center
+                                    shadow-sm
+                                  "
+                                >
+                                  <step.icon size={17} />
+                                </div>
+
+                                <span
+                                  className="
+                                    absolute
+                                    -top-1.5
+                                    -left-1.5
+                                    w-5
+                                    h-5
+                                    rounded-full
+                                    bg-base-100
+                                    border
+                                    border-primary/40
+                                    text-primary
+                                    text-[10px]
+                                    font-black
+                                    flex
+                                    items-center
+                                    justify-center
+                                  "
+                                >
+                                  {i + 1}
+                                </span>
                               </div>
 
-                              <span className="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-base-100 border border-primary/40 text-primary text-[10px] font-black flex items-center justify-center">
-                                {i + 1}
-                              </span>
+                              {!isLast && (
+                                <div
+                                  className="
+                                    w-px
+                                    flex-1
+                                    min-h-4
+                                    my-1
+                                    bg-gradient-to-b
+                                    from-primary/40
+                                    to-base-300
+                                  "
+                                />
+                              )}
                             </div>
 
-                            {!isLast && <div className="w-px flex-1 my-1 bg-gradient-to-b from-primary/40 to-base-300" />}
+                            {/* Step card */}
+                            <Link
+                              to={step.path}
+                              onClick={closeGuide}
+                              className="
+                                group
+                                flex-1
+                                min-w-0
+                                mb-3
+                                p-3
+                                sm:p-3.5
+                                rounded-2xl
+                                border
+                                border-base-200
+                                bg-base-200/30
+                                hover:border-primary/40
+                                hover:bg-primary/5
+                                transition-all
+                              "
+                            >
+                              <div
+                                className="
+                                  flex
+                                  items-start
+                                  justify-between
+                                  gap-2
+                                "
+                              >
+                                <div
+                                  className="
+                                    flex
+                                    flex-wrap
+                                    items-center
+                                    gap-2
+                                    min-w-0
+                                  "
+                                >
+                                  <span
+                                    className="
+                                      text-sm
+                                      font-bold
+                                      text-base-content
+                                    "
+                                  >
+                                    {step.title}
+                                  </span>
+
+                                  {step.badge && (
+                                    <span
+                                      className="
+                                        badge
+                                        badge-sm
+                                        badge-primary
+                                        font-bold
+                                        text-[10px]
+                                      "
+                                    >
+                                      {step.badge}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <ArrowRight
+                                  size={16}
+                                  className="
+                                    text-base-content/30
+                                    group-hover:text-primary
+                                    group-hover:translate-x-0.5
+                                    transition-all
+                                    shrink-0
+                                    mt-0.5
+                                  "
+                                />
+                              </div>
+
+                              <p
+                                className="
+                                  text-[11px]
+                                  sm:text-xs
+                                  text-base-content/60
+                                  leading-snug
+                                  mt-1
+                                "
+                              >
+                                {step.text}
+                              </p>
+
+                              <ul
+                                className="
+                                  flex
+                                  flex-col
+                                  gap-1
+                                  mt-2.5
+                                "
+                              >
+                                {step.details.map((detail) => (
+                                  <li
+                                    key={detail}
+                                    className="
+                                      flex
+                                      items-start
+                                      gap-2
+                                      text-[11px]
+                                      sm:text-xs
+                                      text-base-content/70
+                                    "
+                                  >
+                                    <Check
+                                      size={12}
+                                      className="
+                                        text-primary
+                                        shrink-0
+                                        mt-0.5
+                                      "
+                                    />
+
+                                    <span className="leading-snug">
+                                      {detail}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </Link>
                           </div>
-
-                          {/* Card */}
-                          <Link
-                            to={step.path}
-                            onClick={closeGuide}
-                            className="group flex-1 min-w-0 mb-3 p-3.5 rounded-2xl border border-base-200 bg-base-200/30 hover:border-primary/40 hover:bg-primary/5 transition-all"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex flex-wrap items-center gap-2 min-w-0">
-                                <span className="text-sm font-bold text-base-content">{step.title}</span>
-
-                                {step.badge && (
-                                  <span className="badge badge-sm badge-primary font-bold text-[10px]">{step.badge}</span>
-                                )}
-                              </div>
-
-                              <ArrowRight
-                                size={16}
-                                className="text-base-content/30 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-0.5"
-                              />
-                            </div>
-
-                            <p className="text-[11px] sm:text-xs text-base-content/60 leading-snug mt-1">{step.text}</p>
-
-                            <ul className="flex flex-col gap-1 mt-2.5">
-                              {step.details.map((detail) => (
-                                <li key={detail} className="flex items-start gap-2 text-[11px] sm:text-xs text-base-content/70">
-                                  <Check size={12} className="text-primary shrink-0 mt-0.5" />
-                                  <span className="leading-snug">{detail}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </Link>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
               </div>
 
-              {/* Footer */}
-              <div className="flex items-center justify-between gap-3 p-4 sm:p-5 border-t border-base-200 bg-base-100">
-                <span className="hidden sm:block text-[11px] text-base-content/50">
-                  You can open this guide any time with the How it works button.
+              {/* ---------------------------------------------------------------- */}
+              {/* MODAL FOOTER                                                     */}
+              {/* ---------------------------------------------------------------- */}
+
+              <div
+                className="
+                  shrink-0
+                  flex
+                  items-center
+                  justify-end
+                  gap-3
+                  p-3
+                  sm:p-5
+                  border-t
+                  border-base-200
+                  bg-base-100
+                "
+              >
+                <span
+                  className="
+                    hidden
+                    sm:block
+                    text-[11px]
+                    text-base-content/50
+                    mr-auto
+                  "
+                >
+                  You can open this guide any time with the How it works
+                  button.
                 </span>
 
-                <button onClick={closeGuide} className="btn btn-primary btn-sm rounded-xl text-xs font-bold ml-auto">
+                <button
+                  onClick={closeGuide}
+                  className="
+                    btn
+                    btn-primary
+                    btn-sm
+                    rounded-xl
+                    text-xs
+                    font-bold
+                  "
+                >
                   Got it
                 </button>
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

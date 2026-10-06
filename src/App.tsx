@@ -12,7 +12,6 @@ import Error from './pages/Error';
 import { Analytics } from './DashBoards/adminDashboard/Analytics';
 import AdminManageUsers from './DashBoards/adminDashboard/AllUsers';
 import { AllVenues } from './DashBoards/adminDashboard/AllVenues';
-import { EventDetailsPage } from './DashBoards/adminDashboard/AllEvents';
 // import BookingsByNationalId from './DashBoards/dashboard/BookingsById';
 import { TicketTypes } from './DashBoards/adminDashboard/getAllTicketTypes';
 import { AllBookings } from './DashBoards/adminDashboard/AllBookings';
@@ -51,6 +50,8 @@ import WalletManager from './DashBoards/OrganizerDashboard/WalletManager';
 import OrganizerProfileManager from './DashBoards/OrganizerDashboard/OrganizerProfileManager';
 import VenueManager from './DashBoards/OrganizerDashboard/VenueManager';
 import AdminVerificationManager from './DashBoards/adminDashboard/Adminverificationmanager';
+import AdminEventManager from './DashBoards/adminDashboard/AdminEventManager';
+import AdminProfileManager from './DashBoards/adminDashboard/AdminUserProfile';
 
 function App() {
   const Router = createBrowserRouter([
@@ -110,10 +111,10 @@ function App() {
         { path: 'supportTickets', element: <AdminSupportTickets /> },
         { path: 'users', element: <AdminManageUsers/> },
         { path: 'AllVenues', element: <AllVenues /> },
-        { path: 'AllEvents', element: <EventDetailsPage /> },
+        { path: 'events', element: <AdminEventManager /> },
         { path: 'ticketTypes', element: <TicketTypes /> },
         { path: 'AllPayments', element: <AllPayments /> },
-        // { path: 'adminprofile', element: <AdminUserProfile /> },
+        { path: 'profile', element: <AdminProfileManager /> },
         { path: 'SalesReports', element: <SalesReport /> },
       ],
     },

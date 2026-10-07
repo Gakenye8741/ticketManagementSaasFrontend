@@ -220,16 +220,110 @@ const unwrapVerification = (payload: unknown): Verification | undefined => {
   return record?.id ? record : undefined;
 };
 
+// ======================================================
+// ERROR HELPERS (always produce a plain string, never an object)
+// ======================================================
+
+/** Walks a Zod `.format()` tree ({ _errors, field: { _errors } }) into readable lines */
+const flattenZodErrors = (node: unknown, path = ""): string[] => {
+  if (!node || typeof node !== "object") return [];
+
+  const obj = node as Record<string, unknown>;
+  const lines: string[] = [];
+
+  if (Array.isArray(obj._errors)) {
+    obj._errors.forEach((m) => {
+      if (typeof m === "string") lines.push(path ? `${path}: ${m}` : m);
+    });
+  }
+
+  Object.entries(obj).forEach(([key, value]) => {
+    if (key === "_errors") return;
+    lines.push(...flattenZodErrors(value, path ? `${path}.${key}` : key));
+  });
+
+  return lines;
+};
+
+/** Converts any backend error payload (string, Zod format, Zod flatten, issue array) into text */
+const toText = (value: unknown): string | null => {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "string") return value;
+
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object") {
+          const issue = item as Record<string, any>;
+          const field = Array.isArray(issue.path) ? issue.path.join(".") : "";
+          if (typeof issue.message === "string") return field ? `${field}: ${issue.message}` : issue.message;
+        }
+        return "";
+      })
+      .filter(Boolean);
+    return parts.length ? parts.join(". ") : null;
+  }
+
+  if (typeof value === "object") {
+    const obj = value as Record<string, any>;
+
+    // Zod .flatten() shape: { formErrors: [], fieldErrors: { slug: ["..."] } }
+    if (obj.fieldErrors || obj.formErrors) {
+      const fieldLines = Object.entries(obj.fieldErrors ?? {}).flatMap(([field, msgs]) =>
+        Array.isArray(msgs) ? (msgs as string[]).map((m) => `${field}: ${m}`) : []
+      );
+      const formLines = Array.isArray(obj.formErrors) ? (obj.formErrors as string[]) : [];
+      const all = [...formLines, ...fieldLines];
+      if (all.length) return all.join(". ");
+    }
+
+    // Zod .format() shape
+    const flat = flattenZodErrors(obj);
+    if (flat.length) return flat.join(". ");
+
+    if (typeof obj.message === "string") return obj.message;
+  }
+
+  return null;
+};
+
 const getErrorMessage = (err: any, fallback: string): string => {
-  if (err?.data?.message) return err.data.message;
-  if (err?.data?.error) return err.data.error;
-  if (err?.status === 400) return err?.data?.message || "Invalid request.";
+  const fromBody = toText(err?.data?.message) ?? toText(err?.data?.errors) ?? toText(err?.data?.error);
+  if (fromBody) return fromBody;
+
+  if (err?.status === 400) return "Invalid request. Please check your details.";
   if (err?.status === 401) return "Your session has expired. Please log in again.";
   if (err?.status === 403) return "You don't have permission to do that.";
   if (err?.status === 404) return "The requested organization or member was not found.";
+  if (err?.status === 409) return "That slug or name is already taken. Try a different one.";
   if (err?.status === 429) return "Too many requests. Please wait a moment and try again.";
   if (err?.status === "FETCH_ERROR") return "Cannot reach the server. Check your connection or API URL.";
-  return fallback;
+
+  return typeof fallback === "string" ? fallback : "Something went wrong.";
+};
+
+/** Lowercase letters, numbers and single hyphens only (accents are stripped, other symbols become hyphens) */
+const slugify = (value: string): string =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const randomSuffix = (): string => Math.random().toString(36).slice(2, 6).padEnd(4, "x");
+
+/** Builds a valid, unique-ish slug from the organization name, e.g. "Tech Fest Kenya" -> "tech-fest-kenya-k3x9" */
+const generateSlug = (name: string): string => {
+  const base = slugify(name).slice(0, 40).replace(/-+$/, "") || "org";
+  return `${base}-${randomSuffix()}`;
+};
+
+const isSlugConflict = (err: any): boolean => {
+  if (err?.status === 409) return true;
+  const text = (toText(err?.data?.message) ?? toText(err?.data?.error) ?? "").toLowerCase();
+  return text.includes("slug") && (text.includes("taken") || text.includes("exist") || text.includes("unique") || text.includes("duplicate"));
 };
 
 const formatDate = (d?: string) =>
@@ -261,6 +355,18 @@ const uploadToCloudinary = async (
 
   return response.data.secure_url as string;
 };
+
+// ======================================================
+// INLINE ERROR (shown inside modals so it is visible on small screens)
+// ======================================================
+
+const InlineError = ({ message }: { message: string }) =>
+  message ? (
+    <div className="alert alert-error text-xs font-semibold py-2 rounded-xl">
+      <AlertCircle size={16} className="shrink-0" />
+      <span className="break-words min-w-0">{message}</span>
+    </div>
+  ) : null;
 
 // ======================================================
 // LOGO (image or fallback icon)
@@ -320,27 +426,13 @@ const LogoUploader = ({ value, name, onChange, onUploadingChange }: LogoUploader
       return;
     }
 
-    const cloudFormData = new FormData();
-    cloudFormData.append("file", file);
-    cloudFormData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-
     try {
       setUploading(true);
       onUploadingChange(true);
       setProgress(0);
 
-      const response = await axios.post(
-        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-        cloudFormData,
-        {
-          onUploadProgress: (progressEvent) => {
-            const percent = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1));
-            setProgress(percent);
-          },
-        }
-      );
-
-      onChange(response.data.secure_url);
+      const url = await uploadToCloudinary(file, setProgress, "image");
+      onChange(url);
     } catch {
       setError("Logo upload failed. Please try again.");
     } finally {
@@ -534,6 +626,9 @@ const UserPicker = ({ value, onChange, existingDigitalIds }: UserPickerProps) =>
         <input
           type="text"
           autoFocus
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           placeholder="Search by last name"
           value={term}
           onChange={(e) => setTerm(e.target.value)}
@@ -597,12 +692,18 @@ interface ModalShellProps {
 }
 
 const ModalShell = ({ title, onClose, maxWidth = "max-w-lg", children }: ModalShellProps) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+  <div
+    className="fixed inset-0 z-[100] flex items-center justify-center px-3 sm:px-4 bg-black/70 backdrop-blur-sm"
+    style={{
+      paddingTop: "max(0.75rem, env(safe-area-inset-top))",
+      paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))",
+    }}
+  >
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className={`bg-base-100 border border-base-200 w-full ${maxWidth} max-h-[92vh] overflow-y-auto rounded-3xl p-6 shadow-2xl flex flex-col gap-6`}
+      className={`bg-base-100 border border-base-200 w-full ${maxWidth} max-h-full overflow-y-auto overflow-x-hidden rounded-3xl p-4 sm:p-6 shadow-2xl flex flex-col gap-5 sm:gap-6`}
     >
       <div className="flex justify-between items-center border-b border-base-200 pb-4">
         <h3 className="font-black text-sm uppercase tracking-wider text-primary">{title}</h3>
@@ -751,7 +852,7 @@ const DocUploader = ({ label, hint, value, onChange, onUploadingChange }: DocUpl
 };
 
 // ======================================================
-// CAMERA CAPTURE (asks the browser for the camera, snaps a photo)
+// CAMERA CAPTURE (live camera, with a native phone-camera fallback)
 // ======================================================
 
 interface CameraCaptureProps {
@@ -775,7 +876,9 @@ const CameraCapture = ({ prompt, busy, onCapture }: CameraCaptureProps) => {
       setReady(false);
 
       if (!navigator.mediaDevices?.getUserMedia) {
-        setError("Your browser does not support camera access.");
+        setError(
+          "Live camera is not available here (it needs https and a supported browser). You can use your phone camera instead."
+        );
         return;
       }
 
@@ -800,7 +903,7 @@ const CameraCapture = ({ prompt, busy, onCapture }: CameraCaptureProps) => {
 
         setReady(true);
       } catch {
-        setError("Camera access was blocked. Allow camera permission in your browser and try again.");
+        setError("Camera access was blocked. Allow camera permission in your browser, or use your phone camera instead.");
       }
     };
 
@@ -839,13 +942,37 @@ const CameraCapture = ({ prompt, busy, onCapture }: CameraCaptureProps) => {
     return (
       <div className="flex flex-col gap-3 p-4 rounded-2xl bg-error/10 border border-error/30">
         <span className="text-[11px] font-semibold text-error">{error}</span>
-        <button
-          type="button"
-          onClick={() => setAttempt((n) => n + 1)}
-          className="btn btn-sm btn-outline btn-error rounded-xl text-xs font-bold w-fit"
-        >
-          Try again
-        </button>
+
+        <p className="text-xs font-bold text-base-content">{prompt}</p>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setAttempt((n) => n + 1)}
+            className="btn btn-sm btn-outline btn-error rounded-xl text-xs font-bold"
+          >
+            Try again
+          </button>
+
+          <label
+            className={`btn btn-sm btn-primary rounded-xl text-xs font-bold gap-2 ${busy ? "btn-disabled" : ""}`}
+          >
+            <Camera size={14} />
+            {busy ? "Uploading..." : "Use phone camera"}
+            <input
+              type="file"
+              accept="image/*"
+              capture="user"
+              className="hidden"
+              disabled={busy}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) onCapture(file);
+              }}
+            />
+          </label>
+        </div>
       </div>
     );
   }
@@ -853,12 +980,7 @@ const CameraCapture = ({ prompt, busy, onCapture }: CameraCaptureProps) => {
   return (
     <div className="flex flex-col gap-3">
       <div className="relative rounded-2xl overflow-hidden bg-black aspect-[4/3] w-full">
-        <video
-          ref={videoRef}
-          playsInline
-          muted
-          className="w-full h-full object-cover scale-x-[-1]"
-        />
+        <video ref={videoRef} playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
 
         {!ready && (
           <div className="absolute inset-0 flex items-center justify-center text-white/70 text-xs font-bold gap-2">
@@ -891,31 +1013,31 @@ const CameraCapture = ({ prompt, busy, onCapture }: CameraCaptureProps) => {
 };
 
 // ======================================================
-// VERIFICATION MODAL (details → documents → live selfies → save)
-// ======================================================
-
-// ======================================================
-// VERIFICATION REQUIRED NOTICE (shown wherever verification is pending action)
+// VERIFICATION REQUIRED NOTICE
 // ======================================================
 
 const VerificationRequiredNotice = () => (
   <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4 flex gap-3 text-xs">
     <AlertCircle size={20} className="text-warning shrink-0 mt-0.5" />
 
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1 min-w-0">
       <span className="font-black text-sm text-base-content">Verification is required</span>
 
       <span className="text-base-content/70">
         Without verification, nothing can be done with your organization. Complete it now to get started.
       </span>
 
-      <span className="flex items-center gap-1.5 font-bold text-base-content mt-1">
-        <Clock size={13} className="text-warning shrink-0" />
+      <span className="flex items-start gap-1.5 font-bold text-base-content mt-1">
+        <Clock size={13} className="text-warning shrink-0 mt-0.5" />
         Approval usually takes about {VERIFICATION_REVIEW_TIME} after you submit.
       </span>
     </div>
   </div>
 );
+
+// ======================================================
+// VERIFICATION MODAL (details → documents → live selfies → save)
+// ======================================================
 
 interface VerificationModalProps {
   orgId: number;
@@ -1012,13 +1134,15 @@ const VerificationModal = ({ orgId, userId, mode, verificationId, onClose, onDon
       <div className="flex flex-col gap-5 text-xs">
         <VerificationRequiredNotice />
 
-        <ul className="steps steps-horizontal w-full text-[11px] font-bold">
-          {VERIFICATION_STEPS.map((label, i) => (
-            <li key={label} className={`step ${i <= step ? "step-primary" : ""}`}>
-              {label}
-            </li>
-          ))}
-        </ul>
+        <div className="w-full overflow-x-hidden">
+          <ul className="steps steps-horizontal w-full text-[10px] sm:text-[11px] font-bold">
+            {VERIFICATION_STEPS.map((label, i) => (
+              <li key={label} className={`step ${i <= step ? "step-primary" : ""}`}>
+                {label}
+              </li>
+            ))}
+          </ul>
+        </div>
 
         {/* STEP 1: DETAILS */}
         {step === 0 && (
@@ -1148,7 +1272,7 @@ const VerificationModal = ({ orgId, userId, mode, verificationId, onClose, onDon
 
             {allSelfiesDone && (
               <div className="alert alert-success text-xs font-bold rounded-2xl py-2">
-                <CheckCircle2 size={16} />
+                <CheckCircle2 size={16} className="shrink-0" />
                 <span>
                   All uploads complete. Submit to send your verification for review. Approval usually takes about{" "}
                   {VERIFICATION_REVIEW_TIME}.
@@ -1156,12 +1280,7 @@ const VerificationModal = ({ orgId, userId, mode, verificationId, onClose, onDon
               </div>
             )}
 
-            {submitError && (
-              <div className="alert alert-error text-xs font-semibold py-2 rounded-xl">
-                <AlertCircle size={16} className="shrink-0" />
-                <span>{submitError}</span>
-              </div>
-            )}
+            <InlineError message={submitError} />
           </div>
         )}
 
@@ -1206,7 +1325,7 @@ const VerificationModal = ({ orgId, userId, mode, verificationId, onClose, onDon
 };
 
 // ======================================================
-// VERIFICATION PANEL (status card; no images once a record exists)
+// VERIFICATION PANEL (status card)
 // ======================================================
 
 interface VerificationPanelProps {
@@ -1234,19 +1353,17 @@ const VerificationPanel = ({ orgId, orgVerified, onStart }: VerificationPanelPro
 
   return (
     <div
-      className={`bg-base-200/40 border p-6 rounded-3xl flex flex-col gap-4 ${
+      className={`bg-base-200/40 border p-4 sm:p-6 rounded-3xl flex flex-col gap-4 ${
         isVerified ? "border-base-200" : "border-warning/50 shadow-sm"
       }`}
     >
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-base font-black tracking-tight text-base-content flex items-center gap-2">
-          <ShieldCheck size={18} className="text-primary" />
+          <ShieldCheck size={18} className="text-primary shrink-0" />
           Organization Verification
         </h3>
 
-        {statusMeta && (
-          <span className={`badge badge-sm font-bold ${statusMeta.badge}`}>{statusMeta.label}</span>
-        )}
+        {statusMeta && <span className={`badge badge-sm font-bold ${statusMeta.badge}`}>{statusMeta.label}</span>}
       </div>
 
       {isLoading ? (
@@ -1269,18 +1386,18 @@ const VerificationPanel = ({ orgId, orgVerified, onStart }: VerificationPanelPro
             <VerificationRequiredNotice />
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <p className="text-xs text-base-content/60 max-w-xl">
-              Verify your identity to build trust with attendees and unlock payouts. You'll upload your ID, take a
-              couple of live selfies, and we'll review it.
-            </p>
+              <p className="text-xs text-base-content/60 max-w-xl">
+                Verify your identity to build trust with attendees and unlock payouts. You'll upload your ID, take a
+                couple of live selfies, and we'll review it.
+              </p>
 
-            <button
-              onClick={() => onStart("create")}
-              className="btn btn-primary btn-sm rounded-xl text-xs font-bold gap-2 shrink-0"
-            >
-              <ShieldCheck size={15} />
-              Start Verification
-            </button>
+              <button
+                onClick={() => onStart("create")}
+                className="btn btn-primary btn-sm rounded-xl text-xs font-bold gap-2 shrink-0"
+              >
+                <ShieldCheck size={15} />
+                Start Verification
+              </button>
             </div>
           </>
         )
@@ -1319,7 +1436,7 @@ const VerificationPanel = ({ orgId, orgVerified, onStart }: VerificationPanelPro
                   <span className="text-[10px] uppercase tracking-widest text-base-content/50 font-bold">
                     {REJECTION_FIELD_LABELS[item.key]}
                   </span>
-                  <span className="font-semibold text-base-content">{item.text}</span>
+                  <span className="font-semibold text-base-content break-words">{item.text}</span>
                 </li>
               ))}
             </ul>
@@ -1366,7 +1483,9 @@ export const OrganizationManager = () => {
 
   // Include a just-created organization even if the membership list has not refreshed yet
   const organizationIds =
-    selectedOrgId && !membershipOrgIds.includes(selectedOrgId) ? [...membershipOrgIds, selectedOrgId] : membershipOrgIds;
+    selectedOrgId && !membershipOrgIds.includes(selectedOrgId)
+      ? [...membershipOrgIds, selectedOrgId]
+      : membershipOrgIds;
 
   const activeOrgId = selectedOrgId ?? organizationIds[0] ?? undefined;
 
@@ -1418,6 +1537,9 @@ export const OrganizationManager = () => {
 
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  // Error shown INSIDE the open create / edit / payout modal (page-level alerts hide behind the overlay)
+  const [modalError, setModalError] = useState("");
 
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
@@ -1478,27 +1600,52 @@ export const OrganizationManager = () => {
   const handleCreateOrg = async (e: FormEvent) => {
     e.preventDefault();
 
+    setModalError("");
     setErrorMessage("");
 
     if (ownsOrganization) {
-      setErrorMessage("You already have an organization. Only one organization is allowed per account.");
+      setModalError("You already have an organization. Only one organization is allowed per account.");
+      return;
+    }
+
+    const orgName = formData.name.trim();
+
+    if (!orgName) {
+      setModalError("Please enter your organization name.");
       return;
     }
 
     try {
-      const created = await createOrganization({
-        name: formData.name,
-        slug: formData.slug,
-        supportEmail: formData.supportEmail || null,
-        supportPhone: formData.supportPhone || null,
-        logoUrl: formData.logoUrl || null,
-        payoutPhone: formData.payoutPhone || null,
-        payoutType: formData.payoutType,
-      }).unwrap();
+      // The slug is generated automatically. If it happens to collide, retry with a fresh suffix.
+      let created: unknown;
+      let lastError: unknown;
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          created = await createOrganization({
+            name: orgName,
+            slug: generateSlug(orgName),
+            supportEmail: formData.supportEmail.trim() || null,
+            supportPhone: formData.supportPhone.trim() || null,
+            logoUrl: formData.logoUrl || null,
+            payoutPhone: formData.payoutPhone.trim() || null,
+            payoutType: formData.payoutType,
+          }).unwrap();
+          lastError = undefined;
+          break;
+        } catch (err) {
+          lastError = err;
+          if (!isSlugConflict(err)) break;
+        }
+      }
+
+      if (lastError) throw lastError;
+
+      const createdOrg = unwrapOrg(created);
 
       // API Organization uses `id`
-      if (created?.id) {
-        setSelectedOrgId(created.id);
+      if (createdOrg?.id) {
+        setSelectedOrgId(createdOrg.id);
         setHasCreatedOrg(true);
       }
 
@@ -1506,13 +1653,14 @@ export const OrganizationManager = () => {
 
       setIsCreateModalOpen(false);
       setFormData(EMPTY_ORG_FORM);
+      setModalError("");
 
       // After creating the organization, go straight to verification
-      if (created?.id && digitalId) {
+      if (createdOrg?.id && digitalId) {
         openVerificationModal("create");
       }
     } catch (err) {
-      showError(err, "Failed to create organization.");
+      setModalError(getErrorMessage(err, "Failed to create organization."));
     }
   };
 
@@ -1525,15 +1673,15 @@ export const OrganizationManager = () => {
 
     if (!activeOrgId) return;
 
-    setErrorMessage("");
+    setModalError("");
 
     try {
       await updateOrganization({
         orgId: activeOrgId,
         data: {
-          name: formData.name,
-          supportEmail: formData.supportEmail || null,
-          supportPhone: formData.supportPhone || null,
+          name: formData.name.trim(),
+          supportEmail: formData.supportEmail.trim() || null,
+          supportPhone: formData.supportPhone.trim() || null,
           logoUrl: formData.logoUrl || null,
         },
       }).unwrap();
@@ -1542,7 +1690,7 @@ export const OrganizationManager = () => {
 
       setIsEditModalOpen(false);
     } catch (err) {
-      showError(err, "Failed to update organization.");
+      setModalError(getErrorMessage(err, "Failed to update organization."));
     }
   };
 
@@ -1555,13 +1703,13 @@ export const OrganizationManager = () => {
 
     if (!activeOrgId) return;
 
-    setErrorMessage("");
+    setModalError("");
 
     try {
       await updatePayoutConfig({
         orgId: activeOrgId,
         data: {
-          payoutPhone: payoutData.payoutPhone,
+          payoutPhone: payoutData.payoutPhone.trim(),
           payoutType: payoutData.payoutType,
         },
       }).unwrap();
@@ -1570,7 +1718,7 @@ export const OrganizationManager = () => {
 
       setIsPayoutModalOpen(false);
     } catch (err) {
-      showError(err, "Failed to update payout configuration.");
+      setModalError(getErrorMessage(err, "Failed to update payout configuration."));
     }
   };
 
@@ -1630,17 +1778,19 @@ export const OrganizationManager = () => {
   };
 
   // ====================================================
-  // OPEN MODALS
+  // OPEN / CLOSE MODALS
   // ====================================================
 
   const openCreateModal = () => {
     if (ownsOrganization) {
       setSuccessMessage("");
       setErrorMessage("You already have an organization. Only one organization is allowed per account.");
+      window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
 
     setFormData(EMPTY_ORG_FORM);
+    setModalError("");
     setIsCreateModalOpen(true);
   };
 
@@ -1657,6 +1807,7 @@ export const OrganizationManager = () => {
       payoutType: org.payoutType || "mpesa_phone",
     });
 
+    setModalError("");
     setIsEditModalOpen(true);
   };
 
@@ -1673,7 +1824,23 @@ export const OrganizationManager = () => {
       payoutType: org?.payoutType || "mpesa_phone",
     });
 
+    setModalError("");
     setIsPayoutModalOpen(true);
+  };
+
+  const closeCreateModal = () => {
+    setModalError("");
+    setIsCreateModalOpen(false);
+  };
+
+  const closeEditModal = () => {
+    setModalError("");
+    setIsEditModalOpen(false);
+  };
+
+  const closePayoutModal = () => {
+    setModalError("");
+    setIsPayoutModalOpen(false);
   };
 
   // ====================================================
@@ -1681,14 +1848,14 @@ export const OrganizationManager = () => {
   // ====================================================
 
   return (
-    <div className="flex flex-col gap-8 pb-16">
+    <div className="flex flex-col gap-6 sm:gap-8 pb-28 lg:pb-16">
       {/* ================================================
           HEADER
       ================================================= */}
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-base-200/50 p-6 rounded-3xl border border-base-200">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-base-200/50 p-4 sm:p-6 rounded-3xl border border-base-200">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-base-content">Organization Management</h1>
+          <h1 className="text-xl sm:text-2xl font-black tracking-tight text-base-content">Organization Management</h1>
 
           <p className="text-xs text-base-content/60 mt-1">
             Manage your corporate entity, payment payouts, and operational team members.
@@ -1720,15 +1887,15 @@ export const OrganizationManager = () => {
 
       {successMessage && (
         <div className="alert alert-success text-xs font-bold rounded-2xl shadow-sm">
-          <CheckCircle2 size={18} />
-          <span>{successMessage}</span>
+          <CheckCircle2 size={18} className="shrink-0" />
+          <span className="break-words min-w-0">{successMessage}</span>
         </div>
       )}
 
       {errorMessage && (
         <div className="alert alert-error text-xs font-bold rounded-2xl shadow-sm">
-          <AlertCircle size={18} />
-          <span>{errorMessage}</span>
+          <AlertCircle size={18} className="shrink-0" />
+          <span className="break-words min-w-0">{errorMessage}</span>
         </div>
       )}
 
@@ -1755,7 +1922,7 @@ export const OrganizationManager = () => {
           </button>
         </div>
       ) : (
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-6 sm:gap-8">
           {/* ============================================
               ORGANIZATION SELECTOR
           ============================================= */}
@@ -1775,7 +1942,7 @@ export const OrganizationManager = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* MAIN INFO */}
 
-            <div className="lg:col-span-2 bg-base-200/40 border border-base-200 p-6 rounded-3xl flex flex-col justify-between gap-6">
+            <div className="lg:col-span-2 bg-base-200/40 border border-base-200 p-4 sm:p-6 rounded-3xl flex flex-col justify-between gap-6">
               {orgDetailsLoading ? (
                 <div className="flex justify-center py-10">
                   <span className="loading loading-spinner loading-md text-primary" />
@@ -1816,7 +1983,7 @@ export const OrganizationManager = () => {
                         )}
                       </div>
 
-                      {org?.slug && <span className="text-xs text-base-content/50">@{org.slug}</span>}
+                      {org?.slug && <span className="text-xs text-base-content/50 break-all">@{org.slug}</span>}
 
                       {currentMembership && (
                         <span className="text-xs text-primary font-semibold">
@@ -1861,7 +2028,7 @@ export const OrganizationManager = () => {
 
             {/* PAYOUT WIDGET */}
 
-            <div className="bg-base-200/40 border border-base-200 p-6 rounded-3xl flex flex-col justify-between gap-4">
+            <div className="bg-base-200/40 border border-base-200 p-4 sm:p-6 rounded-3xl flex flex-col justify-between gap-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-widest text-base-content/50">
                   Payout Configuration
@@ -1874,7 +2041,7 @@ export const OrganizationManager = () => {
                 <span className="text-xs text-base-content/60">Payout method</span>
 
                 <span className="text-sm font-black text-base-content">
-                  {org?.payoutType ? PAYOUT_LABELS[org.payoutType] ?? org.payoutType : "Not set"}
+                  {org?.payoutType ? (PAYOUT_LABELS[org.payoutType] ?? org.payoutType) : "Not set"}
                 </span>
               </div>
 
@@ -1917,11 +2084,11 @@ export const OrganizationManager = () => {
               MEMBERS
           ============================================= */}
 
-          <div className="bg-base-200/40 border border-base-200 p-6 rounded-3xl flex flex-col gap-6">
+          <div className="bg-base-200/40 border border-base-200 p-4 sm:p-6 rounded-3xl flex flex-col gap-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
                 <h3 className="text-base font-black tracking-tight text-base-content flex items-center gap-2">
-                  <Users size={18} className="text-primary" />
+                  <Users size={18} className="text-primary shrink-0" />
                   Organization Team & Staff
                 </h3>
 
@@ -1930,10 +2097,7 @@ export const OrganizationManager = () => {
                 </p>
               </div>
 
-              <button
-                onClick={openMemberModal}
-                className="btn btn-sm btn-primary rounded-xl text-xs font-bold gap-2"
-              >
+              <button onClick={openMemberModal} className="btn btn-sm btn-primary rounded-xl text-xs font-bold gap-2">
                 <Plus size={15} />
                 Add Team Member
               </button>
@@ -2004,7 +2168,7 @@ export const OrganizationManager = () => {
 
       <AnimatePresence>
         {isCreateModalOpen && (
-          <ModalShell title="Create New Organization" onClose={() => setIsCreateModalOpen(false)}>
+          <ModalShell title="Create New Organization" onClose={closeCreateModal}>
             <form onSubmit={handleCreateOrg} className="flex flex-col gap-4 text-xs">
               <LogoUploader
                 value={formData.logoUrl}
@@ -2026,17 +2190,18 @@ export const OrganizationManager = () => {
                 />
               </div>
 
-              <div className="flex flex-col gap-1.5">
-                <label className={labelClass}>URL Slug</label>
-
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. tech-fest-2026"
-                  value={formData.slug}
-                  onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
-                  className={inputClass}
-                />
+              <div className="flex items-start gap-2 text-[11px] text-base-content/60 bg-base-200/60 rounded-xl p-3">
+                <Globe size={14} className="text-primary shrink-0 mt-0.5" />
+                <span className="min-w-0 break-words">
+                  Your public page link is created automatically from the name
+                  {formData.name.trim() ? (
+                    <>
+                      {" "}
+                      (for example <b>/{slugify(formData.name).slice(0, 40) || "org"}-xxxx</b>)
+                    </>
+                  ) : null}
+                  .
+                </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2045,6 +2210,8 @@ export const OrganizationManager = () => {
 
                   <input
                     type="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
                     placeholder="support@domain.co.ke"
                     value={formData.supportEmail}
                     onChange={(e) => setFormData({ ...formData, supportEmail: e.target.value })}
@@ -2056,7 +2223,7 @@ export const OrganizationManager = () => {
                   <label className={labelClass}>Support Phone</label>
 
                   <input
-                    type="text"
+                    type="tel"
                     placeholder="+254712345678"
                     value={formData.supportPhone}
                     onChange={(e) => setFormData({ ...formData, supportPhone: e.target.value })}
@@ -2071,6 +2238,7 @@ export const OrganizationManager = () => {
 
                   <input
                     type="text"
+                    inputMode="tel"
                     placeholder="+254712345678"
                     value={formData.payoutPhone}
                     onChange={(e) => setFormData({ ...formData, payoutPhone: e.target.value })}
@@ -2098,8 +2266,10 @@ export const OrganizationManager = () => {
                 </div>
               </div>
 
+              <InlineError message={modalError} />
+
               <ModalActions
-                onCancel={() => setIsCreateModalOpen(false)}
+                onCancel={closeCreateModal}
                 isLoading={isCreating || isUploadingLogo}
                 submitLabel="Save Organization"
               />
@@ -2114,7 +2284,7 @@ export const OrganizationManager = () => {
 
       <AnimatePresence>
         {isEditModalOpen && (
-          <ModalShell title="Edit Organization Profile" onClose={() => setIsEditModalOpen(false)}>
+          <ModalShell title="Edit Organization Profile" onClose={closeEditModal}>
             <form onSubmit={handleUpdateOrg} className="flex flex-col gap-4 text-xs">
               <LogoUploader
                 value={formData.logoUrl}
@@ -2141,6 +2311,8 @@ export const OrganizationManager = () => {
 
                   <input
                     type="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
                     value={formData.supportEmail}
                     onChange={(e) => setFormData({ ...formData, supportEmail: e.target.value })}
                     className={inputClass}
@@ -2151,7 +2323,7 @@ export const OrganizationManager = () => {
                   <label className={labelClass}>Support Phone</label>
 
                   <input
-                    type="text"
+                    type="tel"
                     value={formData.supportPhone}
                     onChange={(e) => setFormData({ ...formData, supportPhone: e.target.value })}
                     className={inputClass}
@@ -2159,8 +2331,10 @@ export const OrganizationManager = () => {
                 </div>
               </div>
 
+              <InlineError message={modalError} />
+
               <ModalActions
-                onCancel={() => setIsEditModalOpen(false)}
+                onCancel={closeEditModal}
                 isLoading={isUpdating || isUploadingLogo}
                 submitLabel="Save Changes"
               />
@@ -2175,17 +2349,14 @@ export const OrganizationManager = () => {
 
       <AnimatePresence>
         {isPayoutModalOpen && (
-          <ModalShell
-            title="Update Payout Configuration"
-            maxWidth="max-w-md"
-            onClose={() => setIsPayoutModalOpen(false)}
-          >
+          <ModalShell title="Update Payout Configuration" maxWidth="max-w-md" onClose={closePayoutModal}>
             <form onSubmit={handleUpdatePayout} className="flex flex-col gap-4 text-xs">
               <div className="flex flex-col gap-1.5">
                 <label className={labelClass}>Payout Phone / Account Number</label>
 
                 <input
                   type="text"
+                  inputMode="tel"
                   required
                   placeholder="+254712345678"
                   value={payoutData.payoutPhone}
@@ -2213,11 +2384,9 @@ export const OrganizationManager = () => {
                 </select>
               </div>
 
-              <ModalActions
-                onCancel={() => setIsPayoutModalOpen(false)}
-                isLoading={isUpdatingPayout}
-                submitLabel="Save Payout"
-              />
+              <InlineError message={modalError} />
+
+              <ModalActions onCancel={closePayoutModal} isLoading={isUpdatingPayout} submitLabel="Save Payout" />
             </form>
           </ModalShell>
         )}
@@ -2256,12 +2425,7 @@ export const OrganizationManager = () => {
                 </select>
               </div>
 
-              {memberFormError && (
-                <div className="alert alert-error text-xs font-semibold py-2 rounded-xl">
-                  <AlertCircle size={16} className="shrink-0" />
-                  <span>{memberFormError}</span>
-                </div>
-              )}
+              <InlineError message={memberFormError} />
 
               <ModalActions
                 onCancel={() => setIsMemberModalOpen(false)}

@@ -1,395 +1,503 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { 
-  ArrowRight, 
-  QrCode, 
-  Zap, 
-  Calendar, 
-  MapPin, 
-  Rocket
-} from "lucide-react";
+import { motion, MotionConfig, useInView, type Variants } from "framer-motion";
+import { ArrowRight, QrCode, Zap, Calendar, Rocket, Star } from "lucide-react";
 import { Navbar } from "../components/Navbar";
 import { Footer } from "../components/Footer";
-import { HeroEventSection } from "../components/HeroEventSection"; // <-- Imported new Hero component
-import { useGetAllEventsQuery } from "../features/APIS/EventsApi";
+import { HeroEventSection } from "../components/HeroEventSection";
 
-// Custom Hook for smooth animated counter numbers
-const useCountUp = (end: number, duration: number = 2000, prefix: string = "", suffix: string = "") => {
+// ======================================================
+// ANIMATION PRESETS
+// ======================================================
+
+const EASE = [0.22, 1, 0.36, 1] as const;
+
+const fadeUp: Variants = {
+  hidden: { opacity: 0, y: 32 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.65, ease: EASE } },
+};
+
+const stagger = (gap = 0.12, delay = 0): Variants => ({
+  hidden: {},
+  show: { transition: { staggerChildren: gap, delayChildren: delay } },
+});
+
+const viewport = { once: true, margin: "-80px" } as const;
+
+// ======================================================
+// SMALL REUSABLE PIECES
+// ======================================================
+
+/** Counts up once, only when the stats scroll into view */
+const useCountUp = (end: number, active: boolean, duration = 2000, prefix = "", suffix = "") => {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
-    let startTime: number | null = null;
-    const step = (timestamp: number) => {
-      if (!startTime) startTime = timestamp;
-      const progress = Math.min((timestamp - startTime) / duration, 1);
-      const easedProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
-      setCount(Math.floor(easedProgress * end));
+    if (!active) return;
 
-      if (progress < 1) {
-        window.requestAnimationFrame(step);
-      }
+    let frame = 0;
+    let startTime: number | null = null;
+
+    const step = (timestamp: number) => {
+      if (startTime === null) startTime = timestamp;
+      const progress = Math.min((timestamp - startTime) / duration, 1);
+      const eased = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+      setCount(Math.floor(eased * end));
+      if (progress < 1) frame = window.requestAnimationFrame(step);
     };
-    window.requestAnimationFrame(step);
-  }, [end, duration]);
+
+    frame = window.requestAnimationFrame(step);
+    return () => window.cancelAnimationFrame(frame);
+  }, [end, duration, active]);
 
   return `${prefix}${count.toLocaleString()}${suffix}`;
 };
 
-export const Home = () => {
-  // Fetch live events from API
-  const { data: eventsResponse, isLoading } = useGetAllEventsQuery(undefined);
-  
-  // Extract latest 3 events safely from the backend data array
-  const eventsList = eventsResponse?.data || [];
-  const latestEvents = eventsList.slice(0, 3);
+const SectionHeading = ({
+  eyebrow,
+  title,
+  subtitle,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle?: string;
+}) => (
+  <motion.div
+    variants={stagger(0.1)}
+    initial="hidden"
+    whileInView="show"
+    viewport={viewport}
+    className="text-center max-w-2xl mx-auto mb-14 space-y-3"
+  >
+    <motion.span
+      variants={fadeUp}
+      className="inline-block text-xs font-bold uppercase tracking-widest text-primary bg-primary/10 px-4 py-1.5 rounded-full"
+    >
+      {eyebrow}
+    </motion.span>
+    <motion.h2 variants={fadeUp} className="text-3xl sm:text-4xl font-extrabold tracking-tight">
+      {title}
+    </motion.h2>
+    {subtitle && (
+      <motion.p variants={fadeUp} className="text-base text-base-content/70">
+        {subtitle}
+      </motion.p>
+    )}
+  </motion.div>
+);
 
-  // Animated stats values for our traction metrics
-  const animatedVolume = useCountUp(5, 2000, "KES ", "M+");
-  const animatedTickets = useCountUp(10, 2000, "", "K+");
-  const animatedEvents = useCountUp(50, 2000, "", "+");
-  const animatedSuccess = useCountUp(100, 2000, "", "%");
+/** Soft floating colour blob used as background decoration */
+const GlowBlob = ({ className, delay = 0 }: { className: string; delay?: number }) => (
+  <motion.div
+    aria-hidden
+    className={`absolute rounded-full blur-3xl pointer-events-none ${className}`}
+    animate={{ y: [0, -28, 0], x: [0, 16, 0], scale: [1, 1.08, 1] }}
+    transition={{ duration: 9, repeat: Infinity, ease: "easeInOut", delay }}
+  />
+);
+
+const StatItem = ({ value, label }: { value: string; label: string }) => (
+  <motion.div variants={fadeUp} className="space-y-1">
+    <h3 className="text-3xl sm:text-5xl font-extrabold text-primary tracking-tight tabular-nums">
+      {value}
+    </h3>
+    <p className="text-sm font-semibold text-base-content/70">{label}</p>
+  </motion.div>
+);
+
+const FeatureCard = ({ icon, title, text }: { icon: ReactNode; title: string; text: string }) => (
+  <motion.div
+    variants={fadeUp}
+    whileHover={{ y: -8 }}
+    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+    className="group relative p-8 rounded-3xl bg-base-200/50 border border-base-300 shadow-sm space-y-4 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/10 transition-colors overflow-hidden"
+  >
+    <div className="absolute -top-16 -right-16 w-40 h-40 rounded-full bg-primary/10 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+    <div className="relative w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-primary-content group-hover:rotate-6 transition-all duration-300">
+      {icon}
+    </div>
+    <h3 className="relative text-xl font-bold">{title}</h3>
+    <p className="relative text-base text-base-content/70 leading-relaxed">{text}</p>
+  </motion.div>
+);
+
+const testimonials = [
+  {
+    initials: "BK",
+    name: "Brian K.",
+    role: "Event Organizer",
+    quote:
+      "Having both M-Pesa and Stripe ensures all our attendees can buy tickets easily, whether local or international. Absolutely seamless!",
+  },
+  {
+    initials: "MW",
+    name: "Mercy W.",
+    role: "Community Host",
+    quote:
+      "No monthly subscription charges or hidden fees. Being able to list my events for free makes starting out completely risk-free.",
+  },
+  {
+    initials: "JN",
+    name: "James N.",
+    role: "Concert Promoter",
+    quote:
+      "The automated commission model is brilliant for concert promoters. TicketStream handles the payments reliably every single time.",
+  },
+];
+
+const steps = [
+  {
+    title: "Create your event",
+    text: "Sign up in seconds, add your event schedule, venue details, ticket tiers, and publish your custom page free of charge.",
+  },
+  {
+    title: "Share link & collect funds",
+    text: "Share your link with your audience. Attendees pay securely through M-Pesa or Stripe, and digital tickets are dispatched instantly to their wallets.",
+  },
+  {
+    title: "Manage gate entry",
+    text: "Use our scanner application at your venue entrance to verify tickets smoothly while your earnings settle directly into your account.",
+  },
+];
+
+const faqs = [
+  {
+    q: "How do I start selling tickets on TicketStream?",
+    a: "Simply sign up for a free account, fill in your event details, set your ticket tiers, and publish your page instantly to get your shareable link.",
+  },
+  {
+    q: "What payment methods are supported for buyers?",
+    a: "TicketStream fully supports automated M-Pesa STK push payments for instant local checkouts as well as Stripe for global card transactions.",
+  },
+  {
+    q: "Are there any upfront listing fees?",
+    a: "No! Listing your event on TicketStream is completely free. We only apply a small commission percentage when a ticket is successfully sold.",
+  },
+];
+
+// ======================================================
+// PAGE
+// ======================================================
+
+export const Home = () => {
+  // Stats only start counting once they scroll into view
+  const statsRef = useRef<HTMLDivElement>(null);
+  const statsInView = useInView(statsRef, { once: true, margin: "-100px" });
+
+  const animatedVolume = useCountUp(5, statsInView, 2000, "KES ", "M+");
+  const animatedTickets = useCountUp(10, statsInView, 2000, "", "K+");
+  const animatedEvents = useCountUp(50, statsInView, 2000, "", "+");
+  const animatedSuccess = useCountUp(100, statsInView, 2000, "", "%");
 
   return (
-    <div className="min-h-screen bg-base-100 text-base-content flex flex-col justify-between font-sans">
-      
-      {/* Navigation Bar */}
-      <Navbar />
+    // reducedMotion="user" automatically tones animations down for people who prefer less motion
+    <MotionConfig reducedMotion="user">
+      <div className="min-h-screen bg-base-100 text-base-content flex flex-col justify-between font-sans overflow-x-hidden">
+        {/* Navigation Bar */}
+        <Navbar />
 
-      <main>
-        {/* --- DYNAMIC HERO EVENT SECTION WITH SLUG & MEDIA API INTEGRATION --- */}
-        <section className="pt-28 pb-6 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-          <div className="text-center max-w-3xl mx-auto mb-8 space-y-3">
-                       <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight">
-              Discover top events & shows
-            </h1>
-            <p className="text-base text-base-content/70">
-              Explore featured upcoming events, get your digital tickets instantly with M-Pesa or Stripe, and experience seamless check-ins.
-            </p>
-          </div>
-
-          {/* Render the dynamic Hero Carousel Component */}
-          <HeroEventSection />
-        </section>
-
-        {/* --- ANIMATED TRACTION STATS BAR --- */}
-        <section className="border-y border-base-300/60 bg-base-200/40 py-12 my-12 shadow-inner">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-6">
-              <span className="text-xs font-bold uppercase tracking-widest text-primary bg-primary/10 px-4 py-1.5 rounded-full">
-                Platform metrics & activity
-              </span>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-              <div className="space-y-1">
-                <h3 className="text-3xl sm:text-5xl font-extrabold text-primary tracking-tight">{animatedVolume}</h3>
-                <p className="text-sm font-semibold text-base-content/70">Processed volume</p>
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-3xl sm:text-5xl font-extrabold text-primary tracking-tight">{animatedTickets}</h3>
-                <p className="text-sm font-semibold text-base-content/70">Tickets issued</p>
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-3xl sm:text-5xl font-extrabold text-primary tracking-tight">{animatedEvents}</h3>
-                <p className="text-sm font-semibold text-base-content/70">Successful events</p>
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-3xl sm:text-5xl font-extrabold text-primary tracking-tight">{animatedSuccess}</h3>
-                <p className="text-sm font-semibold text-base-content/70">Gateway uptime</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* --- DETAILED FEATURES SECTION --- */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-24">
-          <div className="text-center max-w-2xl mx-auto mb-16 space-y-3">
-            <span className="text-xs font-bold uppercase tracking-widest text-primary">Simple & powerful features</span>
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Everything you need to run your event</h2>
-            <p className="text-base text-base-content/70">We built reliable tools that handle flexible payments, tickets, and gate entry without any technical friction.</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="p-8 rounded-3xl bg-base-200/50 border border-base-300 shadow-sm space-y-4 hover:border-primary/50 transition-all">
-              <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
-                <Zap size={24} />
-              </div>
-              <h3 className="text-xl font-bold">M-Pesa & Stripe Checkout</h3>
-              <p className="text-base text-base-content/70 leading-relaxed">
-                Attendees can pay seamlessly using automated M-Pesa STK pushes or global debit and credit cards via Stripe. Tickets are generated instantly upon confirmation.
-              </p>
+        <main>
+          {/* ============================================================
+              INTRO + HERO CAROUSEL
+          ============================================================= */}
+          <section className="relative pt-28 pb-6 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+            {/* Decorative background */}
+            <div className="absolute inset-0 -z-10 overflow-hidden">
+              <GlowBlob className="w-72 h-72 bg-primary/25 -top-10 -left-16" />
+              <GlowBlob className="w-80 h-80 bg-primary/15 top-20 -right-20" delay={2} />
+              <GlowBlob className="w-60 h-60 bg-primary/10 top-72 left-1/3" delay={4} />
             </div>
 
-            <div className="p-8 rounded-3xl bg-base-200/50 border border-base-300 shadow-sm space-y-4 hover:border-primary/50 transition-all">
-              <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
-                <QrCode size={24} />
-              </div>
-              <h3 className="text-xl font-bold">Fast QR code gate scanning</h3>
-              <p className="text-base text-base-content/70 leading-relaxed">
-                Use your smartphone camera or scanner app to validate tickets at the event entrance. Keep lines moving rapidly while preventing fraudulent entries.
-              </p>
+            <motion.div
+              variants={stagger(0.12)}
+              initial="hidden"
+              animate="show"
+              className="text-center max-w-3xl mx-auto mb-10 space-y-5"
+            >
+              <motion.h1 variants={fadeUp} className="text-4xl sm:text-6xl font-extrabold tracking-tight leading-[1.05]">
+                Discover top <span className="text-primary">events & shows</span>
+              </motion.h1>
+
+              <motion.p variants={fadeUp} className="text-base sm:text-lg text-base-content/70 max-w-2xl mx-auto">
+                Explore featured upcoming events, get your digital tickets instantly with M-Pesa or Stripe, and
+                experience seamless check-ins.
+              </motion.p>
+
+              <motion.div variants={fadeUp} className="flex items-center justify-center gap-3 flex-wrap pt-1">
+                <Link
+                  to="/events"
+                  className="btn btn-primary rounded-xl px-7 font-bold shadow-lg shadow-primary/30 hover:-translate-y-0.5 transition-transform gap-2"
+                >
+                  Browse events
+                  <ArrowRight size={16} />
+                </Link>
+                <Link
+                  to="/register"
+                  className="btn btn-ghost border border-base-300 rounded-xl px-7 font-bold hover:-translate-y-0.5 transition-transform"
+                >
+                  Sell tickets free
+                </Link>
+              </motion.div>
+            </motion.div>
+
+            {/* Dynamic hero carousel */}
+            <HeroEventSection />
+          </section>
+
+          {/* ============================================================
+              ANIMATED TRACTION STATS
+          ============================================================= */}
+          <section className="relative border-y border-base-300/60 bg-base-200/40 py-14 my-14 overflow-hidden">
+            <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <motion.div
+                variants={fadeUp}
+                initial="hidden"
+                whileInView="show"
+                viewport={viewport}
+                className="text-center mb-8"
+              >
+                <span className="text-xs font-bold uppercase tracking-widest text-primary bg-primary/10 px-4 py-1.5 rounded-full">
+                  Platform metrics & activity
+                </span>
+              </motion.div>
+
+              <motion.div
+                ref={statsRef}
+                variants={stagger(0.12)}
+                initial="hidden"
+                whileInView="show"
+                viewport={viewport}
+                className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center"
+              >
+                <StatItem value={animatedVolume} label="Processed volume" />
+                <StatItem value={animatedTickets} label="Tickets issued" />
+                <StatItem value={animatedEvents} label="Successful events" />
+                <StatItem value={animatedSuccess} label="Gateway uptime" />
+              </motion.div>
             </div>
+          </section>
 
-            <div className="p-8 rounded-3xl bg-base-200/50 border border-base-300 shadow-sm space-y-4 hover:border-primary/50 transition-all">
-              <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
-                <Calendar size={24} />
-              </div>
-              <h3 className="text-xl font-bold">Custom event dashboards</h3>
-              <p className="text-base text-base-content/70 leading-relaxed">
-                Publish a professional profile for your event in under two minutes. Track real-time ticket sales, attendance metrics, and revenue analytics.
-              </p>
-            </div>
-          </div>
-        </section>
+          {/* ============================================================
+              FEATURES
+          ============================================================= */}
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-28">
+            <SectionHeading
+              eyebrow="Simple & powerful features"
+              title="Everything you need to run your event"
+              subtitle="We built reliable tools that handle flexible payments, tickets, and gate entry without any technical friction."
+            />
 
-        {/* --- HOW IT WORKS STEP-BY-STEP --- */}
-        <section className="bg-base-200/50 border-y border-base-300/60 py-20 mb-24">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center max-w-2xl mx-auto mb-16 space-y-3">
-              <span className="text-xs font-bold uppercase tracking-widest text-primary">Easy process</span>
-              <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">How it works in 3 simple steps</h2>
-              <p className="text-base text-base-content/70">No subscription fees or complicated setup. We only take a transparent commission when you successfully sell tickets.</p>
-            </div>
+            <motion.div
+              variants={stagger(0.15)}
+              initial="hidden"
+              whileInView="show"
+              viewport={viewport}
+              className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8"
+            >
+              <FeatureCard
+                icon={<Zap size={24} />}
+                title="M-Pesa & Stripe Checkout"
+                text="Attendees can pay seamlessly using automated M-Pesa STK pushes or global debit and credit cards via Stripe. Tickets are generated instantly upon confirmation."
+              />
+              <FeatureCard
+                icon={<QrCode size={24} />}
+                title="Fast QR code gate scanning"
+                text="Use your smartphone camera or scanner app to validate tickets at the event entrance. Keep lines moving rapidly while preventing fraudulent entries."
+              />
+              <FeatureCard
+                icon={<Calendar size={24} />}
+                title="Custom event dashboards"
+                text="Publish a professional profile for your event in under two minutes. Track real-time ticket sales, attendance metrics, and revenue analytics."
+              />
+            </motion.div>
+          </section>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <div className="bg-base-100 border border-base-300 rounded-3xl p-8 space-y-4 shadow-sm text-center">
-                <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto font-extrabold text-xl">
-                  1
-                </div>
-                <h3 className="text-xl font-bold">Create your event</h3>
-                <p className="text-base text-base-content/70 leading-relaxed">
-                  Sign up in seconds, add your event schedule, venue details, ticket tiers, and publish your custom page free of charge.
-                </p>
-              </div>
+          {/* ============================================================
+              HOW IT WORKS
+          ============================================================= */}
+          <section className="relative bg-base-200/50 border-y border-base-300/60 py-20 mb-28 overflow-hidden">
+            <GlowBlob className="w-72 h-72 bg-primary/10 -bottom-20 -left-10" />
+            <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <SectionHeading
+                eyebrow="Easy process"
+                title="How it works in 3 simple steps"
+                subtitle="No subscription fees or complicated setup. We only take a transparent commission when you successfully sell tickets."
+              />
 
-              <div className="bg-base-100 border border-base-300 rounded-3xl p-8 space-y-4 shadow-sm text-center">
-                <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto font-extrabold text-xl">
-                  2
-                </div>
-                <h3 className="text-xl font-bold">Share link & collect funds</h3>
-                <p className="text-base text-base-content/70 leading-relaxed">
-                  Share your link with your audience. Attendees pay securely through M-Pesa or Stripe, and digital tickets are dispatched instantly to their wallets.
-                </p>
-              </div>
+              <div className="relative">
+                {/* Connector line (desktop) */}
+                <motion.div
+                  aria-hidden
+                  initial={{ scaleX: 0 }}
+                  whileInView={{ scaleX: 1 }}
+                  viewport={viewport}
+                  transition={{ duration: 1.2, ease: EASE, delay: 0.3 }}
+                  className="hidden md:block absolute top-14 left-[16%] right-[16%] h-0.5 bg-gradient-to-r from-primary/10 via-primary/50 to-primary/10 origin-left"
+                />
 
-              <div className="bg-base-100 border border-base-300 rounded-3xl p-8 space-y-4 shadow-sm text-center">
-                <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto font-extrabold text-xl">
-                  3
-                </div>
-                <h3 className="text-xl font-bold">Manage gate entry</h3>
-                <p className="text-base text-base-content/70 leading-relaxed">
-                  Use our scanner application at your venue entrance to verify tickets smoothly while your earnings settle directly into your account.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* --- DETAILED TESTIMONIALS SECTION --- */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-24">
-          <div className="text-center max-w-2xl mx-auto mb-16 space-y-3">
-            <span className="text-xs font-bold uppercase tracking-widest text-primary">Community trust</span>
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">Loved by Kenyan event organizers</h2>
-            <p className="text-base text-base-content/70">See what promoters and creators are saying about using our platform.</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="bg-base-200/40 border border-base-300 rounded-3xl p-8 space-y-6 shadow-sm">
-              <div className="flex items-center gap-1 text-warning">
-                {[...Array(5)].map((_, i) => (
-                  <span key={i} className="text-base">★</span>
-                ))}
-              </div>
-              <p className="text-base text-base-content/80 leading-relaxed italic">
-                "Having both M-Pesa and Stripe ensures all our attendees can buy tickets easily, whether local or international. Absolutely seamless!"
-              </p>
-              <div className="flex items-center gap-3 pt-4 border-t border-base-300/60">
-                <div className="w-10 h-10 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-sm">
-                  BK
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold">Brian K.</h4>
-                  <p className="text-xs text-base-content/60">Event Organizer</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-base-200/40 border border-base-300 rounded-3xl p-8 space-y-6 shadow-sm">
-              <div className="flex items-center gap-1 text-warning">
-                {[...Array(5)].map((_, i) => (
-                  <span key={i} className="text-base">★</span>
-                ))}
-              </div>
-              <p className="text-base text-base-content/80 leading-relaxed italic">
-                "No monthly subscription charges or hidden fees. Being able to list my events for free makes starting out completely risk-free."
-              </p>
-              <div className="flex items-center gap-3 pt-4 border-t border-base-300/60">
-                <div className="w-10 h-10 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-sm">
-                  MW
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold">Mercy W.</h4>
-                  <p className="text-xs text-base-content/60">Community Host</p>
-                </div>
+                <motion.div
+                  variants={stagger(0.18)}
+                  initial="hidden"
+                  whileInView="show"
+                  viewport={viewport}
+                  className="relative grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8"
+                >
+                  {steps.map((step, i) => (
+                    <motion.div
+                      key={step.title}
+                      variants={fadeUp}
+                      whileHover={{ y: -6 }}
+                      transition={{ type: "spring", stiffness: 300, damping: 22 }}
+                      className="bg-base-100 border border-base-300 rounded-3xl p-8 space-y-4 shadow-sm hover:shadow-xl hover:border-primary/40 text-center"
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto font-extrabold text-xl shadow-lg shadow-primary/30">
+                        {i + 1}
+                      </div>
+                      <h3 className="text-xl font-bold">{step.title}</h3>
+                      <p className="text-base text-base-content/70 leading-relaxed">{step.text}</p>
+                    </motion.div>
+                  ))}
+                </motion.div>
               </div>
             </div>
+          </section>
 
-            <div className="bg-base-200/40 border border-base-300 rounded-3xl p-8 space-y-6 shadow-sm">
-              <div className="flex items-center gap-1 text-warning">
-                {[...Array(5)].map((_, i) => (
-                  <span key={i} className="text-base">★</span>
-                ))}
-              </div>
-              <p className="text-base text-base-content/80 leading-relaxed italic">
-                "The automated commission model is brilliant for concert promoters. TicketStream handles the payments reliably every single time."
-              </p>
-              <div className="flex items-center gap-3 pt-4 border-t border-base-300/60">
-                <div className="w-10 h-10 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-sm">
-                  JN
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold">James N.</h4>
-                  <p className="text-xs text-base-content/60">Concert Promoter</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+          {/* ============================================================
+              TESTIMONIALS
+          ============================================================= */}
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-28">
+            <SectionHeading
+              eyebrow="Community trust"
+              title="Loved by Kenyan event organizers"
+              subtitle="See what promoters and creators are saying about using our platform."
+            />
 
-        {/* --- LIVE EVENTS CATALOG GRID --- */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-24">
-          <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 mb-10">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-widest text-primary">Discover gigs</span>
-              <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight mt-1">All upcoming events & shows</h2>
-            </div>
-            <Link to="/events" className="btn btn-ghost btn-sm text-sm font-bold text-primary flex items-center gap-1 hover:bg-primary/10">
-              <span>View all events</span>
-              <ArrowRight size={16} />
-            </Link>
-          </div>
+            <motion.div
+              variants={stagger(0.15)}
+              initial="hidden"
+              whileInView="show"
+              viewport={viewport}
+              className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8"
+            >
+              {testimonials.map((t) => (
+                <motion.div
+                  key={t.name}
+                  variants={fadeUp}
+                  whileHover={{ y: -6 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 22 }}
+                  className="relative bg-base-200/40 border border-base-300 rounded-3xl p-8 space-y-6 shadow-sm hover:shadow-xl hover:border-primary/30 overflow-hidden"
+                >
+                  <span className="absolute top-2 right-6 text-8xl font-serif text-primary/10 leading-none select-none">
+                    “
+                  </span>
 
-          {isLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {[1, 2, 3].map((n) => (
-                <div key={n} className="h-80 bg-base-200/60 border border-base-300 rounded-3xl animate-pulse"></div>
-              ))}
-            </div>
-          ) : latestEvents.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {latestEvents.map((event: any) => (
-                <div key={event.eventId || event.id} className="bg-base-200/60 border border-base-300 rounded-3xl overflow-hidden group hover:border-primary/50 transition-all shadow-sm flex flex-col justify-between">
-                  <div>
-                    <div className="h-48 bg-base-300 relative flex items-center justify-center overflow-hidden">
-                      {event.bannerUrl || event.imageUrl ? (
-                        <img src={event.bannerUrl || event.imageUrl} alt={event.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                      ) : (
-                        <Calendar className="w-12 h-12 text-base-content/20" />
-                      )}
-                      <span className="absolute top-3 left-3 px-3.5 py-1 rounded-full bg-base-100/90 text-base-content text-xs font-bold shadow-xs">
-                        {event.category}
-                      </span>
+                  <div className="relative flex items-center gap-1 text-warning">
+                    {[...Array(5)].map((_, i) => (
+                      <motion.span
+                        key={i}
+                        initial={{ opacity: 0, scale: 0 }}
+                        whileInView={{ opacity: 1, scale: 1 }}
+                        viewport={viewport}
+                        transition={{ delay: 0.3 + i * 0.07, type: "spring", stiffness: 400, damping: 15 }}
+                      >
+                        <Star size={16} className="fill-current" />
+                      </motion.span>
+                    ))}
+                  </div>
+
+                  <p className="relative text-base text-base-content/80 leading-relaxed italic">"{t.quote}"</p>
+
+                  <div className="relative flex items-center gap-3 pt-4 border-t border-base-300/60">
+                    <div className="w-10 h-10 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-sm">
+                      {t.initials}
                     </div>
-                    <div className="p-6 space-y-3">
-                      <div className="flex items-center justify-between text-sm font-bold text-primary">
-                        <span>{new Date(event.date || event.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                        <span className="px-3 py-1 rounded-lg bg-primary/10">
-                          {Number(event.ticketPrice) === 0 ? "Free" : `KES ${Number(event.ticketPrice || 0).toLocaleString()}`}
-                        </span>
-                      </div>
-                      <h3 className="text-lg font-bold text-base-content group-hover:text-primary transition-colors line-clamp-1">
-                        {event.title}
-                      </h3>
-                      <div className="flex items-center gap-2 text-sm text-base-content/70">
-                        <MapPin size={16} className="shrink-0" />
-                        <span className="line-clamp-1">{event.venue?.name ? `${event.venue.name}, ${event.venue.address}` : event.location || "Venue TBA"}</span>
-                      </div>
+                    <div>
+                      <h4 className="text-sm font-bold">{t.name}</h4>
+                      <p className="text-xs text-base-content/60">{t.role}</p>
                     </div>
                   </div>
-                  <div className="p-6 pt-0">
-                    <div className="pt-4 border-t border-base-300/60 flex items-center justify-between">
-                      <span className="text-xs font-medium text-base-content/60">TicketStream Verified</span>
-                      <Link to={`/events/${event.slug || event.eventId}`} className="btn btn-sm btn-primary rounded-xl font-bold">
-                        Get Ticket
-                      </Link>
-                    </div>
-                  </div>
-                </div>
+                </motion.div>
               ))}
-            </div>
-          ) : (
-            <div className="text-center py-16 bg-base-200/40 rounded-3xl border border-base-300">
-              <p className="text-base text-base-content/70">No upcoming events available at the moment. Check back soon!</p>
-            </div>
-          )}
-        </section>
+            </motion.div>
+          </section>
 
-        {/* --- FAQ SECTION --- */}
-        <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 mb-24">
-          <div className="text-center mb-12 space-y-3">
-            <span className="text-xs font-bold uppercase tracking-widest text-primary">Got questions?</span>
-            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Frequently asked questions</h2>
-          </div>
+          {/* ============================================================
+              FAQ
+          ============================================================= */}
+          <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 mb-28">
+            <SectionHeading eyebrow="Got questions?" title="Frequently asked questions" />
 
-          <div className="space-y-4">
-            <div className="collapse collapse-plus bg-base-200/50 border border-base-300 rounded-2xl">
-              <input type="radio" name="faq-accordion" defaultChecked /> 
-              <div className="collapse-title text-base font-bold">
-                How do I start selling tickets on TicketStream?
+            <motion.div
+              variants={stagger(0.12)}
+              initial="hidden"
+              whileInView="show"
+              viewport={viewport}
+              className="space-y-4"
+            >
+              {faqs.map((faq, i) => (
+                <motion.div
+                  key={faq.q}
+                  variants={fadeUp}
+                  className="collapse collapse-plus bg-base-200/50 border border-base-300 rounded-2xl hover:border-primary/40 transition-colors"
+                >
+                  <input type="radio" name="faq-accordion" defaultChecked={i === 0} />
+                  <div className="collapse-title text-base font-bold">{faq.q}</div>
+                  <div className="collapse-content text-sm text-base-content/70 leading-relaxed">
+                    <p>{faq.a}</p>
+                  </div>
+                </motion.div>
+              ))}
+            </motion.div>
+          </section>
+
+          {/* ============================================================
+              FINAL CALL TO ACTION
+          ============================================================= */}
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-20">
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.97 }}
+              whileInView={{ opacity: 1, y: 0, scale: 1 }}
+              viewport={viewport}
+              transition={{ duration: 0.8, ease: EASE }}
+              className="relative overflow-hidden bg-gradient-to-r from-primary/20 via-primary/10 to-base-200 border border-primary/30 rounded-3xl p-8 sm:p-16 text-center space-y-6 shadow-xl"
+            >
+              <GlowBlob className="w-64 h-64 bg-primary/30 -top-20 -left-16" />
+              <GlowBlob className="w-64 h-64 bg-primary/15 -bottom-24 -right-16" delay={3} />
+
+              <motion.div
+                animate={{ y: [0, -10, 0], rotate: [0, -4, 4, 0] }}
+                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                className="relative w-16 h-16 bg-primary text-primary-content rounded-2xl mx-auto flex items-center justify-center font-bold shadow-xl shadow-primary/40"
+              >
+                <Rocket className="w-8 h-8" />
+              </motion.div>
+
+              <h2 className="relative text-3xl sm:text-5xl font-extrabold tracking-tight">
+                Ready to elevate your event ticketing?
+              </h2>
+              <p className="relative text-base sm:text-lg text-base-content/80 max-w-xl mx-auto leading-relaxed">
+                Join organizers using TicketStream for zero upfront costs, automated M-Pesa and Stripe payments, and
+                streamlined gate entry.
+              </p>
+              <div className="relative pt-2 flex items-center justify-center gap-4 flex-wrap">
+                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}>
+                  <Link to="/register" className="btn btn-primary rounded-xl px-8 font-bold text-base shadow-lg shadow-primary/30">
+                    Get started free
+                  </Link>
+                </motion.div>
+                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}>
+                  <Link to="/contact" className="btn btn-ghost border border-base-300 bg-base-100/50 backdrop-blur rounded-xl px-8 font-bold text-base">
+                    Contact our team
+                  </Link>
+                </motion.div>
               </div>
-              <div className="collapse-content text-sm text-base-content/70 leading-relaxed">
-                <p>Simply sign up for a free account, fill in your event details, set your ticket tiers, and publish your page instantly to get your shareable link.</p>
-              </div>
-            </div>
+            </motion.div>
+          </section>
+        </main>
 
-            <div className="collapse collapse-plus bg-base-200/50 border border-base-300 rounded-2xl">
-              <input type="radio" name="faq-accordion" /> 
-              <div className="collapse-title text-base font-bold">
-                What payment methods are supported for buyers?
-              </div>
-              <div className="collapse-content text-sm text-base-content/70 leading-relaxed">
-                <p>TicketStream fully supports automated M-Pesa STK push payments for instant local checkouts as well as Stripe for global card transactions.</p>
-              </div>
-            </div>
-
-            <div className="collapse collapse-plus bg-base-200/50 border border-base-300 rounded-2xl">
-              <input type="radio" name="faq-accordion" /> 
-              <div className="collapse-title text-base font-bold">
-                Are there any upfront listing fees?
-              </div>
-              <div className="collapse-content text-sm text-base-content/70 leading-relaxed">
-                <p>No! Listing your event on TicketStream is completely free. We only apply a small commission percentage when a ticket is successfully sold.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* --- FINAL CALL TO ACTION BANNER --- */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-20">
-          <div className="bg-gradient-to-r from-primary/20 via-primary/10 to-base-200 border border-primary/30 rounded-3xl p-8 sm:p-14 text-center space-y-6 shadow-lg">
-            <div className="w-14 h-14 bg-primary text-primary-content rounded-2xl mx-auto flex items-center justify-center font-bold shadow-md">
-              <Rocket className="w-7 h-7" />
-            </div>
-            <h2 className="text-2xl sm:text-4xl font-extrabold tracking-tight">
-              Ready to elevate your event ticketing?
-            </h2>
-            <p className="text-base text-base-content/80 max-w-xl mx-auto leading-relaxed">
-              Join organizers using TicketStream for zero upfront costs, automated M-Pesa and Stripe payments, and streamlined gate entry.
-            </p>
-            <div className="pt-2 flex items-center justify-center gap-4 flex-wrap">
-              <Link to="/register" className="btn btn-primary rounded-xl px-8 py-4 font-bold text-base shadow-md">
-                Get started free
-              </Link>
-              <Link to="/contact" className="btn btn-ghost border border-base-300 rounded-xl px-8 py-4 font-bold text-base">
-                Contact our team
-              </Link>
-            </div>
-          </div>
-        </section>
-      </main>
-
-      {/* Footer Component */}
-      <Footer />
-
-    </div>
+        {/* Footer Component */}
+        <Footer />
+      </div>
+    </MotionConfig>
   );
 };

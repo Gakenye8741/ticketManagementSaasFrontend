@@ -135,6 +135,9 @@ const VERIFICATION_STEPS = ["Details", "Documents", "Selfies"];
 
 const VERIFICATION_REVIEW_TIME = "10 to 60 minutes";
 
+// Remembers that an organization was just created, so the verification flow can open after the page reloads
+const JUST_CREATED_KEY = "orgManager:justCreated";
+
 // ======================================================
 // LABELS
 // ======================================================
@@ -1473,9 +1476,6 @@ export const OrganizationManager = () => {
 
   const [selectedOrgId, setSelectedOrgId] = useState<number | null>(null);
 
-  // Set right after a successful create, before the membership list has refreshed
-  const [hasCreatedOrg, setHasCreatedOrg] = useState(false);
-
   // getUserOrganizations returns OrgMember[] (each has orgId)
   const orgs = toArray<OrgMember>(userOrgs);
 
@@ -1492,7 +1492,7 @@ export const OrganizationManager = () => {
   const currentMembership = orgs.find((member) => Number(member.orgId) === activeOrgId);
 
   // One organization per user: anyone who already owns one cannot create another
-  const ownsOrganization = hasCreatedOrg || orgs.some((member) => member.orgRole === "owner");
+  const ownsOrganization = orgs.some((member) => member.orgRole === "owner");
 
   // ====================================================
   // ACTIVE ORGANIZATION DETAILS
@@ -1593,6 +1593,25 @@ export const OrganizationManager = () => {
     showSuccess(message);
   };
 
+  // After the post-create reload: show the success message and go straight to verification
+  useEffect(() => {
+    if (!activeOrgId || !digitalId) return;
+
+    let justCreated: string | null = null;
+    try {
+      justCreated = sessionStorage.getItem(JUST_CREATED_KEY);
+      if (justCreated) sessionStorage.removeItem(JUST_CREATED_KEY);
+    } catch {
+      justCreated = null;
+    }
+
+    if (justCreated) {
+      showSuccess("Organization created successfully! Next, let's verify it.");
+      openVerificationModal("create");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOrgId, digitalId]);
+
   // ====================================================
   // CREATE ORGANIZATION
   // ====================================================
@@ -1643,22 +1662,19 @@ export const OrganizationManager = () => {
 
       const createdOrg = unwrapOrg(created);
 
-      // API Organization uses `id`
-      if (createdOrg?.id) {
-        setSelectedOrgId(createdOrg.id);
-        setHasCreatedOrg(true);
-      }
-
-      showSuccess("Organization created successfully! Next, let's verify it.");
-
       setIsCreateModalOpen(false);
       setFormData(EMPTY_ORG_FORM);
       setModalError("");
 
-      // After creating the organization, go straight to verification
-      if (createdOrg?.id && digitalId) {
-        openVerificationModal("create");
+      // Reload the page so the brand-new organization is fetched fresh.
+      // The flag lets us show the success message and open verification once the page is back.
+      try {
+        sessionStorage.setItem(JUST_CREATED_KEY, String(createdOrg?.id ?? "1"));
+      } catch {
+        // storage can be blocked in private mode; the reload still works
       }
+
+      window.location.reload();
     } catch (err) {
       setModalError(getErrorMessage(err, "Failed to create organization."));
     }

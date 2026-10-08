@@ -80,6 +80,10 @@ type StatusTone =
   | "cancelled"
   | "neutral";
 
+// The status filter that is selected when the page first opens
+// (and what "Reset" goes back to).
+const DEFAULT_STATUS_FILTER = "upcoming";
+
 const ENDED_STATUSES = new Set([
   "ended",
   "completed",
@@ -294,6 +298,45 @@ const EventStatusBadge = ({
 
       {status.label}
     </span>
+  );
+};
+
+// The clickable shell around an event card.
+// - Normal events: a <Link> to the event page (where tickets are bought).
+// - Ended events: a plain, dimmed <div>. It is NOT a link, so nobody can
+//   click through to buy tickets for an event that is over.
+const EventCardShell = ({
+  ended,
+  to,
+  baseClass,
+  activeClass,
+  children,
+}: {
+  ended: boolean;
+  to: string;
+  baseClass: string;
+  activeClass: string;
+  children: React.ReactNode;
+}) => {
+  if (ended) {
+    return (
+      <div
+        aria-disabled="true"
+        title="This event has ended"
+        className={`${baseClass} opacity-60 grayscale cursor-not-allowed select-none`}
+      >
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      to={to}
+      className={`${baseClass} ${activeClass}`}
+    >
+      {children}
+    </Link>
   );
 };
 
@@ -646,8 +689,10 @@ export const EventsPage = () => {
   const [sortBy, setSortBy] =
     useState("date_asc");
 
+  // Defaults to "Upcoming" so ended events are hidden until the
+  // visitor chooses "All" or "Ended".
   const [statusFilter, setStatusFilter] =
-    useState("all");
+    useState<string>(DEFAULT_STATUS_FILTER);
 
   const [viewMode, setViewMode] =
     useState<"grid" | "list">("grid");
@@ -1169,13 +1214,16 @@ export const EventsPage = () => {
             "all" ||
           selectedCity !== "all" ||
           priceType !== "all" ||
-          statusFilter !== "all" ||
+          statusFilter !==
+            DEFAULT_STATUS_FILTER ||
           searchQuery !== "" ||
           priceRange < 50000
         ) && (
           <button
             onClick={() => {
-              setStatusFilter("all");
+              setStatusFilter(
+                DEFAULT_STATUS_FILTER
+              );
               setSelectedCategory("all");
               setSelectedCity("all");
               setPriceType("all");
@@ -1753,13 +1801,25 @@ export const EventsPage = () => {
                           event.date
                         );
 
+                      const eventStatus =
+                        getEventStatus(
+                          event
+                        );
+
+                      // Ended events are shown but cannot be opened
+                      const ended =
+                        eventStatus?.tone ===
+                        "ended";
+
                       return (
-                        <Link
+                        <EventCardShell
                           key={
                             event.eventId
                           }
+                          ended={ended}
                           to={`/events/${event.slug}`}
-                          className="group flex flex-col bg-base-100 border border-base-300 rounded-2xl overflow-hidden transition-all duration-300 hover:border-primary/50 hover:shadow-xl hover:shadow-base-300/40 hover:-translate-y-1"
+                          baseClass="flex flex-col bg-base-100 border border-base-300 rounded-2xl overflow-hidden transition-all duration-300"
+                          activeClass="group hover:border-primary/50 hover:shadow-xl hover:shadow-base-300/40 hover:-translate-y-1"
                         >
                           {/* Media */}
                           <div className="relative h-32 sm:h-48 bg-base-300 overflow-hidden">
@@ -1788,29 +1848,31 @@ export const EventsPage = () => {
                               </span>
 
                               <EventStatusBadge
-                                status={getEventStatus(
-                                  event
-                                )}
+                                status={
+                                  eventStatus
+                                }
                                 variant="overlay"
                               />
                             </div>
 
-                            <button
-                              onClick={(
-                                e
-                              ) => {
-                                e.preventDefault();
-                              }}
-                              className="absolute top-2 right-2 sm:top-3 sm:right-3 w-7 h-7 rounded-full bg-base-100/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                              title="Save event"
-                            >
-                              <Bookmark
-                                size={
-                                  13
-                                }
-                                className="text-primary"
-                              />
-                            </button>
+                            {!ended && (
+                              <button
+                                onClick={(
+                                  e
+                                ) => {
+                                  e.preventDefault();
+                                }}
+                                className="absolute top-2 right-2 sm:top-3 sm:right-3 w-7 h-7 rounded-full bg-base-100/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                                title="Save event"
+                              >
+                                <Bookmark
+                                  size={
+                                    13
+                                  }
+                                  className="text-primary"
+                                />
+                              </button>
+                            )}
 
                             <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-3 sm:right-3 flex items-end justify-between gap-1 text-white">
                               <span className="text-xs font-bold">
@@ -1838,7 +1900,13 @@ export const EventsPage = () => {
 
                           {/* Body */}
                           <div className="flex flex-col flex-1 p-3 sm:p-4 gap-1.5 sm:gap-2">
-                            <h3 className="text-sm sm:text-base font-bold leading-snug line-clamp-1 group-hover:text-primary transition-colors">
+                            <h3
+                              className={`text-sm sm:text-base font-bold leading-snug line-clamp-1 transition-colors ${
+                                ended
+                                  ? ""
+                                  : "group-hover:text-primary"
+                              }`}
+                            >
                               {
                                 event.title
                               }
@@ -1870,12 +1938,18 @@ export const EventsPage = () => {
                                 Verified
                               </span>
 
-                              <span className="text-xs font-bold text-primary group-hover:underline underline-offset-2">
-                                Get ticket
-                              </span>
+                              {ended ? (
+                                <span className="text-xs font-bold text-base-content/50">
+                                  Event ended
+                                </span>
+                              ) : (
+                                <span className="text-xs font-bold text-primary group-hover:underline underline-offset-2">
+                                  Get ticket
+                                </span>
+                              )}
                             </div>
                           </div>
-                        </Link>
+                        </EventCardShell>
                       );
                     }
                   )}
@@ -1884,109 +1958,135 @@ export const EventsPage = () => {
                 // LIST VIEW
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-1">
                   {paginatedEvents.map(
-                    (event: any) => (
-                      <Link
-                        key={
-                          event.eventId
-                        }
-                        to={`/events/${event.slug}`}
-                        className="group bg-base-100 border border-base-300 rounded-2xl p-2.5 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4 transition-all duration-200 hover:border-primary/50 hover:shadow-md"
-                      >
-                        <div className="w-full h-28 sm:w-32 sm:h-24 rounded-xl bg-base-300 shrink-0 relative overflow-hidden flex items-center justify-center">
-                          <EventCardImage
-                            eventId={
-                              event.eventId
-                            }
-                            bannerUrl={
-                              event.bannerUrl
-                            }
-                            title={
-                              event.title
-                            }
-                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          />
-                        </div>
+                    (event: any) => {
+                      const eventStatus =
+                        getEventStatus(
+                          event
+                        );
 
-                        <div className="flex-1 min-w-0 space-y-1.5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-primary/10 text-primary">
-                              {event.category?.replace(
-                                "_",
-                                " "
-                              ) ||
-                                "Event"}
-                            </span>
+                      // Ended events are shown but cannot be opened
+                      const ended =
+                        eventStatus?.tone ===
+                        "ended";
 
-                            <EventStatusBadge
-                              status={getEventStatus(
+                      return (
+                        <EventCardShell
+                          key={
+                            event.eventId
+                          }
+                          ended={ended}
+                          to={`/events/${event.slug}`}
+                          baseClass="bg-base-100 border border-base-300 rounded-2xl p-2.5 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4 transition-all duration-200"
+                          activeClass="group hover:border-primary/50 hover:shadow-md"
+                        >
+                          <div className="w-full h-28 sm:w-32 sm:h-24 rounded-xl bg-base-300 shrink-0 relative overflow-hidden flex items-center justify-center">
+                            <EventCardImage
+                              eventId={
+                                event.eventId
+                              }
+                              bannerUrl={
+                                event.bannerUrl
+                              }
+                              title={
+                                event.title
+                              }
+                              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            />
+                          </div>
+
+                          <div className="flex-1 min-w-0 space-y-1.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-primary/10 text-primary">
+                                {event.category?.replace(
+                                  "_",
+                                  " "
+                                ) ||
+                                  "Event"}
+                              </span>
+
+                              <EventStatusBadge
+                                status={
+                                  eventStatus
+                                }
+                                variant="list"
+                              />
+
+                              <span className="text-xs font-semibold text-base-content/50">
+                                {new Date(
+                                  event.date
+                                ).toLocaleDateString(
+                                  undefined,
+                                  {
+                                    month:
+                                      "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                  }
+                                )}{" "}
+                                ·{" "}
+                                {event.time ||
+                                  "Time TBA"}
+                              </span>
+                            </div>
+
+                            <h3
+                              className={`text-sm sm:text-base font-bold line-clamp-1 transition-colors ${
+                                ended
+                                  ? ""
+                                  : "group-hover:text-primary"
+                              }`}
+                            >
+                              {
+                                event.title
+                              }
+                            </h3>
+
+                            <p className="hidden sm:block text-xs text-base-content/55 line-clamp-1">
+                              {event.description ||
+                                "No description provided for this upcoming event."}
+                            </p>
+
+                            <div className="flex items-center gap-1.5 text-xs text-base-content/60">
+                              <MapPin
+                                size={
+                                  13
+                                }
+                                className="text-primary shrink-0"
+                              />
+
+                              <span className="line-clamp-1">
+                                {event
+                                  .venue
+                                  ?.name ||
+                                  "Venue TBA"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col items-stretch sm:items-end justify-center gap-1.5 sm:gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-base-300 w-full sm:w-auto">
+                            <EventCardPrice
+                              eventId={
+                                event.eventId
+                              }
+                              fallbackPricing={getEventPricing(
                                 event
                               )}
                               variant="list"
                             />
 
-                            <span className="text-xs font-semibold text-base-content/50">
-                              {new Date(
-                                event.date
-                              ).toLocaleDateString(
-                                undefined,
-                                {
-                                  month:
-                                    "short",
-                                  day: "numeric",
-                                  year: "numeric",
-                                }
-                              )}{" "}
-                              ·{" "}
-                              {event.time ||
-                                "Time TBA"}
-                            </span>
-                          </div>
-
-                          <h3 className="text-sm sm:text-base font-bold line-clamp-1 group-hover:text-primary transition-colors">
-                            {
-                              event.title
-                            }
-                          </h3>
-
-                          <p className="hidden sm:block text-xs text-base-content/55 line-clamp-1">
-                            {event.description ||
-                              "No description provided for this upcoming event."}
-                          </p>
-
-                          <div className="flex items-center gap-1.5 text-xs text-base-content/60">
-                            <MapPin
-                              size={
-                                13
-                              }
-                              className="text-primary shrink-0"
-                            />
-
-                            <span className="line-clamp-1">
-                              {event
-                                .venue
-                                ?.name ||
-                                "Venue TBA"}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col items-stretch sm:items-end justify-center gap-1.5 sm:gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-base-300 w-full sm:w-auto">
-                          <EventCardPrice
-                            eventId={
-                              event.eventId
-                            }
-                            fallbackPricing={getEventPricing(
-                              event
+                            {ended ? (
+                              <span className="text-xs font-bold px-4 py-2 rounded-xl bg-base-300 text-base-content/50 text-center">
+                                Event ended
+                              </span>
+                            ) : (
+                              <span className="text-xs font-bold px-4 py-2 rounded-xl bg-primary text-primary-content text-center transition-transform group-hover:scale-105">
+                                Get ticket
+                              </span>
                             )}
-                            variant="list"
-                          />
-
-                          <span className="text-xs font-bold px-4 py-2 rounded-xl bg-primary text-primary-content text-center transition-transform group-hover:scale-105">
-                            Get ticket
-                          </span>
-                        </div>
-                      </Link>
-                    )
+                          </div>
+                        </EventCardShell>
+                      );
+                    }
                   )}
                 </div>
               )
@@ -2005,7 +2105,7 @@ export const EventsPage = () => {
                 <button
                   onClick={() => {
                     setStatusFilter(
-                      "all"
+                      DEFAULT_STATUS_FILTER
                     );
                     setSelectedCategory(
                       "all"

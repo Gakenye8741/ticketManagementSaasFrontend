@@ -98,6 +98,12 @@ export const venueApi = createApi({
       }),
       invalidatesTags: ['venues', 'venue', 'venueDetails'],
     }),
+
+    // 8. NEW: Get Venue By ID (public, used by the event details page)
+    getVenueById: builder.query<any, number>({
+      query: (venueId) => `venues/id/${venueId}`,
+      providesTags: (_result, _error, venueId) => [{ type: 'venue', id: venueId }],
+    }),
   }),
 });
 
@@ -109,4 +115,5 @@ export const {
   useGetVenueDetailsWithEventsQuery,
   useUpdateVenueMutation,
   useDeleteVenueMutation,
+  useGetVenueByIdQuery, // NEW
 } = venueApi;

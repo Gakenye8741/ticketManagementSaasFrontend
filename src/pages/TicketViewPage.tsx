@@ -2,6 +2,18 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 
+// Ticket icon shown in the middle of the QR code.
+// It is an inline SVG (a data URI), so there is no image file to host or load.
+const TICKET_ICON_SRC = `data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <rect width="24" height="24" rx="5" fill="#4f46e5"/>
+    <g transform="translate(4 4) scale(0.6667)" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 9a2 2 0 0 0 2-2V6h14v1a2 2 0 0 0 2 2v6a2 2 0 0 0-2 2v1H5v-1a2 2 0 0 0-2-2z"/>
+      <path d="M13 6v12" stroke-dasharray="2 2.5"/>
+    </g>
+  </svg>`
+)}`;
+
 export const TicketViewPage: React.FC = () => {
   const { ticketToken } = useParams<{ ticketToken: string }>();
   const [loading, setLoading] = useState<boolean>(false);
@@ -100,10 +112,19 @@ export const TicketViewPage: React.FC = () => {
                 <QRCodeSVG
                   value={ticketToken}
                   size={220}
+                  // "H" = highest error correction, which is what lets the
+                  // centre image cover part of the code and still scan.
                   level={"H"}
                   includeMargin={true}
                   bgColor={"#ffffff"}
                   fgColor={"#18181b"}
+                  imageSettings={{
+                    src: TICKET_ICON_SRC,
+                    height: 44,
+                    width: 44,
+                    // Clears the QR dots behind the icon so it sits on a clean patch
+                    excavate: true,
+                  }}
                   className="block max-w-full h-auto"
                 />
               </div>

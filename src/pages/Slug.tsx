@@ -46,6 +46,7 @@ import {
   useCheckPaymentStatusQuery,
 } from "../features/APIS/MpesaApi";
 import { Link, useParams } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { useEffect, useRef, useState } from "react";
 
 // M-Pesa logo badge (inline SVG approximation).
@@ -169,6 +170,19 @@ const isBlankAttendee = (a: Attendee) =>
   !a.name.trim() && !a.email.trim() && !a.phone.trim();
 
 export const EventSlugPage = () => {
+  // Read the signed-in user's saved details from the existing Redux auth slice.
+  const { user: loggedInUser, isAuthenticated } = useSelector(
+    (state: any) => state.auth ?? {}
+  );
+
+  const loggedInName = [loggedInUser?.firstName, loggedInUser?.lastName]
+    .filter((part: unknown) => typeof part === "string" && part.trim())
+    .join(" ")
+    .trim();
+
+  const loggedInEmail =
+    typeof loggedInUser?.email === "string" ? loggedInUser.email : "";
+
   const { slug } = useParams<{ slug: string }>();
 
   const {
@@ -233,6 +247,32 @@ export const EventSlugPage = () => {
    */
   const [attendeeDetails, setAttendeeDetails] = useState<Attendee[]>([
     { name: "", email: "", phone: "" },
+  ]);
+
+  // Pre-fill only the main contact's name and email for authenticated users.
+  // The phone number remains editable because it is not stored in authSlice.
+  useEffect(() => {
+    if (!isAuthenticated || !loggedInUser) return;
+
+    setAttendeeDetails((prev) => {
+      const updated = [...prev];
+      const mainAttendee = updated[0] ?? { name: "", email: "", phone: "" };
+
+      updated[0] = {
+        ...mainAttendee,
+        name: loggedInName || mainAttendee.name,
+        email: loggedInEmail || mainAttendee.email,
+      };
+
+      return updated;
+    });
+  }, [
+    isAuthenticated,
+    loggedInUser?.firstName,
+    loggedInUser?.lastName,
+    loggedInUser?.email,
+    loggedInName,
+    loggedInEmail,
   ]);
 
   const [paymentMethod, setPaymentMethod] = useState<"mpesa" | "stripe">(
@@ -1714,6 +1754,7 @@ export const EventSlugPage = () => {
                                     : "Full name (optional)"
                                 }
                                 value={attendee.name}
+                                readOnly={index === 0 && isAuthenticated && !!loggedInName}
                                 onChange={(e) =>
                                   handleAttendeeChange(
                                     index,
@@ -1721,7 +1762,7 @@ export const EventSlugPage = () => {
                                     e.target.value
                                   )
                                 }
-                                className={inputCls}
+                                className={`${inputCls} ${index === 0 && isAuthenticated && loggedInName ? "cursor-not-allowed bg-base-200/70" : ""}`}
                                 required={index === 0}
                               />
                             </div>
@@ -1768,6 +1809,7 @@ export const EventSlugPage = () => {
                                     : "Email address (optional)"
                                 }
                                 value={attendee.email}
+                                readOnly={index === 0 && isAuthenticated && !!loggedInEmail}
                                 onChange={(e) =>
                                   handleAttendeeChange(
                                     index,
@@ -1775,7 +1817,7 @@ export const EventSlugPage = () => {
                                     e.target.value
                                   )
                                 }
-                                className={inputCls}
+                                className={`${inputCls} ${index === 0 && isAuthenticated && loggedInEmail ? "cursor-not-allowed bg-base-200/70" : ""}`}
                                 required={index === 0}
                               />
                             </div>

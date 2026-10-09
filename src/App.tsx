@@ -5,7 +5,6 @@ import { Home } from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { AdminDashBoard } from './pages/AdminDashBoard';
-import { DAshboard } from './pages/DAshboard';
 import ProtectedRoutes from './components/ProtectedRoutes';
 import Error from './pages/Error';
 // import UserProfile from './DashBoards/dashboard/UserProfile';
@@ -22,7 +21,6 @@ import ContactForm from './pages/Contact';
 import GetPaymentsByNationalId from './DashBoards/dashboard/GetPaymentsByNationalId';
 import AllPayments from './DashBoards/adminDashboard/GetAllPayments';
 import RootLayout from './DashBoards/dashboardDesign/RootLayout';
-import TicketDisplay from './DashBoards/dashboard/UserTickets';
 import EmailVerification from './pages/EmailVerification';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/PasswordReset';
@@ -52,6 +50,10 @@ import VenueManager from './DashBoards/OrganizerDashboard/VenueManager';
 import AdminVerificationManager from './DashBoards/adminDashboard/Adminverificationmanager';
 import AdminEventManager from './DashBoards/adminDashboard/AdminEventManager';
 import AdminProfileManager from './DashBoards/adminDashboard/AdminUserProfile';
+import { UserDashBoard } from './pages/UserDashboard';
+import UserProfileManager from './DashBoards/dashboard/UserProfileManager';
+import MyBookings from './DashBoards/dashboard/MyBookings';
+import MyTickets from './DashBoards/dashboard/TicketManager';
 
 function App() {
   const Router = createBrowserRouter([
@@ -80,18 +82,19 @@ function App() {
     },
 
     {
-      path: 'dashboard',
+      path: 'user-dashboard',
       element: (
         <ProtectedRoutes>
-          <DAshboard />
+          <UserDashBoard />
         </ProtectedRoutes>
       ),
       errorElement: <Error />,
       children: [
-        // { path: 'me', element: <UserProfile /> },
+        { path: 'profile', element: <UserProfileManager /> },
+        { path: 'my-bookings', element: <MyBookings /> },
         { path: 'supportTickets', element: <UserSupportTickets /> },
         { path: 'Payments', element: <GetPaymentsByNationalId /> },
-        { path: 'MyTickets', element: <TicketDisplay /> },
+        { path: 'tickets', element: <MyTickets /> },
         { path: 'qr-codes', element: <QrCodes /> },
         { path: 'analytics', element: <UserAnalyticsPage /> },
       ],

@@ -40,7 +40,7 @@ const Login = () => {
       } else if (role === 'organizer') {
         navigate('/organizer-dashboard/');
       } else if (role === 'user') {
-        navigate('/UserDashboard');
+        navigate('/user-dashboard');
       } else {
         navigate('/');
       }

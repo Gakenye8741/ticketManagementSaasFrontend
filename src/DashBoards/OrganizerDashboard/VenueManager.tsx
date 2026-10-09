@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, type FormEvent } from "react";
+import { useState, useMemo, useEffect, useRef, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -26,6 +26,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ArrowUpDown,
+  ExternalLink,
 } from "lucide-react";
 import {
   useGetAllVenuesQuery,
@@ -45,7 +46,7 @@ const CARD_SIZES = [6, 12, 24, 48];
 type ViewMode = "table" | "cards";
 type SortKey = "name" | "capacity_desc" | "capacity_asc" | "newest";
 
-const emptyForm = { name: "", location: "", address: "", capacity: "", description: "" };
+const emptyForm = { name: "", address: "", capacity: "", description: "" };
 
 /** Page numbers with ellipses, e.g. 1 … 4 5 6 … 20 */
 const getPageNumbers = (current: number, total: number): (number | "…")[] => {
@@ -66,6 +67,7 @@ const fmtNum = (n: unknown) => Number(n || 0).toLocaleString();
 const fmtDate = (d?: string) => (d ? new Date(d).toLocaleDateString(undefined, { dateStyle: "medium" }) : "—");
 const eventStatusOf = (e: any): string => String(e?.eventStatus || e?.status || "draft");
 const eventVenueId = (e: any) => Number(e?.venueId ?? e?.venue?.venueId ?? e?.venue?.id);
+const mapsLink = (address: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 
 const statusClass = (status: string) => {
   const s = status.toLowerCase();
@@ -73,6 +75,189 @@ const statusClass = (status: string) => {
   if (s === "cancelled" || s === "canceled") return "badge-error text-error-content";
   if (s === "ended" || s === "completed") return "badge-ghost";
   return "badge-warning text-warning-content";
+};
+
+/* -------------------------------------------------------------------------- */
+/* GOOGLE PLACES                                                              */
+/* Needs VITE_GOOGLE_MAPS_API_KEY in .env and "Places API (New)" enabled.     */
+/* -------------------------------------------------------------------------- */
+const GOOGLE_MAPS_KEY: string | undefined = (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY;
+
+let placesPromise: Promise<any> | null = null;
+
+/** Loads the Google Maps script once and resolves with the "places" library. */
+const loadPlacesLibrary = (): Promise<any> => {
+  if (placesPromise) return placesPromise;
+  placesPromise = new Promise((resolve, reject) => {
+    const w = window as any;
+    if (w.google?.maps?.importLibrary) return resolve(w.google.maps.importLibrary("places"));
+    if (!GOOGLE_MAPS_KEY) return reject(new Error("Missing VITE_GOOGLE_MAPS_API_KEY"));
+
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_KEY}&loading=async&v=weekly`;
+    script.async = true;
+    script.onload = () => resolve(w.google.maps.importLibrary("places"));
+    script.onerror = () => reject(new Error("Failed to load Google Maps"));
+    document.head.appendChild(script);
+  });
+  placesPromise.catch(() => {
+    placesPromise = null; // allow a retry later
+  });
+  return placesPromise;
+};
+
+type Suggestion = { id: string; main: string; secondary: string; full: string };
+
+/**
+ * Address input with Google Places suggestions.
+ * If Google fails to load (no key, offline), it behaves like a normal text input.
+ */
+const AddressAutocomplete = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => {
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [active, setActive] = useState(-1);
+
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const placesRef = useRef<any>(null);
+  const tokenRef = useRef<any>(null);
+  const userTyped = useRef(false);
+
+  // Close the dropdown when clicking outside
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  // Fetch suggestions (debounced) only when the user is typing
+  useEffect(() => {
+    if (!userTyped.current) return;
+    const input = value.trim();
+    if (input.length < 3) {
+      setSuggestions([]);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        setLoading(true);
+        if (!placesRef.current) placesRef.current = await loadPlacesLibrary();
+        const { AutocompleteSuggestion, AutocompleteSessionToken } = placesRef.current;
+        if (!tokenRef.current) tokenRef.current = new AutocompleteSessionToken();
+
+        const res = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
+          input,
+          sessionToken: tokenRef.current,
+          // includedRegionCodes: ["ke"], // uncomment to limit results to Kenya
+        });
+        if (cancelled) return;
+
+        const list: Suggestion[] = (res.suggestions || [])
+          .filter((s: any) => s.placePrediction)
+          .map((s: any) => {
+            const p = s.placePrediction;
+            return {
+              id: p.placeId,
+              main: p.mainText?.text || p.text?.text || "",
+              secondary: p.secondaryText?.text || "",
+              full: p.text?.text || "",
+            };
+          });
+        setSuggestions(list);
+        setActive(-1);
+        setOpen(list.length > 0);
+      } catch {
+        if (!cancelled) setSuggestions([]); // fall back to plain typing
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [value]);
+
+  const pick = (s: Suggestion) => {
+    userTyped.current = false;
+    tokenRef.current = null; // a new session starts after a selection
+    onChange(s.full);
+    setSuggestions([]);
+    setOpen(false);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (!open || suggestions.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((i) => (i + 1) % suggestions.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((i) => (i <= 0 ? suggestions.length - 1 : i - 1));
+    } else if (e.key === "Enter" && active >= 0) {
+      e.preventDefault();
+      pick(suggestions[active]);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <label className="input input-bordered input-xs sm:input-sm rounded-xl flex items-center gap-2 w-full text-xs">
+        <MapPin size={13} className="text-primary shrink-0" />
+        <input
+          type="text"
+          required
+          autoComplete="off"
+          placeholder="Search a place or type the address"
+          value={value}
+          onChange={(e) => {
+            userTyped.current = true;
+            onChange(e.target.value);
+          }}
+          onFocus={() => suggestions.length > 0 && setOpen(true)}
+          onKeyDown={onKeyDown}
+          className="grow"
+          role="combobox"
+          aria-expanded={open}
+          aria-autocomplete="list"
+        />
+        {loading && <span className="loading loading-spinner loading-xs text-primary shrink-0"></span>}
+      </label>
+
+      {open && suggestions.length > 0 && (
+        <ul
+          role="listbox"
+          className="absolute z-20 left-0 right-0 mt-1 bg-base-100 border border-base-200 rounded-xl shadow-lg overflow-hidden max-h-56 overflow-y-auto"
+        >
+          {suggestions.map((s, i) => (
+            <li key={s.id} role="option" aria-selected={i === active}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(s)}
+                onMouseEnter={() => setActive(i)}
+                className={`w-full text-left px-3 py-2 flex items-start gap-2 transition-colors ${i === active ? "bg-primary/10" : "hover:bg-base-200/50"}`}
+              >
+                <MapPin size={13} className="text-primary shrink-0 mt-0.5" />
+                <span className="flex flex-col min-w-0">
+                  <span className="text-xs font-bold text-base-content truncate">{s.main}</span>
+                  {s.secondary && <span className="text-[10px] text-base-content/50 truncate">{s.secondary}</span>}
+                </span>
+              </button>
+            </li>
+          ))}
+          <li className="px-3 py-1 text-[9px] text-base-content/40 border-t border-base-200 text-right">Powered by Google</li>
+        </ul>
+      )}
+    </div>
+  );
 };
 
 export const VenueManager = () => {
@@ -113,7 +298,6 @@ export const VenueManager = () => {
   // UI STATE
   // ---------------------------------------------------------------------------
   const [search, setSearch] = useState("");
-  const [locationFilter, setLocationFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [page, setPage] = useState(1);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -151,19 +335,12 @@ export const VenueManager = () => {
   // ---------------------------------------------------------------------------
   // FILTER + SORT + PAGINATION
   // ---------------------------------------------------------------------------
-  const locations = useMemo(
-    () => Array.from(new Set(venues.map((v) => v.location).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
-    [venues]
-  );
-
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = venues.filter((v) => {
-      if (locationFilter !== "all" && v.location !== locationFilter) return false;
       if (!q) return true;
       return (
         (v.name || "").toLowerCase().includes(q) ||
-        (v.location || "").toLowerCase().includes(q) ||
         (v.address || "").toLowerCase().includes(q) ||
         (v.description || "").toLowerCase().includes(q)
       );
@@ -175,7 +352,7 @@ export const VenueManager = () => {
       if (sortKey === "newest") return +new Date(b.createdAt || 0) - +new Date(a.createdAt || 0) || vId(b) - vId(a);
       return (a.name || "").localeCompare(b.name || "");
     });
-  }, [venues, search, locationFilter, sortKey]);
+  }, [venues, search, sortKey]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -193,7 +370,6 @@ export const VenueManager = () => {
   // ---------------------------------------------------------------------------
   const resetFilters = () => {
     setSearch("");
-    setLocationFilter("all");
     setPage(1);
   };
 
@@ -218,7 +394,6 @@ export const VenueManager = () => {
   const openEdit = (v: Venue) => {
     setForm({
       name: v.name || "",
-      location: v.location || "",
       address: v.address || "",
       capacity: String(v.capacity ?? ""),
       description: v.description || "",
@@ -232,9 +407,11 @@ export const VenueManager = () => {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const name = form.name.trim();
+    const address = form.address.trim();
     const capacity = Number(form.capacity);
 
     if (!name) return setFormError("Give the venue a name.");
+    if (!address) return setFormError("Add the venue address.");
     if (!Number.isInteger(capacity) || capacity <= 0) return setFormError("Capacity must be a whole number above zero.");
 
     const duplicate = venues.some(
@@ -245,18 +422,17 @@ export const VenueManager = () => {
     setFormError("");
     const payload = {
       name,
-      location: form.location.trim(),
-      address: form.address.trim(),
+      address,
       capacity,
       description: form.description.trim() || undefined,
     };
 
     try {
       if (formMode === "create") {
-        await createVenue(payload).unwrap();
+        await createVenue(payload as any).unwrap();
         setSuccessMessage(`"${name}" was added to your venues.`);
       } else if (editingVenue) {
-        await updateVenue({ venueId: vId(editingVenue), ...payload }).unwrap();
+        await updateVenue({ venueId: vId(editingVenue), ...payload } as any).unwrap();
         setSuccessMessage(`"${name}" was updated.`);
       }
       setFormMode(null);
@@ -285,8 +461,8 @@ export const VenueManager = () => {
 
   const exportCsv = () => {
     const rows = [
-      ["Venue", "Location", "Address", "Capacity", "Events", "Description"],
-      ...filtered.map((v) => [v.name, v.location, v.address, v.capacity, eventsAt(v).length, v.description ?? ""]),
+      ["Venue", "Address", "Capacity", "Events", "Description"],
+      ...filtered.map((v) => [v.name, v.address, v.capacity, eventsAt(v).length, v.description ?? ""]),
     ];
     const csv = "\uFEFF" + rows.map((r) => r.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
@@ -476,12 +652,12 @@ export const VenueManager = () => {
       {/* =================================================================== */}
       {/* FILTERS                                                             */}
       {/* =================================================================== */}
-      <div className="flex flex-col lg:flex-row gap-2">
+      <div className="flex flex-col sm:flex-row gap-2">
         <label className="input input-bordered input-xs sm:input-sm rounded-xl flex items-center gap-2 flex-1 text-xs">
           <Search size={14} className="text-base-content/40" />
           <input
             type="text"
-            placeholder="Search by name, location, address or description"
+            placeholder="Search by name, address or description"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -496,37 +672,19 @@ export const VenueManager = () => {
           )}
         </label>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <label className="flex items-center gap-2">
+          <ArrowUpDown size={13} className="text-base-content/40 shrink-0" />
           <select
-            value={locationFilter}
-            onChange={(e) => {
-              setLocationFilter(e.target.value);
-              setPage(1);
-            }}
-            className="select select-bordered select-xs sm:select-sm rounded-xl text-xs font-semibold"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as SortKey)}
+            className="select select-bordered select-xs sm:select-sm rounded-xl text-xs font-semibold w-full"
           >
-            <option value="all">All locations</option>
-            {locations.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
+            <option value="name">Name: A–Z</option>
+            <option value="capacity_desc">Capacity: high to low</option>
+            <option value="capacity_asc">Capacity: low to high</option>
+            <option value="newest">Newest first</option>
           </select>
-
-          <label className="flex items-center gap-2">
-            <ArrowUpDown size={13} className="text-base-content/40 shrink-0" />
-            <select
-              value={sortKey}
-              onChange={(e) => setSortKey(e.target.value as SortKey)}
-              className="select select-bordered select-xs sm:select-sm rounded-xl text-xs font-semibold w-full"
-            >
-              <option value="name">Name: A–Z</option>
-              <option value="capacity_desc">Capacity: high to low</option>
-              <option value="capacity_asc">Capacity: low to high</option>
-              <option value="newest">Newest first</option>
-            </select>
-          </label>
-        </div>
+        </label>
       </div>
 
       {/* =================================================================== */}
@@ -554,7 +712,7 @@ export const VenueManager = () => {
           <Warehouse size={36} className="mx-auto text-primary/40 mb-2" />
           <h3 className="font-bold text-xs text-base-content">{venues.length === 0 ? "No Venues Yet" : "No Matching Venues"}</h3>
           <p className="text-[11px] text-base-content/60 mt-0.5 mb-3">
-            {venues.length === 0 ? "Add your first venue so you can use it when creating events." : "Try a different search or location."}
+            {venues.length === 0 ? "Add your first venue so you can use it when creating events." : "Try a different search."}
           </p>
           {venues.length === 0 ? (
             <button onClick={openCreate} className="btn btn-primary btn-xs rounded-xl font-bold">
@@ -562,7 +720,7 @@ export const VenueManager = () => {
             </button>
           ) : (
             <button onClick={resetFilters} className="btn btn-ghost btn-xs bg-base-200 rounded-xl font-bold">
-              Clear filters
+              Clear search
             </button>
           )}
         </div>
@@ -626,7 +784,7 @@ export const VenueManager = () => {
                             <h3 className="text-sm font-black text-base-content truncate group-hover:text-primary transition-colors">{v.name}</h3>
                             <span className="flex items-center gap-1 text-[11px] text-base-content/60 truncate">
                               <MapPin size={11} className="shrink-0 text-primary" />
-                              {v.location || "No location"}
+                              <span className="truncate">{v.address || "No address"}</span>
                             </span>
                           </div>
                         </div>
@@ -638,7 +796,7 @@ export const VenueManager = () => {
                       </div>
 
                       <p className="text-[11px] text-base-content/60 line-clamp-2 leading-relaxed min-h-[2.2rem]">
-                        {v.description || v.address || "No description added."}
+                        {v.description || "No description added."}
                       </p>
 
                       <div className="grid grid-cols-2 gap-2">
@@ -658,7 +816,7 @@ export const VenueManager = () => {
                     </div>
 
                     <div className="px-3 py-2 flex items-center justify-between border-t border-base-200 bg-base-200/20">
-                      <span className="text-[10px] text-base-content/40 truncate pr-2">{v.address}</span>
+                      <span className="text-[10px] text-base-content/40 truncate pr-2">Added {fmtDate(v.createdAt)}</span>
                       <VenueActions v={v} />
                     </div>
                   </motion.div>
@@ -668,11 +826,10 @@ export const VenueManager = () => {
           ) : (
             <div className="bg-base-100 border border-base-200 rounded-2xl shadow-sm overflow-hidden">
               <div className="overflow-x-auto w-full">
-                <table className="table table-sm w-full text-xs min-w-[760px]">
+                <table className="table table-sm w-full text-xs min-w-[640px]">
                   <thead>
                     <tr className="bg-base-200/50 text-base-content/70 border-b border-base-200">
                       <th className="py-3 px-4 font-bold">Venue</th>
-                      <th className="py-3 px-4 font-bold">Location</th>
                       <th className="py-3 px-4 font-bold">Address</th>
                       <th className="py-3 px-4 font-bold">Capacity</th>
                       <th className="py-3 px-4 font-bold">Events</th>
@@ -693,8 +850,7 @@ export const VenueManager = () => {
                             </div>
                           </div>
                         </td>
-                        <td className="py-3 px-4 text-base-content/70 font-semibold">{v.location || "—"}</td>
-                        <td className="py-3 px-4 text-base-content/70 max-w-[220px] truncate">{v.address || "—"}</td>
+                        <td className="py-3 px-4 text-base-content/70 max-w-[280px] truncate">{v.address || "—"}</td>
                         <td className="py-3 px-4 font-bold text-base-content">{fmtNum(v.capacity)}</td>
                         <td className="py-3 px-4">
                           <span className={`badge badge-sm font-bold ${eventsAt(v).length ? "badge-primary badge-outline" : "badge-ghost"}`}>
@@ -801,17 +957,27 @@ export const VenueManager = () => {
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[11px] text-base-content/60 font-semibold">Location</span>
-                  <span className="font-bold text-base-content">{detailVenue.location || "—"}</span>
+                <div className="flex flex-col gap-0.5 col-span-2">
+                  <span className="text-[11px] text-base-content/60 font-semibold">Address</span>
+                  <span className="font-bold text-base-content">{detailVenue.address || "—"}</span>
+                  {detailVenue.address && (
+                    <a
+                      href={mapsLink(detailVenue.address)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline w-fit mt-0.5"
+                    >
+                      <ExternalLink size={11} /> Open in Google Maps
+                    </a>
+                  )}
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <span className="text-[11px] text-base-content/60 font-semibold">Capacity</span>
                   <span className="font-bold text-base-content">{fmtNum(detailVenue.capacity)} people</span>
                 </div>
-                <div className="flex flex-col gap-0.5 col-span-2">
-                  <span className="text-[11px] text-base-content/60 font-semibold">Address</span>
-                  <span className="font-bold text-base-content">{detailVenue.address || "—"}</span>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[11px] text-base-content/60 font-semibold">Added</span>
+                  <span className="font-bold text-base-content">{fmtDate(detailVenue.createdAt)}</span>
                 </div>
                 {detailVenue.description && (
                   <div className="flex flex-col gap-0.5 col-span-2">
@@ -819,10 +985,6 @@ export const VenueManager = () => {
                     <span className="text-base-content/80 leading-relaxed">{detailVenue.description}</span>
                   </div>
                 )}
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[11px] text-base-content/60 font-semibold">Added</span>
-                  <span className="font-bold text-base-content">{fmtDate(detailVenue.createdAt)}</span>
-                </div>
                 <div className="flex flex-col gap-0.5">
                   <span className="text-[11px] text-base-content/60 font-semibold">Last updated</span>
                   <span className="font-bold text-base-content">{fmtDate(detailVenue.updatedAt)}</span>
@@ -893,32 +1055,20 @@ export const VenueManager = () => {
               </div>
 
               <form onSubmit={handleSubmit} className="flex flex-col gap-3 text-xs">
-                <div className="flex flex-col gap-1">
-                  <label className="font-semibold text-base-content/70 text-[11px]">Venue name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. KICC Tsavo Ballroom"
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    className="input input-bordered input-xs sm:input-sm rounded-xl w-full text-xs"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="flex flex-col gap-1">
-                    <label className="font-semibold text-base-content/70 text-[11px]">Location (city or area)</label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="flex flex-col gap-1 sm:col-span-2">
+                    <label className="font-semibold text-base-content/70 text-[11px]">Venue name</label>
                     <input
                       type="text"
                       required
-                      placeholder="e.g. Nairobi CBD"
-                      value={form.location}
-                      onChange={(e) => setForm({ ...form, location: e.target.value })}
+                      placeholder="e.g. KICC Tsavo Ballroom"
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
                       className="input input-bordered input-xs sm:input-sm rounded-xl w-full text-xs"
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="font-semibold text-base-content/70 text-[11px]">Capacity (people)</label>
+                    <label className="font-semibold text-base-content/70 text-[11px]">Capacity</label>
                     <input
                       type="number"
                       required
@@ -934,14 +1084,8 @@ export const VenueManager = () => {
 
                 <div className="flex flex-col gap-1">
                   <label className="font-semibold text-base-content/70 text-[11px]">Address</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. City Square, Harambee Avenue"
-                    value={form.address}
-                    onChange={(e) => setForm({ ...form, address: e.target.value })}
-                    className="input input-bordered input-xs sm:input-sm rounded-xl w-full text-xs"
-                  />
+                  <AddressAutocomplete value={form.address} onChange={(address) => setForm((f) => ({ ...f, address }))} />
+                  <span className="text-[10px] text-base-content/50">Start typing and pick a match, or enter the address yourself.</span>
                 </div>
 
                 <div className="flex flex-col gap-1">

@@ -29,7 +29,6 @@ import {
 import { type RootState } from "../../App/store";
 import {
   useCheckWalletExistsQuery,
-  useGetWalletByOrgIdQuery,
   useGetWalletOverviewQuery,
   useGetOrCreateWalletMutation,
   useGetPayoutsByOrgQuery,
@@ -49,6 +48,7 @@ const DEFAULT_CURRENCY = "KES";
 const CURRENCIES = ["KES", "USD", "EUR", "GBP"];
 const ACCOUNT_TYPES = ["M-Pesa", "Paybill", "Bank"];
 const PAGE_SIZE = 10;
+const WALLET_REFRESH_MS = 30_000; // keeps the balance fresh while the page is open
 
 type Tab = "overview" | "payouts" | "methods";
 type StatusFilter = "all" | Payout["status"];
@@ -76,7 +76,6 @@ const makeMoney = (currency: string) => (v: unknown) => {
 const fmtDate = (d?: string | null) =>
   d ? new Date(d).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—";
 
-const toArray = <T,>(d: any): T[] => (Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []);
 const mask = (n?: string) => (n ? `•••• ${String(n).slice(-4)}` : "—");
 
 const errMsg = (err: any, fallback: string) => err?.data?.message || err?.data?.error || fallback;
@@ -88,15 +87,14 @@ const methodIcon = (type?: string) => {
   return <CreditCard size={18} />;
 };
 
-const txIsDebit = (t: any) => /debit|withdraw|payout|out/i.test(String(t.type ?? t.transactionType ?? t.direction ?? ""));
-
 const emptyMethodForm = { accountType: "M-Pesa", accountNumber: "", accountName: "", isDefault: false };
 
 export const WalletManager = () => {
   usePageTitle("Wallet");
 
   const user = useSelector((state: RootState) => state.auth.user);
-  const orgId = user?.orgId || user?.organizationId || 1;
+  // No fallback org: showing another organization's wallet would be worse than showing nothing
+  const orgId = Number((user as any)?.orgId || (user as any)?.organizationId || 0);
 
   // ---------------------------------------------------------------------------
   // WALLET
@@ -104,45 +102,42 @@ export const WalletManager = () => {
   const existsQ = useCheckWalletExistsQuery(orgId, { skip: !orgId });
   const walletExists = existsQ.data?.exists ?? (existsQ.isError ? false : undefined);
 
-  const walletQ = useGetWalletByOrgIdQuery(orgId, { skip: !orgId || walletExists !== true });
-  const overviewQ = useGetWalletOverviewQuery(orgId, { skip: !orgId || walletExists !== true });
+  // The overview already contains the wallet, the method count and the default method
+  const overviewQ = useGetWalletOverviewQuery(orgId, {
+    skip: !orgId || walletExists !== true,
+    pollingInterval: WALLET_REFRESH_MS,
+  });
 
-  const overview: any = overviewQ.data;
-  const wallet = (overview?.wallet ?? walletQ.data) as any;
-  const stats: any = overview?.stats;
-  const transactions: any[] = Array.isArray(overview?.recentTransactions) ? overview.recentTransactions : [];
+  const overview = overviewQ.data;
+  const wallet = overview?.wallet;
 
   const currency: string = wallet?.currency || DEFAULT_CURRENCY;
   const money = useMemo(() => makeMoney(currency), [currency]);
   const available = num(wallet?.balance);
   const pending = num(wallet?.pendingBalance);
+  const totalEarned = num(wallet?.totalEarned);
 
   // ---------------------------------------------------------------------------
   // PAYOUTS & METHODS
   // ---------------------------------------------------------------------------
-  const payoutsQ = useGetPayoutsByOrgQuery(orgId, { skip: !orgId || walletExists !== true });
+  const payoutsQ = useGetPayoutsByOrgQuery(orgId, {
+    skip: !orgId || walletExists !== true,
+    pollingInterval: WALLET_REFRESH_MS,
+  });
   const totalPaidQ = useGetTotalPaidByOrgQuery(orgId, { skip: !orgId || walletExists !== true });
   const methodsQ = useGetPayoutMethodsByOrgQuery(orgId, { skip: !orgId });
 
   const payouts = useMemo(
-    () => [...toArray<Payout>(payoutsQ.data)].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
+    () => [...(payoutsQ.data ?? [])].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
     [payoutsQ.data]
   );
-  const methods = useMemo(() => toArray<PayoutMethod>(methodsQ.data), [methodsQ.data]);
-  const defaultMethod = methods.find((m) => m.isDefault) ?? methods[0];
+  const methods = useMemo(() => methodsQ.data ?? [], [methodsQ.data]);
+  const defaultMethod = overview?.defaultMethod ?? methods.find((m) => m.isDefault) ?? methods[0];
 
-  const methodLabel = (id: number) => {
-    const m = methods.find((x) => x.payoutMethodId === id);
-    return m ? `${m.accountType} · ${mask(m.accountNumber)}` : `Method #${id}`;
-  };
-
-  const totalPaid = (() => {
-    const d: any = totalPaidQ.data;
-    const v = d?.totalPaid ?? d?.total ?? (typeof d === "number" ? d : undefined);
-    if (v !== undefined) return num(v);
-    return payouts.filter((p) => p.status === "Completed").reduce((s, p) => s + num(p.amount), 0);
-  })();
-  const pendingPayoutsTotal = payouts.filter((p) => p.status === "Pending").reduce((s, p) => s + num(p.amount), 0);
+  const totalPaid =
+    totalPaidQ.data?.totalPaidOut ??
+    payouts.filter((p) => p.status === "Completed").reduce((s, p) => s + num(p.amount), 0);
+  const pendingPayoutsCount = payouts.filter((p) => p.status === "Pending").length;
 
   // ---------------------------------------------------------------------------
   // MUTATIONS
@@ -199,7 +194,7 @@ export const WalletManager = () => {
   const handleCreateWallet = async () => {
     setErrorMessage("");
     try {
-      await createWallet({ orgId: Number(orgId), currency: newWalletCurrency }).unwrap();
+      await createWallet({ orgId, currency: newWalletCurrency }).unwrap();
       setSuccessMessage("Your wallet is ready!");
     } catch (err: any) {
       setErrorMessage(errMsg(err, "Failed to create the wallet."));
@@ -208,7 +203,7 @@ export const WalletManager = () => {
 
   const openRequest = () => {
     setRequestError("");
-    setRequestForm({ amount: "", methodId: defaultMethod ? String(defaultMethod.payoutMethodId) : "" });
+    setRequestForm({ amount: "", methodId: defaultMethod ? String(defaultMethod.methodId) : "" });
     setRequestOpen(true);
   };
 
@@ -223,11 +218,11 @@ export const WalletManager = () => {
     setRequestError("");
     try {
       await requestPayout({
-        orgId: Number(orgId),
+        orgId,
         amount,
-        payoutMethodId: Number(requestForm.methodId),
+        methodId: Number(requestForm.methodId),
       }).unwrap();
-      setSuccessMessage("Payout requested. You will see its status in the Payouts tab.");
+      setSuccessMessage("Payout requested. You can follow its status in the Payouts tab.");
       setRequestOpen(false);
       setTab("payouts");
     } catch (err: any) {
@@ -246,7 +241,7 @@ export const WalletManager = () => {
     setMethodForm({
       accountType: m.accountType,
       accountNumber: m.accountNumber,
-      accountName: m.accountName,
+      accountName: m.accountName ?? "",
       isDefault: m.isDefault,
     });
     setEditingMethod(m);
@@ -260,7 +255,7 @@ export const WalletManager = () => {
     try {
       if (methodModal === "add") {
         await addMethod({
-          orgId: Number(orgId),
+          orgId,
           accountType: methodForm.accountType,
           accountNumber: methodForm.accountNumber.trim(),
           accountName: methodForm.accountName.trim(),
@@ -269,8 +264,8 @@ export const WalletManager = () => {
         setSuccessMessage("Payout method added.");
       } else if (editingMethod) {
         await updateMethod({
-          payoutMethodId: editingMethod.payoutMethodId,
-          orgId: Number(orgId),
+          methodId: editingMethod.methodId,
+          orgId,
           accountType: methodForm.accountType,
           accountNumber: methodForm.accountNumber.trim(),
           accountName: methodForm.accountName.trim(),
@@ -286,7 +281,7 @@ export const WalletManager = () => {
   const handleSetDefault = async (m: PayoutMethod) => {
     setErrorMessage("");
     try {
-      await setDefaultMethod({ payoutMethodId: m.payoutMethodId, orgId: Number(orgId) }).unwrap();
+      await setDefaultMethod({ methodId: m.methodId, orgId }).unwrap();
       setSuccessMessage("Default payout method updated.");
     } catch (err: any) {
       setErrorMessage(errMsg(err, "Failed to set the default method."));
@@ -296,7 +291,7 @@ export const WalletManager = () => {
   const handleDeleteMethod = async () => {
     if (!methodToDelete) return;
     try {
-      await deleteMethod({ payoutMethodId: methodToDelete.payoutMethodId, orgId: Number(orgId) }).unwrap();
+      await deleteMethod({ methodId: methodToDelete.methodId, orgId }).unwrap();
       setSuccessMessage("Payout method removed.");
     } catch (err: any) {
       setErrorMessage(errMsg(err, "Failed to remove the payout method."));
@@ -307,12 +302,14 @@ export const WalletManager = () => {
 
   const exportPayoutsCsv = () => {
     const rows = [
-      ["Payout #", "Amount", "Currency", "Method", "Status", "Reference", "Requested", "Updated"],
+      ["Payout #", "Amount", "Fee", "Currency", "Sent to", "Account", "Status", "Reference", "Requested", "Updated"],
       ...filteredPayouts.map((p) => [
         p.payoutId,
         p.amount,
+        p.fee,
         currency,
-        methodLabel(p.payoutMethodId),
+        p.destinationType,
+        p.destinationAccount,
         p.status,
         p.transactionReference ?? "",
         fmtDate(p.createdAt),
@@ -336,8 +333,19 @@ export const WalletManager = () => {
   };
 
   // ---------------------------------------------------------------------------
-  // EARLY STATES: loading / no wallet yet
+  // EARLY STATES: no organization / loading / no wallet yet
   // ---------------------------------------------------------------------------
+  if (!orgId) {
+    return (
+      <div className="max-w-3xl mx-auto w-full px-3 sm:px-6 py-16">
+        <div className="alert alert-warning text-xs font-semibold rounded-xl">
+          <AlertTriangle size={16} />
+          <span>Your account is not linked to an organization, so there is no wallet to show.</span>
+        </div>
+      </div>
+    );
+  }
+
   if (existsQ.isLoading) {
     return (
       <div className="flex justify-center py-32">
@@ -390,7 +398,7 @@ export const WalletManager = () => {
     );
   }
 
-  const walletLoading = walletQ.isLoading || overviewQ.isLoading;
+  const walletLoading = overviewQ.isLoading;
 
   return (
     <div className="flex flex-col gap-5 pb-16 max-w-7xl mx-auto w-full font-sans px-3 sm:px-6">
@@ -433,9 +441,10 @@ export const WalletManager = () => {
             <div className="flex flex-col gap-1">
               <span className="font-bold text-base-content">Wallet Guide</span>
               <p className="text-base-content/70 leading-relaxed text-[11px]">
-                Money from ticket sales is added to your wallet. <b>Available</b> money can be paid out, while <b>Pending</b>{" "}
-                money is still being cleared. Add a payout method, then request a payout. New requests start as Pending and
-                change to Completed once they are paid, or Failed if something went wrong.
+                Every ticket sale is added to your wallet after the platform fee is taken off. <b>Available</b> money can be
+                paid out. When you request a payout, that amount moves to <b>Being paid out</b> until it is sent. A payout
+                starts as Pending, then becomes Completed once paid, or Failed, in which case the money returns to your
+                available balance.
               </p>
             </div>
           </div>
@@ -464,6 +473,12 @@ export const WalletManager = () => {
           </button>
         </div>
       )}
+      {overviewQ.isError && (
+        <div className="alert alert-error text-xs font-semibold py-2 rounded-xl shadow-sm">
+          <AlertCircle size={16} className="shrink-0" />
+          <span>Could not load your wallet. Check your connection and try again.</span>
+        </div>
+      )}
 
       {/* =================================================================== */}
       {/* BALANCE CARDS                                                       */}
@@ -478,6 +493,7 @@ export const WalletManager = () => {
               ) : (
                 <span className="text-3xl sm:text-4xl font-black tracking-tight">{money(available)}</span>
               )}
+              <span className="text-[11px] opacity-75">After platform fees</span>
             </div>
             <div className="p-2.5 bg-white/15 rounded-xl">
               <WalletIcon size={22} />
@@ -487,20 +503,31 @@ export const WalletManager = () => {
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-xl bg-white/15 p-3 flex flex-col gap-0.5">
               <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold opacity-80">
-                <Hourglass size={11} /> Pending clearance
+                <Hourglass size={11} /> Being paid out
               </span>
               <span className="text-base font-black">{money(pending)}</span>
             </div>
             <div className="rounded-xl bg-white/15 p-3 flex flex-col gap-0.5">
               <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold opacity-80">
-                <Clock size={11} /> Payouts in progress
+                <Clock size={11} /> Pending requests
               </span>
-              <span className="text-base font-black">{money(pendingPayoutsTotal)}</span>
+              <span className="text-base font-black">{pendingPayoutsCount}</span>
             </div>
           </div>
         </div>
 
         <div className="flex flex-col gap-3">
+          <div className="bg-base-100 border border-base-200 p-4 rounded-2xl shadow-sm flex items-center justify-between gap-2 flex-1">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[11px] text-base-content/60 font-semibold">Total earned</span>
+              <span className="text-base sm:text-lg font-black text-base-content">{money(totalEarned)}</span>
+              <span className="text-[10px] text-base-content/50">Lifetime, after platform fees</span>
+            </div>
+            <div className="p-2.5 bg-primary/10 text-primary rounded-xl shrink-0">
+              <ArrowDownLeft size={18} />
+            </div>
+          </div>
+
           <div className="bg-base-100 border border-base-200 p-4 rounded-2xl shadow-sm flex items-center justify-between gap-2 flex-1">
             <div className="flex flex-col gap-0.5">
               <span className="text-[11px] text-base-content/60 font-semibold">Total paid out</span>
@@ -509,21 +536,6 @@ export const WalletManager = () => {
             </div>
             <div className="p-2.5 bg-success/10 text-success rounded-xl shrink-0">
               <Banknote size={18} />
-            </div>
-          </div>
-
-          <div className="bg-base-100 border border-base-200 p-4 rounded-2xl shadow-sm flex items-center justify-between gap-2 flex-1">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[11px] text-base-content/60 font-semibold">Total earned</span>
-              <span className="text-base sm:text-lg font-black text-base-content">
-                {stats?.totalCredits !== undefined ? money(stats.totalCredits) : "—"}
-              </span>
-              <span className="text-[10px] text-base-content/50">
-                {stats?.totalDebits !== undefined ? `${money(stats.totalDebits)} paid or deducted` : "Lifetime credits"}
-              </span>
-            </div>
-            <div className="p-2.5 bg-primary/10 text-primary rounded-xl shrink-0">
-              <ArrowDownLeft size={18} />
             </div>
           </div>
         </div>
@@ -558,42 +570,43 @@ export const WalletManager = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 bg-base-100 border border-base-200 rounded-2xl shadow-sm p-4 sm:p-5 flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <h3 className="font-black text-xs uppercase tracking-wider text-base-content">Recent activity</h3>
+              <h3 className="font-black text-xs uppercase tracking-wider text-base-content">Recent payouts</h3>
               <Receipt size={16} className="text-primary" />
             </div>
 
-            {overviewQ.isLoading ? (
+            {payoutsQ.isLoading ? (
               <div className="flex justify-center py-10">
                 <span className="loading loading-spinner loading-md text-primary"></span>
               </div>
-            ) : transactions.length === 0 ? (
+            ) : payouts.length === 0 ? (
               <div className="text-center py-10 text-base-content/50">
                 <Receipt size={30} className="mx-auto mb-2 opacity-40" />
-                <p className="text-xs font-semibold">No wallet activity yet</p>
-                <p className="text-[11px]">Ticket sales and payouts will show up here.</p>
+                <p className="text-xs font-semibold">No payouts yet</p>
+                <p className="text-[11px]">Ticket sales are added to your balance automatically. Payouts you request will show here.</p>
               </div>
             ) : (
               <ul className="flex flex-col divide-y divide-base-200">
-                {transactions.slice(0, 10).map((t, i) => {
-                  const debit = txIsDebit(t);
-                  return (
-                    <li key={t.transactionId ?? t.id ?? i} className="flex items-center gap-3 py-2.5">
-                      <div className={`p-2 rounded-xl shrink-0 ${debit ? "bg-error/10 text-error" : "bg-success/10 text-success"}`}>
-                        {debit ? <ArrowUpRight size={15} /> : <ArrowDownLeft size={15} />}
-                      </div>
-                      <div className="flex flex-col min-w-0 flex-1">
-                        <span className="text-xs font-bold text-base-content truncate">
-                          {t.description || t.reference || (debit ? "Money out" : "Money in")}
-                        </span>
-                        <span className="text-[10px] text-base-content/50">{fmtDate(t.createdAt)}</span>
-                      </div>
-                      <span className={`text-xs font-black shrink-0 ${debit ? "text-error" : "text-success"}`}>
-                        {debit ? "−" : "+"}
-                        {money(Math.abs(num(t.amount)))}
+                {payouts.slice(0, 10).map((p) => (
+                  <li key={p.payoutId} className="flex items-center gap-3 py-2.5">
+                    <div className="p-2 rounded-xl shrink-0 bg-error/10 text-error">
+                      <ArrowUpRight size={15} />
+                    </div>
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="text-xs font-bold text-base-content truncate">
+                        Payout #{p.payoutId} to {p.destinationType} {mask(p.destinationAccount)}
                       </span>
-                    </li>
-                  );
-                })}
+                      <span className="text-[10px] text-base-content/50">{fmtDate(p.createdAt)}</span>
+                    </div>
+                    <span className={`badge badge-sm font-bold shrink-0 ${statusBadge[p.status]}`}>{p.status}</span>
+                    <span
+                      className={`text-xs font-black shrink-0 ${
+                        p.status === "Failed" ? "text-base-content/40 line-through" : "text-base-content"
+                      }`}
+                    >
+                      −{money(p.amount)}
+                    </span>
+                  </li>
+                ))}
               </ul>
             )}
           </div>
@@ -608,7 +621,9 @@ export const WalletManager = () => {
               <div className="rounded-xl bg-base-200/50 p-3 flex items-center gap-3">
                 <div className="p-2 bg-primary/10 text-primary rounded-xl">{methodIcon(defaultMethod.accountType)}</div>
                 <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-bold text-base-content truncate">{defaultMethod.accountName}</span>
+                  <span className="text-xs font-bold text-base-content truncate">
+                    {defaultMethod.accountName || defaultMethod.accountType}
+                  </span>
                   <span className="text-[11px] text-base-content/60">
                     {defaultMethod.accountType} · {mask(defaultMethod.accountNumber)}
                   </span>
@@ -620,7 +635,10 @@ export const WalletManager = () => {
               </p>
             )}
 
-            <button onClick={() => (defaultMethod ? setTab("methods") : openAddMethod())} className="btn btn-ghost btn-sm bg-base-200 rounded-xl text-xs font-bold">
+            <button
+              onClick={() => (defaultMethod ? setTab("methods") : openAddMethod())}
+              className="btn btn-ghost btn-sm bg-base-200 rounded-xl text-xs font-bold"
+            >
               {defaultMethod ? "Manage payout methods" : "Add payout method"}
             </button>
 
@@ -713,7 +731,9 @@ export const WalletManager = () => {
                           </div>
                         </td>
                         <td className="py-3 px-4 font-bold text-success">{money(p.amount)}</td>
-                        <td className="py-3 px-4 font-semibold text-base-content/70">{methodLabel(p.payoutMethodId)}</td>
+                        <td className="py-3 px-4 font-semibold text-base-content/70">
+                          {p.destinationType} · {mask(p.destinationAccount)}
+                        </td>
                         <td className="py-3 px-4">
                           <span className={`badge badge-sm font-bold ${statusBadge[p.status]}`}>{p.status}</span>
                         </td>
@@ -788,7 +808,7 @@ export const WalletManager = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {methods.map((m) => (
                 <div
-                  key={m.payoutMethodId}
+                  key={m.methodId}
                   className={`bg-base-100 border rounded-2xl shadow-sm p-4 flex flex-col gap-3 ${
                     m.isDefault ? "border-primary/40 ring-1 ring-primary/20" : "border-base-200"
                   }`}
@@ -797,7 +817,7 @@ export const WalletManager = () => {
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="p-2.5 bg-primary/10 text-primary rounded-xl shrink-0">{methodIcon(m.accountType)}</div>
                       <div className="flex flex-col min-w-0">
-                        <span className="text-xs font-black text-base-content truncate">{m.accountName}</span>
+                        <span className="text-xs font-black text-base-content truncate">{m.accountName || m.accountType}</span>
                         <span className="text-[11px] text-base-content/60">{m.accountType}</span>
                       </div>
                     </div>
@@ -905,8 +925,8 @@ export const WalletManager = () => {
                       className="select select-bordered select-sm rounded-xl w-full text-xs"
                     >
                       {methods.map((m) => (
-                        <option key={m.payoutMethodId} value={m.payoutMethodId}>
-                          {m.accountName} · {m.accountType} {mask(m.accountNumber)}
+                        <option key={m.methodId} value={m.methodId}>
+                          {m.accountName || m.accountType} · {m.accountType} {mask(m.accountNumber)}
                           {m.isDefault ? " (default)" : ""}
                         </option>
                       ))}

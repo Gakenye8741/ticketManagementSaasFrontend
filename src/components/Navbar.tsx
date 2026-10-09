@@ -309,7 +309,7 @@ export const Navbar = () => {
     if (role === "admin") return "/admin-dashboard/";
     if (role === "organizer") return "/organizer-dashboard/";
 
-    return "/dashboard/analytics";
+    return "/user-dashboard";
   };
 
   const getDashboardLabel = () => {

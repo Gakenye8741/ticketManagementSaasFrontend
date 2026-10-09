@@ -1,57 +1,59 @@
-import { 
-  User, 
-  LogOut, 
-  CreditCard, 
-  Ticket, 
-  TicketCheck, 
-  Home, 
-  ShoppingBag, 
-  ChevronRight, 
-  LayoutGrid,
-  Zap,
+import { NavLink, Link, useNavigate } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  User,
+  LogOut,
+  CreditCard,
+  Ticket,
+  TicketCheck,
+  Home,
+  ShoppingBag,
   QrCode,
-  TrendingUp
+  TrendingUp,
+  Store,
 } from "lucide-react";
-import { NavLink, useNavigate, useLocation } from "react-router-dom";
-import { useDispatch } from "react-redux";
 import { clearCredentials } from "../../features/Auth/AuthSlice";
+import { type RootState } from "../../App/store";
 
-// Organized into logical sections matching the AdminSideNav structure
-const navSections = [
+interface SideNavProps {
+  onNavItemClick?: () => void;
+  isCollapsed?: boolean;
+}
+
+const navigationLinks = [
   {
-    label: "Overview",
+    title: "Overview",
     items: [
-      { name: "Explore", path: "/", icon: <Home size={18} className="text-slate-400" /> },
-      { name: "My Analytics", path: "analytics", icon: <TrendingUp size={18} className="text-red-400" /> },
-    ]
+      { path: "/", label: "Explore", icon: Home },
+      { path: "analytics", label: "My Analytics", icon: TrendingUp },
+    ],
   },
   {
-    label: "My Activity",
+    title: "My Activity",
     items: [
-      { name: "Bookings", path: "MyBookings", icon: <ShoppingBag size={18} className="text-purple-400" /> },
-      { name: "Reciepts", path: "MyTickets", icon: <Ticket size={18} className="text-orange-400" /> },
-      { name: "QR Wallet", path: "qr-codes", icon: <QrCode size={18} className="text-indigo-400" /> },
-    ]
+      { path: "my-bookings", label: "Bookings", icon: ShoppingBag },
+      { path: "tickets", label: "My Tickets", icon: Ticket },
+      { path: "qr-codes", label: "QR Wallet", icon: QrCode },
+    ],
   },
   {
-    label: "Finance & Support",
+    title: "Finance & Support",
     items: [
-      { name: "My Payments", path: "Payments", icon: <CreditCard size={18} className="text-emerald-500" /> },
-      { name: "Support", path: "supportTickets", icon: <TicketCheck size={18} className="text-pink-400" /> },
-    ]
+      { path: "Payments", label: "My Payments", icon: CreditCard },
+      { path: "supportTickets", label: "Support", icon: TicketCheck },
+    ],
   },
   {
-    label: "Account",
-    items: [
-      { name: "Profile", path: "me", icon: <User size={18} className="text-blue-400" /> },
-    ]
-  }
+    title: "Account",
+    items: [{ path: "profile", label: "Profile", icon: User }],
+  },
 ];
 
-export const SideNav = ({ onNavItemClick }: { onNavItemClick?: () => void }) => {
+export const SideNav = ({ onNavItemClick, isCollapsed = false }: SideNavProps) => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const location = useLocation();
+  const user = useSelector((state: RootState) => state.auth.user);
 
   const handleLogout = () => {
     dispatch(clearCredentials());
@@ -60,86 +62,159 @@ export const SideNav = ({ onNavItemClick }: { onNavItemClick?: () => void }) => 
   };
 
   return (
-    <div className="flex flex-col h-full bg-base-200/40 backdrop-blur-xl border-r border-base-content/5 selection:bg-primary selection:text-primary-content">
-      
-      {/* 1. BRANDING SECTION */}
-      <div className="p-6 pb-4">
-        <div className="flex items-center gap-3">
-          <div className="h-11 w-11 rounded-2xl bg-primary text-primary-content flex items-center justify-center shadow-lg shadow-primary/25 border border-primary/20 shrink-0">
-            <LayoutGrid size={22} strokeWidth={2.5} />
+    <aside className="w-full h-full bg-base-100 flex flex-col justify-between shrink-0 select-none">
+      {/* Top Section: Brand & User Info */}
+      <div className={`p-4 flex flex-col gap-4 ${isCollapsed ? "items-center" : ""}`}>
+        {/* Brand Logo */}
+        <Link
+          to="/"
+          onClick={onNavItemClick}
+          className={`flex items-center gap-2.5 group transition-all overflow-hidden ${
+            isCollapsed ? "justify-center p-1" : "px-1"
+          }`}
+          title={isCollapsed ? "TicketStream Member Portal" : undefined}
+        >
+          <div className="w-9 h-9 bg-primary text-primary-content rounded-xl flex items-center justify-center font-black shadow-sm tracking-tighter shrink-0">
+            <Store className="w-5 h-5" />
           </div>
-          <div className="overflow-hidden">
-            <h4 className="text-base font-black uppercase italic tracking-tighter text-base-content truncate leading-none">
-              Ticket<span className="text-primary">Stream</span>
-            </h4>
-            <p className="text-[10px] font-bold uppercase tracking-[0.25em] opacity-40 mt-1">Member Portal</p>
-          </div>
-        </div>
-        <div className="h-px w-full bg-gradient-to-r from-transparent via-base-content/10 to-transparent mt-5"></div>
+          <AnimatePresence mode="wait">
+            {!isCollapsed && (
+              <motion.div
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: "auto" }}
+                exit={{ opacity: 0, width: 0 }}
+                transition={{ duration: 0.2 }}
+                className="flex flex-col whitespace-nowrap overflow-hidden"
+              >
+                <span className="text-sm font-black tracking-tight uppercase text-base-content leading-none">
+                  TicketStream
+                </span>
+                <span className="text-[9px] font-bold tracking-widest text-primary uppercase mt-0.5">
+                  Member Portal
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </Link>
+
+        {/* User Quick Profile Card */}
+        <AnimatePresence mode="wait">
+          {!isCollapsed && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+              className="bg-base-200/60 border border-base-200 p-3 rounded-2xl flex items-center gap-3 overflow-hidden w-full"
+            >
+              <div className="w-9 h-9 rounded-xl overflow-hidden bg-primary/20 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                {user?.profileImageUrl ? (
+                  <img src={user.profileImageUrl} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  user?.firstName?.charAt(0) || "U"
+                )}
+              </div>
+              <div className="flex flex-col overflow-hidden">
+                <span className="text-xs font-bold text-base-content truncate">
+                  {user?.firstName ? `${user.firstName} ${user.lastName || ""}` : "Member"}
+                </span>
+                <span className="text-[10px] text-primary font-semibold truncate">Member</span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* 2. NAVIGATION SECTIONS */}
-      <nav className="flex-1 px-4 py-2 space-y-5 overflow-y-auto custom-scrollbar">
-        {navSections.map((section, sIdx) => (
-          <div key={sIdx} className="space-y-1.5">
-            <p className="px-3 text-[9px] font-black uppercase tracking-[0.35em] opacity-30">
-              {section.label}
-            </p>
-            <div className="space-y-1">
-              {section.items.map((item, index) => {
-                const isActive = location.pathname.includes(item.path) && item.path !== "/";
-                const isHomeActive = location.pathname === "/" && item.path === "/";
-                const active = isActive || isHomeActive;
+      {/* Center Section: Scrollable Navigation Links */}
+      <div className={`flex-1 px-3 py-2 overflow-y-auto flex flex-col gap-5 custom-scrollbar ${isCollapsed ? "items-center" : ""}`}>
+        {navigationLinks.map((group) => (
+          <div key={group.title} className={`flex flex-col gap-1 w-full ${isCollapsed ? "items-center" : ""}`}>
+            <AnimatePresence mode="wait">
+              {!isCollapsed && (
+                <motion.span
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="text-[10px] font-bold uppercase tracking-widest text-base-content/40 px-3 mb-1 truncate"
+                >
+                  {group.title}
+                </motion.span>
+              )}
+            </AnimatePresence>
 
-                return (
-                  <NavLink
-                    key={index}
-                    to={item.path}
-                    onClick={onNavItemClick}
-                    className={({ isActive: routerIsActive }) => {
-                      const isCurrentlyActive = (routerIsActive && item.path !== "/") || (location.pathname === "/" && item.path === "/");
-                      return `group flex items-center justify-between px-3.5 py-2.5 rounded-2xl transition-all duration-300 ${
-                        isCurrentlyActive 
-                        ? "bg-primary text-primary-content shadow-xl shadow-primary/20 scale-[1.02]" 
-                        : "hover:bg-base-300/60 text-base-content/70 hover:text-base-content"
-                      }`;
-                    }}
-                  >
-                    <div className="flex items-center gap-3.5">
-                      <span className={`h-9 w-9 rounded-xl bg-base-100 flex items-center justify-center shadow-inner border border-base-content/5 group-hover:scale-110 transition-transform shrink-0 ${active ? "text-primary bg-base-100" : ""}`}>
-                        {item.icon}
-                      </span>
-                      <span className="font-bold text-xs tracking-wide">{item.name}</span>
-                    </div>
-                    <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:translate-x-0.5" />
-                  </NavLink>
-                );
-              })}
-            </div>
+            {group.items.map((link) => (
+              <NavLink
+                key={link.path}
+                to={link.path}
+                end={link.path === "/"}
+                onClick={onNavItemClick}
+                title={isCollapsed ? link.label : undefined}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 py-2.5 rounded-xl text-xs font-semibold transition-all group relative ${
+                    isCollapsed ? "justify-center w-10 h-10 px-0" : "px-3 w-full"
+                  } ${
+                    isActive
+                      ? "bg-primary text-primary-content shadow-sm font-bold"
+                      : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
+                  }`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <link.icon
+                      size={18}
+                      className={`transition-transform group-hover:scale-110 shrink-0 ${
+                        isActive ? "text-primary-content" : "text-primary"
+                      }`}
+                    />
+                    <AnimatePresence mode="wait">
+                      {!isCollapsed && (
+                        <motion.span
+                          initial={{ opacity: 0, width: 0 }}
+                          animate={{ opacity: 1, width: "auto" }}
+                          exit={{ opacity: 0, width: 0 }}
+                          transition={{ duration: 0.15 }}
+                          className="truncate"
+                        >
+                          {link.label}
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </>
+                )}
+              </NavLink>
+            ))}
           </div>
         ))}
-      </nav>
+      </div>
 
-      {/* 3. FOOTER */}
-      <div className="p-4 mt-auto border-t border-base-content/5 bg-base-200/30 space-y-3">
-        <div className="p-3 bg-base-200/50 rounded-2xl flex items-center justify-between border border-base-content/5 shadow-sm">
-           <div>
-              <p className="text-[9px] font-black uppercase opacity-40">Membership</p>
-              <p className="text-xs font-bold uppercase tracking-wide text-base-content mt-0.5">VIP Access</p>
-           </div>
-           <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
-            <Zap size={14} className="fill-primary/20" />
-           </div>
-        </div>
-
+      {/* Bottom Section: Logout */}
+      <div className={`p-3 border-t border-base-200 ${isCollapsed ? "flex justify-center" : ""}`}>
         <button
           onClick={handleLogout}
-          className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-2xl bg-error/10 text-error hover:bg-error hover:text-error-content transition-all duration-300 font-black uppercase text-[11px] tracking-widest border border-error/20 shadow-sm"
+          title={isCollapsed ? "Logout" : undefined}
+          className={`w-full btn btn-sm btn-ghost gap-2 text-xs font-semibold text-error hover:bg-error/10 rounded-xl transition-all ${
+            isCollapsed ? "justify-center p-0 w-10 h-10" : "justify-start px-3"
+          }`}
         >
-          <LogOut size={16} />
-          <span>Logout</span>
+          <LogOut size={18} className="shrink-0" />
+          <AnimatePresence mode="wait">
+            {!isCollapsed && (
+              <motion.span
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: "auto" }}
+                exit={{ opacity: 0, width: 0 }}
+                transition={{ duration: 0.15 }}
+                className="truncate"
+              >
+                Logout
+              </motion.span>
+            )}
+          </AnimatePresence>
         </button>
       </div>
-    </div>
+    </aside>
   );
 };
+
+export default SideNav;

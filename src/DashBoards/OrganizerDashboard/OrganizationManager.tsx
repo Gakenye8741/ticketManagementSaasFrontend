@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, type FormEvent, type ReactNode } from "react";
 import { useSelector } from "react-redux";
+import { useNavigate } from "react-router-dom";
 import { skipToken } from "@reduxjs/toolkit/query";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
@@ -8,7 +9,7 @@ import {
   Building2,
   Plus,
   Edit,
-  DollarSign,
+  Wallet as WalletIcon,
   Users,
   ShieldCheck,
   Phone,
@@ -26,6 +27,7 @@ import {
   Camera,
   Clock,
   FileText,
+  UserX,
 } from "lucide-react";
 
 import { type RootState } from "../../App/store";
@@ -35,14 +37,12 @@ import {
   useGetOrganizationByIdQuery,
   useCreateOrganizationMutation,
   useUpdateOrganizationMutation,
-  useUpdatePayoutConfigMutation,
   useGetOrganizationMembersQuery,
   useAddOrganizationMemberMutation,
   useRemoveOrganizationMemberMutation,
   type Organization,
   type OrgMember,
   type OrgRole,
-  type CreateOrganizationRequest,
 } from "../../features/APIS/organizationApi";
 
 import {
@@ -53,9 +53,20 @@ import {
   type VerificationEntityType,
 } from "../../features/APIS/VerificationsApi";
 
-import { useSearchUsersByLastNameQuery } from "../../features/APIS/UserApi";
+import {
+  useSearchUsersByLastNameQuery,
+  useSearchUsersWithDetailsQuery,
+  useGetUserByDigitalIdQuery,
+} from "../../features/APIS/UserApi";
 
 import { usePageTitle } from "../../hooks/usePageTitle";
+
+// ======================================================
+// WALLET ROUTE (where payouts are managed)
+// 👈 Change this to the real path of your Wallet page
+// ======================================================
+
+const WALLET_ROUTE = "/organizer-dashboard/wallet";
 
 // ======================================================
 // CLOUDINARY CONFIG (unsigned upload preset)
@@ -76,13 +87,6 @@ interface OrgFormData {
   supportEmail: string;
   supportPhone: string;
   logoUrl: string;
-  payoutPhone: string;
-  payoutType: CreateOrganizationRequest["payoutType"];
-}
-
-interface PayoutFormData {
-  payoutPhone: string;
-  payoutType: NonNullable<CreateOrganizationRequest["payoutType"]>;
 }
 
 interface NewMemberFormData {
@@ -109,8 +113,6 @@ const EMPTY_ORG_FORM: OrgFormData = {
   supportEmail: "",
   supportPhone: "",
   logoUrl: "",
-  payoutPhone: "",
-  payoutType: "mpesa_phone",
 };
 
 const EMPTY_MEMBER_FORM: NewMemberFormData = {
@@ -147,12 +149,6 @@ const ROLE_LABELS: Record<string, string> = {
   admin: "Admin",
   manager: "Manager",
   scanner: "Gate Scanner",
-};
-
-const PAYOUT_LABELS: Record<string, string> = {
-  mpesa_phone: "M-Pesa Phone",
-  paybill: "Paybill",
-  bank: "Bank",
 };
 
 const VERIFICATION_STATUS_META: Record<string, { label: string; badge: string }> = {
@@ -531,7 +527,7 @@ const DetailRow = ({ icon, label, value }: { icon: ReactNode; label: string; val
 );
 
 // ======================================================
-// USER PICKER (search users by last name, pick from the list)
+// USER HELPERS (shape the user API responses)
 // ======================================================
 
 interface PickedUser {
@@ -559,15 +555,69 @@ const normalizeUser = (u: any): PickedUser | null => {
   };
 };
 
-const UserAvatar = ({ user }: { user: PickedUser }) => (
-  <div className="w-9 h-9 rounded-full bg-primary/15 text-primary flex items-center justify-center font-black text-xs shrink-0 overflow-hidden">
-    {user.picture ? (
+/** A single-user endpoint may return the user directly, or wrapped in { user } / { data } */
+const unwrapUser = (payload: unknown): PickedUser | null => {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, any>;
+  const candidate = p.user ?? p.data?.user ?? p.data ?? p;
+  return normalizeUser(Array.isArray(candidate) ? candidate[0] : candidate);
+};
+
+type LookupMode = "id" | "email" | "name";
+
+/** Turns a failed or empty user lookup into a friendly sentence */
+const lookupMessage = (mode: LookupMode, term: string, error?: any): string => {
+  if (error) {
+    if (error.status === 404) {
+      return mode === "id"
+        ? `No user found with Digital ID ${term}. Check the number and try again.`
+        : `No user found for "${term}". Check the spelling and try again.`;
+    }
+    if (error.status === 401 || error.status === 403) {
+      return mode === "id"
+        ? "You don't have permission to look up that user."
+        : "You don't have permission to search users. Ask the person for their Digital ID and enter it here instead.";
+    }
+    if (error.status === "FETCH_ERROR") return "Can't reach the server. Check your connection and try again.";
+    return "Something went wrong while searching. Please try again.";
+  }
+
+  if (mode === "id") return `No user found with Digital ID ${term}. Check the number and try again.`;
+  if (mode === "email") return `No user found with the email "${term}". Check the address, or ask them to create an account first.`;
+  return `No one found with the last name "${term}". Check the spelling, or try their email or Digital ID.`;
+};
+
+/** Role -> badge style (the owner stands out, scanners stay quiet) */
+const ROLE_BADGE: Record<string, string> = {
+  owner: "badge-primary",
+  admin: "badge-secondary",
+  manager: "badge-accent",
+  scanner: "badge-outline",
+};
+
+/** Member rows can come with a few different id field names, so read them safely */
+const getMemberId = (member: unknown): number => {
+  const m = member as Record<string, any>;
+  return Number(m?.id ?? m?.memberId ?? m?.orgMemberId ?? m?.member_id) || 0;
+};
+
+const UserAvatar = ({ user, size = "w-9 h-9" }: { user?: PickedUser | null; size?: string }) => (
+  <div
+    className={`${size} rounded-full bg-primary/15 text-primary flex items-center justify-center font-black text-xs shrink-0 overflow-hidden`}
+  >
+    {!user ? (
+      <UserX size={16} className="text-base-content/40" />
+    ) : user.picture ? (
       <img src={user.picture} alt="" className="w-full h-full object-cover" />
     ) : (
       user.name.trim().charAt(0).toUpperCase()
     )}
   </div>
 );
+
+// ======================================================
+// USER PICKER (search by last name, email or Digital ID)
+// ======================================================
 
 interface UserPickerProps {
   value: PickedUser | null;
@@ -585,34 +635,51 @@ const UserPicker = ({ value, onChange, existingDigitalIds }: UserPickerProps) =>
     return () => clearTimeout(t);
   }, [term]);
 
-  const canSearch = debounced.length >= 2;
+  const typed = term.trim();
+  const isDigits = /^\d+$/.test(debounced);
+  const isEmail = debounced.includes("@");
+  const mode: LookupMode = isDigits ? "id" : isEmail ? "email" : "name";
 
-  const { data, isFetching, isError } = useSearchUsersByLastNameQuery(debounced, { skip: !canSearch });
+  const idReady = isDigits && debounced.length >= 6;
+  const textReady = !isDigits && debounced.length >= 2;
+  const ready = idReady || textReady;
 
-  const results = toArray<any>(data, "users")
-    .map(normalizeUser)
-    .filter((u): u is PickedUser => u !== null)
-    .slice(0, 8);
+  // Exact lookup (Digital ID), email search, or last-name search
+  const byId = useGetUserByDigitalIdQuery(debounced, { skip: !idReady });
+  const byEmail = useSearchUsersWithDetailsQuery(debounced, { skip: !(textReady && isEmail) });
+  const byName = useSearchUsersByLastNameQuery(debounced, { skip: !(textReady && !isEmail) });
+
+  const active = mode === "id" ? byId : mode === "email" ? byEmail : byName;
+
+  const results: PickedUser[] =
+    mode === "id"
+      ? [unwrapUser(byId.data)].filter((u): u is PickedUser => u !== null)
+      : toArray<any>(active.data, "users")
+          .map(normalizeUser)
+          .filter((u): u is PickedUser => u !== null)
+          .slice(0, 8);
+
+  const settled = typed === debounced;
+  const busy = !settled || (ready && active.isFetching);
+
+  const reset = () => {
+    onChange(null);
+    setTerm("");
+    setDebounced("");
+  };
 
   if (value) {
     return (
       <div className="flex flex-col gap-1.5">
         <label className={labelClass}>Team member</label>
         <div className="flex items-center gap-3 p-3 rounded-2xl bg-primary/5 border border-primary/20">
-          <UserAvatar user={value} />
+          <UserAvatar user={value} size="w-11 h-11" />
           <div className="flex flex-col min-w-0 flex-1">
             <span className="font-bold text-base-content truncate">{value.name}</span>
             {value.email && <span className="text-[11px] text-base-content/60 truncate">{value.email}</span>}
+            <span className="text-[10px] text-base-content/40 font-mono">Digital ID {value.digitalId}</span>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              onChange(null);
-              setTerm("");
-              setDebounced("");
-            }}
-            className="btn btn-ghost btn-xs rounded-lg text-xs font-bold"
-          >
+          <button type="button" onClick={reset} className="btn btn-ghost btn-xs rounded-lg text-xs font-bold">
             Change
           </button>
         </div>
@@ -632,26 +699,39 @@ const UserPicker = ({ value, onChange, existingDigitalIds }: UserPickerProps) =>
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
-          placeholder="Search by last name"
+          placeholder="Last name, email or Digital ID"
           value={term}
           onChange={(e) => setTerm(e.target.value)}
           className="grow"
         />
-        {isFetching && <span className="loading loading-spinner loading-xs text-primary" />}
+        {busy && typed.length > 0 && <span className="loading loading-spinner loading-xs text-primary" />}
       </label>
 
-      {term.trim().length > 0 && term.trim().length < 2 && (
-        <span className="text-[11px] text-base-content/50">Type at least 2 letters.</span>
+      {typed.length === 0 && (
+        <span className="text-[11px] text-base-content/50">
+          Search by last name or email. If you know their Digital ID, enter it for an exact match.
+        </span>
       )}
 
-      {canSearch && !isFetching && (
-        <div className="rounded-2xl border border-base-200 bg-base-100 overflow-hidden max-h-56 overflow-y-auto">
-          {isError ? (
-            <p className="p-3 text-[11px] text-error font-semibold">
-              Search failed. You may not have permission to search users.
-            </p>
-          ) : results.length === 0 ? (
-            <p className="p-3 text-[11px] text-base-content/60">No users found with the last name "{debounced}".</p>
+      {typed.length > 0 && !ready && settled && (
+        <span className="text-[11px] text-base-content/50">
+          {isDigits ? "Keep typing the Digital ID (at least 6 digits)." : "Type at least 2 letters."}
+        </span>
+      )}
+
+      {ready && settled && !active.isFetching && (
+        <div className="rounded-2xl border border-base-200 bg-base-100 overflow-hidden max-h-60 overflow-y-auto">
+          {active.isError || results.length === 0 ? (
+            <div
+              className={`flex items-start gap-3 p-4 text-[11px] ${
+                active.isError && (active.error as any)?.status !== 404 ? "bg-warning/10" : ""
+              }`}
+            >
+              <UserX size={18} className="text-base-content/40 shrink-0 mt-0.5" />
+              <span className="text-base-content/70 leading-relaxed">
+                {lookupMessage(mode, debounced, active.isError ? active.error : undefined)}
+              </span>
+            </div>
           ) : (
             results.map((u) => {
               const alreadyMember = existingDigitalIds.includes(u.digitalId);
@@ -667,6 +747,7 @@ const UserPicker = ({ value, onChange, existingDigitalIds }: UserPickerProps) =>
                   <div className="flex flex-col min-w-0 flex-1">
                     <span className="font-bold text-base-content truncate">{u.name}</span>
                     {u.email && <span className="text-[11px] text-base-content/60 truncate">{u.email}</span>}
+                    <span className="text-[10px] text-base-content/40 font-mono">ID {u.digitalId}</span>
                   </div>
                   {alreadyMember && (
                     <span className="badge badge-sm badge-ghost gap-1 text-[10px] font-bold">
@@ -678,6 +759,68 @@ const UserPicker = ({ value, onChange, existingDigitalIds }: UserPickerProps) =>
             })
           )}
         </div>
+      )}
+    </div>
+  );
+};
+
+// ======================================================
+// MEMBER ROW (loads the person behind each Digital ID)
+// ======================================================
+
+interface MemberRowProps {
+  member: OrgMember;
+  isSelf: boolean;
+  onRemove: (memberId: number, name: string) => void;
+}
+
+const MemberRow = ({ member, isSelf, onRemove }: MemberRowProps) => {
+  const digitalId = Number(member.digitalId);
+  const memberId = getMemberId(member);
+
+  const { data, isLoading } = useGetUserByDigitalIdQuery(digitalId, { skip: !digitalId });
+  const person = unwrapUser(data);
+
+  const role = String(member.orgRole);
+  const displayName = person?.name ?? (isLoading ? "" : "Unknown user");
+
+  return (
+    <div className="flex items-center gap-3 p-3 sm:p-4 rounded-2xl bg-base-100 border border-base-200 hover:border-primary/30 transition-colors">
+      <UserAvatar user={person} size="w-11 h-11" />
+
+      <div className="flex flex-col min-w-0 flex-1 gap-0.5">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {isLoading ? (
+            <span className="skeleton h-4 w-32 rounded" />
+          ) : (
+            <span className="font-bold text-sm text-base-content truncate">{displayName}</span>
+          )}
+
+          {isSelf && <span className="badge badge-ghost badge-xs font-bold">You</span>}
+        </div>
+
+        {person?.email ? (
+          <span className="text-[11px] text-base-content/60 truncate">{person.email}</span>
+        ) : (
+          !isLoading && <span className="text-[11px] text-base-content/40">This account could not be loaded</span>
+        )}
+
+        <span className="text-[10px] text-base-content/40 font-mono">Digital ID {digitalId}</span>
+      </div>
+
+      <span className={`badge badge-sm font-bold shrink-0 ${ROLE_BADGE[role] ?? "badge-outline"}`}>
+        {ROLE_LABELS[role] ?? role}
+      </span>
+
+      {role !== "owner" && (
+        <button
+          onClick={() => onRemove(memberId, displayName || `Digital ID ${digitalId}`)}
+          disabled={!memberId}
+          className="btn btn-ghost btn-xs btn-square text-error hover:bg-error/10 rounded-lg shrink-0"
+          title="Remove member"
+        >
+          <Trash2 size={14} />
+        </button>
       )}
     </div>
   );
@@ -1328,25 +1471,126 @@ const VerificationModal = ({ orgId, userId, mode, verificationId, onClose, onDon
 };
 
 // ======================================================
-// VERIFICATION PANEL (status card)
+// VERIFICATION BADGE (driven by the verification status)
+// ======================================================
+
+const VerificationBadge = ({ isVerified, status }: { isVerified: boolean; status?: string }) => {
+  if (isVerified) {
+    return (
+      <span className="badge badge-sm badge-success gap-1 font-bold text-success-content">
+        <ShieldCheck size={11} />
+        Verified
+      </span>
+    );
+  }
+
+  if (status === "pending" || status === "in_progress") {
+    return (
+      <span className="badge badge-sm badge-info gap-1 font-bold">
+        <Clock size={11} />
+        Under review
+      </span>
+    );
+  }
+
+  if (status === "resubmission_required") {
+    return (
+      <span className="badge badge-sm badge-warning gap-1 font-bold">
+        <AlertCircle size={11} />
+        Action needed
+      </span>
+    );
+  }
+
+  if (status === "rejected") {
+    return (
+      <span className="badge badge-sm badge-error gap-1 font-bold text-error-content">
+        <AlertCircle size={11} />
+        Rejected
+      </span>
+    );
+  }
+
+  return (
+    <span className="badge badge-sm badge-warning gap-1 font-bold">
+      <AlertCircle size={11} />
+      Unverified
+    </span>
+  );
+};
+
+// ======================================================
+// VERIFIED CARD (shown once the verification is approved)
+// ======================================================
+
+const VerifiedCard = ({ verification }: { verification?: Verification }) => {
+  const v = verification as Record<string, any> | undefined;
+
+  const entityLabel = v?.entityType === "business" ? "Business" : v?.entityType === "individual" ? "Individual" : "";
+  const legalName = (v?.legalFullName as string | undefined) || "";
+  const approvedOn = v?.updatedAt ? formatDate(v.updatedAt) : "";
+
+  const details = [
+    { label: "Verified as", value: entityLabel },
+    { label: "Legal name", value: legalName },
+    { label: "Approved on", value: approvedOn },
+  ].filter((item) => !!item.value);
+
+  return (
+    <div className="rounded-3xl border border-success/30 bg-gradient-to-br from-success/15 via-success/5 to-transparent p-4 sm:p-6 flex flex-col gap-5">
+      <div className="flex items-start sm:items-center gap-4">
+        <div className="w-14 h-14 rounded-2xl bg-success text-success-content flex items-center justify-center shrink-0 shadow-sm">
+          <ShieldCheck size={28} />
+        </div>
+
+        <div className="flex flex-col gap-1 min-w-0">
+          <h3 className="text-base sm:text-lg font-black tracking-tight text-base-content">
+            Your organization is verified
+          </h3>
+
+          <p className="text-xs text-base-content/70">
+            Your identity has been confirmed, and your organization now carries the Verified badge.
+          </p>
+        </div>
+      </div>
+
+      {details.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 border-t border-success/20 text-xs">
+          {details.map((item) => (
+            <div key={item.label} className="flex flex-col min-w-0">
+              <span className="text-[10px] uppercase tracking-widest text-base-content/40 font-bold">
+                {item.label}
+              </span>
+              <span className="font-semibold text-base-content break-words">{item.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ======================================================
+// VERIFICATION PANEL (status card, driven by the verification record)
 // ======================================================
 
 interface VerificationPanelProps {
-  orgId: number;
-  orgVerified?: boolean;
+  verification?: Verification;
+  isVerified: boolean;
+  isLoading: boolean;
+  error?: unknown;
   onStart: (mode: "create" | "resubmit", verificationId?: number) => void;
 }
 
-const VerificationPanel = ({ orgId, orgVerified, onStart }: VerificationPanelProps) => {
-  const { data, isLoading, error } = useGetVerificationByOrganizationQuery(orgId);
+const VerificationPanel = ({ verification, isVerified, isLoading, error, onStart }: VerificationPanelProps) => {
+  // Verified wins over everything else, so show it straight away
+  if (isVerified) return <VerifiedCard verification={verification} />;
 
-  const verification = unwrapVerification(data);
   const notFound = !!error && (error as any).status === 404;
   const hardError = !!error && !notFound;
 
   const status = verification?.status;
   const statusMeta = status ? VERIFICATION_STATUS_META[status] : undefined;
-  const isVerified = status === "approved" || !!orgVerified;
 
   const feedback = verification
     ? Object.keys(REJECTION_FIELD_LABELS)
@@ -1355,11 +1599,7 @@ const VerificationPanel = ({ orgId, orgVerified, onStart }: VerificationPanelPro
     : [];
 
   return (
-    <div
-      className={`bg-base-200/40 border p-4 sm:p-6 rounded-3xl flex flex-col gap-4 ${
-        isVerified ? "border-base-200" : "border-warning/50 shadow-sm"
-      }`}
-    >
+    <div className="bg-base-200/40 border border-warning/50 shadow-sm p-4 sm:p-6 rounded-3xl flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-base font-black tracking-tight text-base-content flex items-center gap-2">
           <ShieldCheck size={18} className="text-primary shrink-0" />
@@ -1379,37 +1619,24 @@ const VerificationPanel = ({ orgId, orgVerified, onStart }: VerificationPanelPro
           <span>{getErrorMessage(error, "Could not load verification status.")}</span>
         </div>
       ) : !verification ? (
-        orgVerified ? (
-          <div className="flex items-center gap-2 text-xs font-semibold text-success">
-            <CheckCircle2 size={16} />
-            This organization is verified.
+        <>
+          <VerificationRequiredNotice />
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <p className="text-xs text-base-content/60 max-w-xl">
+              Verify your identity to build trust with attendees. You'll upload your ID, take a couple of live selfies,
+              and we'll review it.
+            </p>
+
+            <button
+              onClick={() => onStart("create")}
+              className="btn btn-primary btn-sm rounded-xl text-xs font-bold gap-2 shrink-0"
+            >
+              <ShieldCheck size={15} />
+              Start Verification
+            </button>
           </div>
-        ) : (
-          <>
-            <VerificationRequiredNotice />
-
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <p className="text-xs text-base-content/60 max-w-xl">
-                Verify your identity to build trust with attendees and unlock payouts. You'll upload your ID, take a
-                couple of live selfies, and we'll review it.
-              </p>
-
-              <button
-                onClick={() => onStart("create")}
-                className="btn btn-primary btn-sm rounded-xl text-xs font-bold gap-2 shrink-0"
-              >
-                <ShieldCheck size={15} />
-                Start Verification
-              </button>
-            </div>
-          </>
-        )
-      ) : status === "approved" ? (
-        <div className="flex items-center gap-2 text-xs font-semibold text-success">
-          <CheckCircle2 size={16} />
-          Your verification was approved
-          {verification.updatedAt ? ` on ${formatDate(verification.updatedAt)}` : ""}.
-        </div>
+        </>
       ) : status === "pending" || status === "in_progress" ? (
         <div className="flex items-start gap-2 text-xs text-base-content/70">
           <Clock size={16} className="text-warning shrink-0 mt-0.5" />
@@ -1464,6 +1691,7 @@ const VerificationPanel = ({ orgId, orgVerified, onStart }: VerificationPanelPro
 // ======================================================
 
 export const OrganizationManager = () => {
+  const navigate = useNavigate();
   const user = useSelector((state: RootState) => state.auth.user);
 
   const digitalId = Number(user?.digitalId || user?.id) || undefined;
@@ -1502,6 +1730,23 @@ export const OrganizationManager = () => {
 
   const org = unwrapOrg(orgData);
 
+  // ====================================================
+  // VERIFICATION STATUS (drives everything that looks "verified")
+  // ====================================================
+
+  const {
+    data: verificationData,
+    isLoading: verificationLoading,
+    error: verificationError,
+    refetch: refetchVerification,
+  } = useGetVerificationByOrganizationQuery(activeOrgId ?? skipToken);
+
+  const verification = unwrapVerification(verificationData);
+  const verificationStatus = verification?.status;
+
+  // Verified as soon as the verification is approved, even if the organization record has not caught up yet
+  const isVerified = verificationStatus === "approved" || !!org?.isVerified;
+
   usePageTitle(org?.name ? `${org.name} · Organization Management` : "Organization Management");
 
   // ====================================================
@@ -1512,15 +1757,19 @@ export const OrganizationManager = () => {
 
   const members = toArray<OrgMember>(membersData, "members");
 
+  // The owner always comes first
+  const sortedMembers = [...members].sort(
+    (a, b) => Number(b.orgRole === "owner") - Number(a.orgRole === "owner")
+  );
+
   // ====================================================
   // MUTATIONS
   // ====================================================
 
   const [createOrganization, { isLoading: isCreating }] = useCreateOrganizationMutation();
   const [updateOrganization, { isLoading: isUpdating }] = useUpdateOrganizationMutation();
-  const [updatePayoutConfig, { isLoading: isUpdatingPayout }] = useUpdatePayoutConfigMutation();
   const [addOrganizationMember, { isLoading: isAddingMember }] = useAddOrganizationMemberMutation();
-  const [removeOrganizationMember] = useRemoveOrganizationMemberMutation();
+  const [removeOrganizationMember, { isLoading: isRemoving }] = useRemoveOrganizationMemberMutation();
 
   // ====================================================
   // MODAL STATES
@@ -1528,7 +1777,6 @@ export const OrganizationManager = () => {
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
   const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
 
@@ -1538,10 +1786,12 @@ export const OrganizationManager = () => {
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Error shown INSIDE the open create / edit / payout modal (page-level alerts hide behind the overlay)
+  // Error shown INSIDE the open create / edit modal (page-level alerts hide behind the overlay)
   const [modalError, setModalError] = useState("");
 
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+
+  const [memberToRemove, setMemberToRemove] = useState<{ id: number; name: string } | null>(null);
 
   const [selectedUser, setSelectedUser] = useState<PickedUser | null>(null);
   const [memberFormError, setMemberFormError] = useState("");
@@ -1551,11 +1801,6 @@ export const OrganizationManager = () => {
   // ====================================================
 
   const [formData, setFormData] = useState<OrgFormData>(EMPTY_ORG_FORM);
-
-  const [payoutData, setPayoutData] = useState<PayoutFormData>({
-    payoutPhone: "",
-    payoutType: "mpesa_phone",
-  });
 
   const [newMemberData, setNewMemberData] = useState<NewMemberFormData>(EMPTY_MEMBER_FORM);
 
@@ -1591,6 +1836,9 @@ export const OrganizationManager = () => {
     setIsVerificationModalOpen(false);
     setResubmitVerificationId(undefined);
     showSuccess(message);
+
+    // Pull the fresh status so the page updates without a reload
+    if (activeOrgId) refetchVerification();
   };
 
   // After the post-create reload: show the success message and go straight to verification
@@ -1647,8 +1895,6 @@ export const OrganizationManager = () => {
             supportEmail: formData.supportEmail.trim() || null,
             supportPhone: formData.supportPhone.trim() || null,
             logoUrl: formData.logoUrl || null,
-            payoutPhone: formData.payoutPhone.trim() || null,
-            payoutType: formData.payoutType,
           }).unwrap();
           lastError = undefined;
           break;
@@ -1711,34 +1957,6 @@ export const OrganizationManager = () => {
   };
 
   // ====================================================
-  // UPDATE PAYOUT
-  // ====================================================
-
-  const handleUpdatePayout = async (e: FormEvent) => {
-    e.preventDefault();
-
-    if (!activeOrgId) return;
-
-    setModalError("");
-
-    try {
-      await updatePayoutConfig({
-        orgId: activeOrgId,
-        data: {
-          payoutPhone: payoutData.payoutPhone.trim(),
-          payoutType: payoutData.payoutType,
-        },
-      }).unwrap();
-
-      showSuccess("Payout settings updated successfully!");
-
-      setIsPayoutModalOpen(false);
-    } catch (err) {
-      setModalError(getErrorMessage(err, "Failed to update payout configuration."));
-    }
-  };
-
-  // ====================================================
   // ADD MEMBER
   // ====================================================
 
@@ -1777,19 +1995,22 @@ export const OrganizationManager = () => {
   // REMOVE MEMBER
   // ====================================================
 
-  const handleRemoveMember = async (memberId: number) => {
-    if (!window.confirm("Are you sure you want to remove this member?")) {
-      return;
-    }
-
+  const handleRemoveMember = (memberId: number, name: string) => {
     setErrorMessage("");
+    setMemberToRemove({ id: memberId, name });
+  };
+
+  const handleConfirmRemove = async () => {
+    if (!memberToRemove) return;
 
     try {
-      await removeOrganizationMember(memberId).unwrap();
+      await removeOrganizationMember(memberToRemove.id).unwrap();
 
-      showSuccess("Member removed successfully.");
+      showSuccess(`${memberToRemove.name} was removed from the team.`);
     } catch (err) {
       showError(err, "Failed to remove member.");
+    } finally {
+      setMemberToRemove(null);
     }
   };
 
@@ -1819,8 +2040,6 @@ export const OrganizationManager = () => {
       supportEmail: org.supportEmail || "",
       supportPhone: org.supportPhone || "",
       logoUrl: org.logoUrl || "",
-      payoutPhone: org.payoutPhone || "",
-      payoutType: org.payoutType || "mpesa_phone",
     });
 
     setModalError("");
@@ -1834,16 +2053,6 @@ export const OrganizationManager = () => {
     setIsMemberModalOpen(true);
   };
 
-  const openPayoutModal = () => {
-    setPayoutData({
-      payoutPhone: org?.payoutPhone || "",
-      payoutType: org?.payoutType || "mpesa_phone",
-    });
-
-    setModalError("");
-    setIsPayoutModalOpen(true);
-  };
-
   const closeCreateModal = () => {
     setModalError("");
     setIsCreateModalOpen(false);
@@ -1854,10 +2063,7 @@ export const OrganizationManager = () => {
     setIsEditModalOpen(false);
   };
 
-  const closePayoutModal = () => {
-    setModalError("");
-    setIsPayoutModalOpen(false);
-  };
+  const goToWallet = () => navigate(WALLET_ROUTE);
 
   // ====================================================
   // RENDER
@@ -1874,7 +2080,7 @@ export const OrganizationManager = () => {
           <h1 className="text-xl sm:text-2xl font-black tracking-tight text-base-content">Organization Management</h1>
 
           <p className="text-xs text-base-content/60 mt-1">
-            Manage your corporate entity, payment payouts, and operational team members.
+            Manage your organization profile, verification, and operational team members.
           </p>
         </div>
 
@@ -1966,7 +2172,18 @@ export const OrganizationManager = () => {
               ) : (
                 <>
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                    <OrgLogo url={org?.logoUrl} name={org?.name} />
+                    <div className="relative shrink-0">
+                      <OrgLogo url={org?.logoUrl} name={org?.name} />
+
+                      {isVerified && (
+                        <span
+                          className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-success text-success-content flex items-center justify-center border-2 border-base-100"
+                          title="Verified organization"
+                        >
+                          <Check size={13} />
+                        </span>
+                      )}
+                    </div>
 
                     <div className="flex flex-col gap-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -1974,19 +2191,7 @@ export const OrganizationManager = () => {
                           {org?.name || "Organization"}
                         </h2>
 
-                        {org?.isVerified && (
-                          <span className="badge badge-sm badge-success gap-1 font-bold text-success-content">
-                            <ShieldCheck size={11} />
-                            Verified
-                          </span>
-                        )}
-
-                        {org && !org.isVerified && (
-                          <span className="badge badge-sm badge-warning gap-1 font-bold">
-                            <AlertCircle size={11} />
-                            Unverified
-                          </span>
-                        )}
+                        {org && <VerificationBadge isVerified={isVerified} status={verificationStatus} />}
 
                         {org && (
                           <span
@@ -2031,41 +2236,32 @@ export const OrganizationManager = () => {
                     </button>
 
                     <button
-                      onClick={openPayoutModal}
+                      onClick={goToWallet}
                       className="btn btn-sm btn-ghost bg-base-200 hover:bg-base-300 rounded-xl text-xs font-bold gap-2"
                     >
-                      <DollarSign size={14} className="text-primary" />
-                      Payout Settings
+                      <WalletIcon size={14} className="text-primary" />
+                      Wallet & Payouts
                     </button>
                   </div>
                 </>
               )}
             </div>
 
-            {/* PAYOUT WIDGET */}
+            {/* WALLET & PAYOUTS WIDGET (payouts are managed only in the wallet) */}
 
             <div className="bg-base-200/40 border border-base-200 p-4 sm:p-6 rounded-3xl flex flex-col justify-between gap-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-widest text-base-content/50">
-                  Payout Configuration
+                  Earnings & Payouts
                 </span>
 
-                <DollarSign size={18} className="text-primary" />
+                <WalletIcon size={18} className="text-primary" />
               </div>
 
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-base-content/60">Payout method</span>
-
-                <span className="text-sm font-black text-base-content">
-                  {org?.payoutType ? (PAYOUT_LABELS[org.payoutType] ?? org.payoutType) : "Not set"}
-                </span>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-base-content/60">Payout phone / account</span>
-
-                <span className="text-sm font-black text-base-content break-all">{org?.payoutPhone || "Not set"}</span>
-              </div>
+              <p className="text-xs text-base-content/70 leading-relaxed">
+                Ticket sales go to your wallet after the platform commission is taken off. Add your M-Pesa or bank
+                account and request payouts from the wallet.
+              </p>
 
               <div className="flex flex-col gap-1">
                 <span className="text-xs text-base-content/60 flex items-center gap-1">
@@ -2080,10 +2276,11 @@ export const OrganizationManager = () => {
               </div>
 
               <button
-                onClick={openPayoutModal}
-                className="w-full btn btn-sm btn-primary rounded-xl text-xs font-bold mt-2"
+                onClick={goToWallet}
+                className="w-full btn btn-sm btn-primary rounded-xl text-xs font-bold mt-2 gap-2"
               >
-                Update Payout Info
+                <WalletIcon size={14} />
+                Open Wallet
               </button>
             </div>
           </div>
@@ -2093,7 +2290,13 @@ export const OrganizationManager = () => {
           ============================================= */}
 
           {activeOrgId && digitalId && (
-            <VerificationPanel orgId={activeOrgId} orgVerified={org?.isVerified} onStart={openVerificationModal} />
+            <VerificationPanel
+              verification={verification}
+              isVerified={isVerified}
+              isLoading={verificationLoading}
+              error={verificationError}
+              onStart={openVerificationModal}
+            />
           )}
 
           {/* ============================================
@@ -2106,6 +2309,9 @@ export const OrganizationManager = () => {
                 <h3 className="text-base font-black tracking-tight text-base-content flex items-center gap-2">
                   <Users size={18} className="text-primary shrink-0" />
                   Organization Team & Staff
+                  {members.length > 0 && (
+                    <span className="badge badge-sm badge-ghost font-bold">{members.length}</span>
+                  )}
                 </h3>
 
                 <p className="text-xs text-base-content/60 mt-0.5">
@@ -2120,58 +2326,35 @@ export const OrganizationManager = () => {
             </div>
 
             {membersLoading ? (
-              <div className="flex justify-center py-10">
-                <span className="loading loading-spinner loading-md text-primary" />
+              <div className="flex flex-col gap-3">
+                {[0, 1].map((i) => (
+                  <div key={i} className="flex items-center gap-3 p-4 rounded-2xl bg-base-100 border border-base-200">
+                    <span className="skeleton w-11 h-11 rounded-full shrink-0" />
+                    <div className="flex flex-col gap-2 flex-1">
+                      <span className="skeleton h-4 w-40 rounded" />
+                      <span className="skeleton h-3 w-56 rounded" />
+                    </div>
+                  </div>
+                ))}
               </div>
-            ) : members.length === 0 ? (
+            ) : sortedMembers.length === 0 ? (
               <div className="text-center py-10 bg-base-100/50 rounded-2xl border border-dashed border-base-300 p-6">
-                <p className="text-xs text-base-content/60">
-                  No additional staff members mapped to this organization yet.
+                <Users size={28} className="mx-auto text-primary/40 mb-2" />
+                <p className="text-xs font-bold text-base-content">No team members yet</p>
+                <p className="text-[11px] text-base-content/60 mt-0.5">
+                  Add gate scanners and managers so they can work with your events.
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="table w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-base-300 text-base-content/50 uppercase tracking-widest text-[10px]">
-                      <th>Member ID</th>
-                      <th>Digital ID</th>
-                      <th>Role</th>
-                      <th className="text-right">Actions</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {members.map((member) => (
-                      <tr
-                        key={member.id}
-                        className="border-b border-base-200/50 hover:bg-base-200/50 transition-colors"
-                      >
-                        <td className="font-bold">#{member.id}</td>
-
-                        <td className="font-bold">#{member.digitalId}</td>
-
-                        <td>
-                          <span className="badge badge-sm badge-outline font-bold uppercase text-[10px] text-primary border-primary/40">
-                            {ROLE_LABELS[member.orgRole] ?? member.orgRole}
-                          </span>
-                        </td>
-
-                        <td className="text-right">
-                          {member.orgRole !== "owner" && (
-                            <button
-                              onClick={() => handleRemoveMember(member.id)}
-                              className="btn btn-ghost btn-xs text-error hover:bg-error/10 rounded-lg"
-                              title="Remove Member"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="flex flex-col gap-3">
+                {sortedMembers.map((member) => (
+                  <MemberRow
+                    key={getMemberId(member) || member.digitalId}
+                    member={member}
+                    isSelf={Number(member.digitalId) === digitalId}
+                    onRemove={handleRemoveMember}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -2248,38 +2431,11 @@ export const OrganizationManager = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <label className={labelClass}>Payout Phone / Account</label>
-
-                  <input
-                    type="text"
-                    inputMode="tel"
-                    placeholder="+254712345678"
-                    value={formData.payoutPhone}
-                    onChange={(e) => setFormData({ ...formData, payoutPhone: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className={labelClass}>Payout Type</label>
-
-                  <select
-                    value={formData.payoutType ?? "mpesa_phone"}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        payoutType: e.target.value as OrgFormData["payoutType"],
-                      })
-                    }
-                    className={selectClass}
-                  >
-                    <option value="mpesa_phone">M-Pesa Phone</option>
-                    <option value="paybill">Paybill</option>
-                    <option value="bank">Bank</option>
-                  </select>
-                </div>
+              <div className="flex items-start gap-2 text-[11px] text-base-content/60 bg-base-200/60 rounded-xl p-3">
+                <WalletIcon size={14} className="text-primary shrink-0 mt-0.5" />
+                <span className="min-w-0 break-words">
+                  You will add your payout account later, in your wallet.
+                </span>
               </div>
 
               <InlineError message={modalError} />
@@ -2360,55 +2516,6 @@ export const OrganizationManager = () => {
       </AnimatePresence>
 
       {/* ==================================================
-          PAYOUT MODAL
-      ================================================= */}
-
-      <AnimatePresence>
-        {isPayoutModalOpen && (
-          <ModalShell title="Update Payout Configuration" maxWidth="max-w-md" onClose={closePayoutModal}>
-            <form onSubmit={handleUpdatePayout} className="flex flex-col gap-4 text-xs">
-              <div className="flex flex-col gap-1.5">
-                <label className={labelClass}>Payout Phone / Account Number</label>
-
-                <input
-                  type="text"
-                  inputMode="tel"
-                  required
-                  placeholder="+254712345678"
-                  value={payoutData.payoutPhone}
-                  onChange={(e) => setPayoutData({ ...payoutData, payoutPhone: e.target.value })}
-                  className={inputClass}
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className={labelClass}>Payout Type</label>
-
-                <select
-                  value={payoutData.payoutType}
-                  onChange={(e) =>
-                    setPayoutData({
-                      ...payoutData,
-                      payoutType: e.target.value as PayoutFormData["payoutType"],
-                    })
-                  }
-                  className={selectClass}
-                >
-                  <option value="mpesa_phone">M-Pesa Phone</option>
-                  <option value="paybill">Paybill</option>
-                  <option value="bank">Bank</option>
-                </select>
-              </div>
-
-              <InlineError message={modalError} />
-
-              <ModalActions onCancel={closePayoutModal} isLoading={isUpdatingPayout} submitLabel="Save Payout" />
-            </form>
-          </ModalShell>
-        )}
-      </AnimatePresence>
-
-      {/* ==================================================
           ADD MEMBER MODAL
       ================================================= */}
 
@@ -2449,6 +2556,47 @@ export const OrganizationManager = () => {
                 submitLabel="Add Member"
               />
             </form>
+          </ModalShell>
+        )}
+      </AnimatePresence>
+
+      {/* ==================================================
+          REMOVE MEMBER CONFIRMATION
+      ================================================= */}
+
+      <AnimatePresence>
+        {memberToRemove && (
+          <ModalShell title="Remove team member" maxWidth="max-w-sm" onClose={() => setMemberToRemove(null)}>
+            <div className="flex flex-col items-center text-center gap-4 text-xs">
+              <div className="w-12 h-12 rounded-2xl bg-error/10 text-error flex items-center justify-center">
+                <Trash2 size={22} />
+              </div>
+
+              <p className="text-base-content/70 leading-relaxed">
+                <span className="font-bold text-base-content">{memberToRemove.name}</span> will lose access to this
+                organization right away. You can add them again later.
+              </p>
+
+              <div className="flex w-full gap-2 pt-4 border-t border-base-200">
+                <button
+                  type="button"
+                  onClick={() => setMemberToRemove(null)}
+                  disabled={isRemoving}
+                  className="btn btn-ghost btn-sm rounded-xl font-bold w-1/2 text-xs"
+                >
+                  Keep member
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmRemove}
+                  disabled={isRemoving}
+                  className="btn btn-error btn-sm rounded-xl font-bold w-1/2 text-xs text-error-content"
+                >
+                  {isRemoving ? <span className="loading loading-spinner loading-xs" /> : "Remove"}
+                </button>
+              </div>
+            </div>
           </ModalShell>
         )}
       </AnimatePresence>

@@ -173,9 +173,17 @@ const REJECTION_FIELD_LABELS: Record<string, string> = {
 // STYLES
 // ======================================================
 
-const inputClass = "input input-bordered input-sm rounded-xl w-full text-xs";
-const selectClass = "select select-bordered select-sm rounded-xl w-full text-xs";
-const labelClass = "font-bold text-base-content/70";
+const inputClass =
+  "input input-bordered input-sm h-10 rounded-xl w-full text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20";
+const selectClass =
+  "select select-bordered select-sm h-10 rounded-xl w-full text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20";
+const labelClass = "text-xs font-bold text-base-content/70";
+
+/** One surface style for every panel, so the page reads as a single system */
+const panelClass = "rounded-3xl border border-base-300/60 bg-base-100 shadow-sm";
+
+/** Keeps buttons comfortably tappable on phones */
+const btnBase = "rounded-xl text-xs font-bold min-h-10 sm:min-h-8";
 
 // ======================================================
 // RESPONSE HELPERS
@@ -361,7 +369,7 @@ const uploadToCloudinary = async (
 
 const InlineError = ({ message }: { message: string }) =>
   message ? (
-    <div className="alert alert-error text-xs font-semibold py-2 rounded-xl">
+    <div role="alert" className="alert alert-error text-xs font-semibold py-2 rounded-xl">
       <AlertCircle size={16} className="shrink-0" />
       <span className="break-words min-w-0">{message}</span>
     </div>
@@ -383,7 +391,7 @@ const OrgLogo = ({
   iconSize?: number;
 }) => (
   <div
-    className={`${size} rounded-2xl bg-primary/20 text-primary flex items-center justify-center font-bold shrink-0 border border-base-300 overflow-hidden`}
+    className={`${size} rounded-2xl bg-base-100 text-primary flex items-center justify-center font-bold shrink-0 border border-base-300 overflow-hidden`}
   >
     {url ? (
       <img src={url} alt={name ? `${name} logo` : "Organization logo"} className="w-full h-full object-cover" />
@@ -442,19 +450,15 @@ const LogoUploader = ({ value, name, onChange, onUploadingChange }: LogoUploader
   };
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className={labelClass}>Organization Logo</label>
+    <div className="flex flex-col gap-2">
+      <label className={labelClass}>Organization logo</label>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 rounded-2xl border border-dashed border-base-300 bg-base-200/30 p-3">
         <OrgLogo url={value} name={name} size="w-16 h-16" />
 
         <div className="flex flex-col gap-1.5 flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <label
-              className={`btn btn-sm btn-outline rounded-xl text-xs font-bold gap-2 ${
-                uploading ? "btn-disabled" : ""
-              }`}
-            >
+            <label className={`btn btn-sm btn-outline gap-2 ${btnBase} ${uploading ? "btn-disabled" : ""}`}>
               <UploadCloud size={14} />
               {value ? "Change logo" : "Upload logo"}
               <input type="file" accept="image/*" onChange={handleFile} className="hidden" disabled={uploading} />
@@ -464,7 +468,7 @@ const LogoUploader = ({ value, name, onChange, onUploadingChange }: LogoUploader
               <button
                 type="button"
                 onClick={() => onChange("")}
-                className="btn btn-ghost btn-sm rounded-xl text-xs font-bold text-error hover:bg-error/10"
+                className={`btn btn-ghost btn-sm text-error hover:bg-error/10 ${btnBase}`}
               >
                 Remove
               </button>
@@ -498,8 +502,11 @@ const OrgTab = ({ orgId, active, onSelect }: { orgId: number; active: boolean; o
   return (
     <button
       onClick={onSelect}
-      className={`btn btn-sm rounded-xl text-xs font-bold transition-all gap-2 ${
-        active ? "btn-primary shadow-sm" : "btn-ghost bg-base-200/60 text-base-content/70 hover:bg-base-200"
+      aria-pressed={active}
+      className={`btn btn-sm shrink-0 gap-2 transition-colors ${btnBase} ${
+        active
+          ? "btn-primary shadow-sm"
+          : "btn-ghost bg-base-100 border border-base-300/60 text-base-content/70 hover:bg-base-200"
       }`}
     >
       {org?.logoUrl ? (
@@ -517,11 +524,13 @@ const OrgTab = ({ orgId, active, onSelect }: { orgId: number; active: boolean; o
 // ======================================================
 
 const DetailRow = ({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) => (
-  <div className="flex items-start gap-2 text-base-content/70">
-    <span className="text-primary shrink-0 mt-0.5">{icon}</span>
+  <div className="flex items-start gap-3 rounded-2xl bg-base-200/50 p-3">
+    <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+      {icon}
+    </span>
     <div className="flex flex-col min-w-0">
-      <span className="text-[10px] uppercase tracking-widest text-base-content/40 font-bold">{label}</span>
-      <span className="font-semibold text-base-content break-words">{value || "—"}</span>
+      <span className="text-[11px] text-base-content/50 font-semibold">{label}</span>
+      <span className="text-xs font-semibold text-base-content break-words">{value || "—"}</span>
     </div>
   </div>
 );
@@ -675,11 +684,11 @@ const UserPicker = ({ value, onChange, existingDigitalIds }: UserPickerProps) =>
         <div className="flex items-center gap-3 p-3 rounded-2xl bg-primary/5 border border-primary/20">
           <UserAvatar user={value} size="w-11 h-11" />
           <div className="flex flex-col min-w-0 flex-1">
-            <span className="font-bold text-base-content truncate">{value.name}</span>
+            <span className="font-bold text-sm text-base-content truncate">{value.name}</span>
             {value.email && <span className="text-[11px] text-base-content/60 truncate">{value.email}</span>}
             <span className="text-[10px] text-base-content/40 font-mono">Digital ID {value.digitalId}</span>
           </div>
-          <button type="button" onClick={reset} className="btn btn-ghost btn-xs rounded-lg text-xs font-bold">
+          <button type="button" onClick={reset} className={`btn btn-ghost btn-xs ${btnBase}`}>
             Change
           </button>
         </div>
@@ -691,7 +700,7 @@ const UserPicker = ({ value, onChange, existingDigitalIds }: UserPickerProps) =>
     <div className="flex flex-col gap-1.5">
       <label className={labelClass}>Find a user</label>
 
-      <label className="input input-bordered input-sm rounded-xl flex items-center gap-2 w-full text-xs">
+      <label className="input input-bordered input-sm h-10 rounded-xl flex items-center gap-2 w-full text-sm focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
         <Search size={14} className="text-base-content/40 shrink-0" />
         <input
           type="text"
@@ -741,11 +750,11 @@ const UserPicker = ({ value, onChange, existingDigitalIds }: UserPickerProps) =>
                   type="button"
                   disabled={alreadyMember}
                   onClick={() => onChange(u)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-base-200/60 disabled:opacity-50 disabled:hover:bg-transparent border-b border-base-200/60 last:border-b-0 transition-colors"
+                  className="w-full flex items-center gap-3 px-3 py-3 text-left hover:bg-base-200/60 disabled:opacity-50 disabled:hover:bg-transparent border-b border-base-200/60 last:border-b-0 transition-colors"
                 >
                   <UserAvatar user={u} />
                   <div className="flex flex-col min-w-0 flex-1">
-                    <span className="font-bold text-base-content truncate">{u.name}</span>
+                    <span className="font-bold text-sm text-base-content truncate">{u.name}</span>
                     {u.email && <span className="text-[11px] text-base-content/60 truncate">{u.email}</span>}
                     <span className="text-[10px] text-base-content/40 font-mono">ID {u.digitalId}</span>
                   </div>
@@ -785,7 +794,7 @@ const MemberRow = ({ member, isSelf, onRemove }: MemberRowProps) => {
   const displayName = person?.name ?? (isLoading ? "" : "Unknown user");
 
   return (
-    <div className="flex items-center gap-3 p-3 sm:p-4 rounded-2xl bg-base-100 border border-base-200 hover:border-primary/30 transition-colors">
+    <div className="flex items-center gap-3 p-3 sm:p-4 rounded-2xl bg-base-100 border border-base-300/60 hover:border-primary/40 transition-colors">
       <UserAvatar user={person} size="w-11 h-11" />
 
       <div className="flex flex-col min-w-0 flex-1 gap-0.5">
@@ -816,10 +825,11 @@ const MemberRow = ({ member, isSelf, onRemove }: MemberRowProps) => {
         <button
           onClick={() => onRemove(memberId, displayName || `Digital ID ${digitalId}`)}
           disabled={!memberId}
-          className="btn btn-ghost btn-xs btn-square text-error hover:bg-error/10 rounded-lg shrink-0"
+          className="btn btn-ghost btn-sm btn-square text-error hover:bg-error/10 rounded-xl shrink-0"
           title="Remove member"
+          aria-label={`Remove ${displayName || "member"}`}
         >
-          <Trash2 size={14} />
+          <Trash2 size={15} />
         </button>
       )}
     </div>
@@ -827,7 +837,7 @@ const MemberRow = ({ member, isSelf, onRemove }: MemberRowProps) => {
 };
 
 // ======================================================
-// MODAL SHELL
+// MODAL SHELL (bottom sheet on phones, centered dialog on larger screens)
 // ======================================================
 
 interface ModalShellProps {
@@ -839,22 +849,32 @@ interface ModalShellProps {
 
 const ModalShell = ({ title, onClose, maxWidth = "max-w-lg", children }: ModalShellProps) => (
   <div
-    className="fixed inset-0 z-[100] flex items-center justify-center px-3 sm:px-4 bg-black/70 backdrop-blur-sm"
-    style={{
-      paddingTop: "max(0.75rem, env(safe-area-inset-top))",
-      paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))",
-    }}
+    className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:px-4 bg-black/60 backdrop-blur-sm"
+    style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))" }}
   >
     <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      className={`bg-base-100 border border-base-200 w-full ${maxWidth} max-h-full overflow-y-auto overflow-x-hidden rounded-3xl p-4 sm:p-6 shadow-2xl flex flex-col gap-5 sm:gap-6`}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      initial={{ opacity: 0, y: 32 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 32 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+      className={`bg-base-100 border border-base-200 w-full ${maxWidth} max-h-full overflow-y-auto overflow-x-hidden rounded-t-3xl sm:rounded-3xl px-4 pt-3 sm:p-6 shadow-2xl flex flex-col gap-5 sm:gap-6`}
+      style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
     >
-      <div className="flex justify-between items-center border-b border-base-200 pb-4">
-        <h3 className="font-black text-sm uppercase tracking-wider text-primary">{title}</h3>
+      {/* grab handle (phones only) */}
+      <div className="sm:hidden mx-auto h-1 w-10 rounded-full bg-base-300 shrink-0" aria-hidden />
 
-        <button onClick={onClose} className="btn btn-ghost btn-sm btn-square rounded-xl" type="button">
+      <div className="flex justify-between items-center border-b border-base-200 pb-3 sm:pb-4">
+        <h3 className="font-black text-base tracking-tight text-base-content">{title}</h3>
+
+        <button
+          onClick={onClose}
+          className="btn btn-ghost btn-sm btn-square rounded-xl"
+          type="button"
+          aria-label="Close"
+        >
           <X size={18} />
         </button>
       </div>
@@ -877,12 +897,12 @@ const ModalActions = ({
   isLoading: boolean;
   submitLabel: string;
 }) => (
-  <div className="flex justify-end gap-2 pt-4 border-t border-base-200">
-    <button type="button" onClick={onCancel} className="btn btn-ghost btn-sm rounded-xl text-xs font-bold">
+  <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-4 border-t border-base-200">
+    <button type="button" onClick={onCancel} className={`btn btn-ghost btn-sm ${btnBase}`}>
       Cancel
     </button>
 
-    <button type="submit" disabled={isLoading} className="btn btn-primary btn-sm rounded-xl text-xs font-bold">
+    <button type="submit" disabled={isLoading} className={`btn btn-primary btn-sm ${btnBase}`}>
       {isLoading ? <span className="loading loading-spinner loading-xs" /> : submitLabel}
     </button>
   </div>
@@ -940,10 +960,14 @@ const DocUploader = ({ label, hint, value, onChange, onUploadingChange }: DocUpl
   };
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <label className={labelClass}>{label}</label>
 
-      <div className="flex items-center gap-3">
+      <div
+        className={`flex items-center gap-3 rounded-2xl p-3 border ${
+          value ? "border-success/40 bg-success/5" : "border-dashed border-base-300 bg-base-200/30"
+        }`}
+      >
         <div className="w-20 h-14 rounded-xl bg-base-200 border border-base-300 flex items-center justify-center overflow-hidden shrink-0 text-base-content/40">
           {value ? (
             isPdfUrl(value) ? (
@@ -958,11 +982,7 @@ const DocUploader = ({ label, hint, value, onChange, onUploadingChange }: DocUpl
 
         <div className="flex flex-col gap-1 flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <label
-              className={`btn btn-sm btn-outline rounded-xl text-xs font-bold gap-2 ${
-                uploading ? "btn-disabled" : ""
-              }`}
-            >
+            <label className={`btn btn-sm btn-outline gap-2 ${btnBase} ${uploading ? "btn-disabled" : ""}`}>
               <UploadCloud size={14} />
               {value ? "Replace" : "Upload"}
               <input
@@ -1095,14 +1115,12 @@ const CameraCapture = ({ prompt, busy, onCapture }: CameraCaptureProps) => {
           <button
             type="button"
             onClick={() => setAttempt((n) => n + 1)}
-            className="btn btn-sm btn-outline btn-error rounded-xl text-xs font-bold"
+            className={`btn btn-sm btn-outline btn-error ${btnBase}`}
           >
             Try again
           </button>
 
-          <label
-            className={`btn btn-sm btn-primary rounded-xl text-xs font-bold gap-2 ${busy ? "btn-disabled" : ""}`}
-          >
+          <label className={`btn btn-sm btn-primary gap-2 ${btnBase} ${busy ? "btn-disabled" : ""}`}>
             <Camera size={14} />
             {busy ? "Uploading..." : "Use phone camera"}
             <input
@@ -1149,7 +1167,7 @@ const CameraCapture = ({ prompt, busy, onCapture }: CameraCaptureProps) => {
         type="button"
         onClick={snap}
         disabled={!ready || busy}
-        className="btn btn-primary btn-sm rounded-xl text-xs font-bold gap-2"
+        className={`btn btn-primary btn-sm gap-2 ${btnBase}`}
       >
         <Camera size={15} />
         Take photo
@@ -1276,12 +1294,12 @@ const VerificationModal = ({ orgId, userId, mode, verificationId, onClose, onDon
   };
 
   return (
-    <ModalShell title="Verify Your Organization" onClose={onClose}>
+    <ModalShell title="Verify your organization" onClose={onClose}>
       <div className="flex flex-col gap-5 text-xs">
         <VerificationRequiredNotice />
 
         <div className="w-full overflow-x-hidden">
-          <ul className="steps steps-horizontal w-full text-[10px] sm:text-[11px] font-bold">
+          <ul className="steps steps-horizontal w-full text-[11px] font-bold">
             {VERIFICATION_STEPS.map((label, i) => (
               <li key={label} className={`step ${i <= step ? "step-primary" : ""}`}>
                 {label}
@@ -1302,7 +1320,7 @@ const VerificationModal = ({ orgId, userId, mode, verificationId, onClose, onDon
                     key={type}
                     type="button"
                     onClick={() => setForm((prev) => ({ ...prev, entityType: type }))}
-                    className={`btn btn-sm rounded-xl text-xs font-bold capitalize ${
+                    className={`btn btn-sm capitalize ${btnBase} ${
                       form.entityType === type ? "btn-primary" : "btn-outline"
                     }`}
                   >
@@ -1372,7 +1390,7 @@ const VerificationModal = ({ orgId, userId, mode, verificationId, onClose, onDon
         {/* STEP 3: LIVE SELFIES */}
         {step === 2 && (
           <div className="flex flex-col gap-4">
-            <p className="text-base-content/60">
+            <p className="text-base-content/60 leading-relaxed">
               We need {REQUIRED_SELFIES} live selfies. Allow camera access when your browser asks. Each photo uploads
               as soon as you take it.
             </p>
@@ -1402,7 +1420,7 @@ const VerificationModal = ({ orgId, userId, mode, verificationId, onClose, onDon
 
             {!allSelfiesDone && (
               <div className="flex flex-col gap-2">
-                <span className="text-[11px] font-black uppercase tracking-widest text-primary">
+                <span className="text-xs font-bold text-primary">
                   Selfie {selfies.length + 1} of {REQUIRED_SELFIES}
                 </span>
 
@@ -1436,7 +1454,7 @@ const VerificationModal = ({ orgId, userId, mode, verificationId, onClose, onDon
             type="button"
             onClick={step === 0 ? onClose : () => setStep((s) => s - 1)}
             disabled={isSubmitting || isResubmitting}
-            className="btn btn-ghost btn-sm rounded-xl text-xs font-bold"
+            className={`btn btn-ghost btn-sm ${btnBase}`}
           >
             {step === 0 ? "Do this later" : "Back"}
           </button>
@@ -1446,7 +1464,7 @@ const VerificationModal = ({ orgId, userId, mode, verificationId, onClose, onDon
               type="button"
               onClick={() => setStep((s) => s + 1)}
               disabled={!canGoNext}
-              className="btn btn-primary btn-sm rounded-xl text-xs font-bold"
+              className={`btn btn-primary btn-sm px-6 ${btnBase}`}
             >
               {uploadingDocs > 0 ? <span className="loading loading-spinner loading-xs" /> : "Next"}
             </button>
@@ -1455,12 +1473,12 @@ const VerificationModal = ({ orgId, userId, mode, verificationId, onClose, onDon
               type="button"
               onClick={handleSubmit}
               disabled={!allSelfiesDone || selfieUploading || isSubmitting || isResubmitting}
-              className="btn btn-primary btn-sm rounded-xl text-xs font-bold"
+              className={`btn btn-primary btn-sm ${btnBase}`}
             >
               {isSubmitting || isResubmitting ? (
                 <span className="loading loading-spinner loading-xs" />
               ) : (
-                "Submit Verification"
+                "Submit verification"
               )}
             </button>
           )}
@@ -1537,10 +1555,10 @@ const VerifiedCard = ({ verification }: { verification?: Verification }) => {
   ].filter((item) => !!item.value);
 
   return (
-    <div className="rounded-3xl border border-success/30 bg-gradient-to-br from-success/15 via-success/5 to-transparent p-4 sm:p-6 flex flex-col gap-5">
+    <div className="rounded-3xl border border-success/30 bg-success/10 p-4 sm:p-6 flex flex-col gap-5">
       <div className="flex items-start sm:items-center gap-4">
-        <div className="w-14 h-14 rounded-2xl bg-success text-success-content flex items-center justify-center shrink-0 shadow-sm">
-          <ShieldCheck size={28} />
+        <div className="w-12 h-12 rounded-2xl bg-success text-success-content flex items-center justify-center shrink-0 shadow-sm">
+          <ShieldCheck size={26} />
         </div>
 
         <div className="flex flex-col gap-1 min-w-0">
@@ -1557,10 +1575,8 @@ const VerifiedCard = ({ verification }: { verification?: Verification }) => {
       {details.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 border-t border-success/20 text-xs">
           {details.map((item) => (
-            <div key={item.label} className="flex flex-col min-w-0">
-              <span className="text-[10px] uppercase tracking-widest text-base-content/40 font-bold">
-                {item.label}
-              </span>
+            <div key={item.label} className="flex flex-col min-w-0 rounded-2xl bg-base-100/70 p-3">
+              <span className="text-[11px] text-base-content/50 font-semibold">{item.label}</span>
               <span className="font-semibold text-base-content break-words">{item.value}</span>
             </div>
           ))}
@@ -1599,11 +1615,13 @@ const VerificationPanel = ({ verification, isVerified, isLoading, error, onStart
     : [];
 
   return (
-    <div className="bg-base-200/40 border border-warning/50 shadow-sm p-4 sm:p-6 rounded-3xl flex flex-col gap-4">
+    <div className={`${panelClass} border-warning/50 p-4 sm:p-6 flex flex-col gap-4`}>
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-base font-black tracking-tight text-base-content flex items-center gap-2">
-          <ShieldCheck size={18} className="text-primary shrink-0" />
-          Organization Verification
+          <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+            <ShieldCheck size={17} />
+          </span>
+          Organization verification
         </h3>
 
         {statusMeta && <span className={`badge badge-sm font-bold ${statusMeta.badge}`}>{statusMeta.label}</span>}
@@ -1614,7 +1632,7 @@ const VerificationPanel = ({ verification, isVerified, isLoading, error, onStart
           <span className="loading loading-spinner loading-md text-primary" />
         </div>
       ) : hardError ? (
-        <div className="alert alert-error text-xs font-semibold rounded-xl py-2">
+        <div role="alert" className="alert alert-error text-xs font-semibold rounded-xl py-2">
           <AlertCircle size={16} className="shrink-0" />
           <span>{getErrorMessage(error, "Could not load verification status.")}</span>
         </div>
@@ -1623,23 +1641,23 @@ const VerificationPanel = ({ verification, isVerified, isLoading, error, onStart
           <VerificationRequiredNotice />
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <p className="text-xs text-base-content/60 max-w-xl">
+            <p className="text-xs text-base-content/60 max-w-xl leading-relaxed">
               Verify your identity to build trust with attendees. You'll upload your ID, take a couple of live selfies,
               and we'll review it.
             </p>
 
             <button
               onClick={() => onStart("create")}
-              className="btn btn-primary btn-sm rounded-xl text-xs font-bold gap-2 shrink-0"
+              className={`btn btn-primary btn-sm gap-2 shrink-0 w-full sm:w-auto ${btnBase}`}
             >
               <ShieldCheck size={15} />
-              Start Verification
+              Start verification
             </button>
           </div>
         </>
       ) : status === "pending" || status === "in_progress" ? (
-        <div className="flex items-start gap-2 text-xs text-base-content/70">
-          <Clock size={16} className="text-warning shrink-0 mt-0.5" />
+        <div className="flex items-start gap-3 rounded-2xl bg-info/10 border border-info/20 p-4 text-xs text-base-content/70 leading-relaxed">
+          <Clock size={16} className="text-info shrink-0 mt-0.5" />
           <span>
             Your documents were submitted{verification.createdAt ? ` on ${formatDate(verification.createdAt)}` : ""} and
             are being reviewed. Approval usually takes about {VERIFICATION_REVIEW_TIME}. Until then, your
@@ -1657,13 +1675,13 @@ const VerificationPanel = ({ verification, isVerified, isLoading, error, onStart
           </p>
 
           {feedback.length > 0 && (
-            <ul className="flex flex-col gap-1.5">
+            <ul className="flex flex-col gap-2">
               {feedback.map((item) => (
                 <li
                   key={item.key}
                   className="text-xs p-3 rounded-xl bg-warning/10 border border-warning/30 flex flex-col"
                 >
-                  <span className="text-[10px] uppercase tracking-widest text-base-content/50 font-bold">
+                  <span className="text-[11px] text-base-content/50 font-semibold">
                     {REJECTION_FIELD_LABELS[item.key]}
                   </span>
                   <span className="font-semibold text-base-content break-words">{item.text}</span>
@@ -1675,9 +1693,9 @@ const VerificationPanel = ({ verification, isVerified, isLoading, error, onStart
           {status === "resubmission_required" && (
             <button
               onClick={() => onStart("resubmit", verification.id)}
-              className="btn btn-primary btn-sm rounded-xl text-xs font-bold w-fit"
+              className={`btn btn-primary btn-sm w-full sm:w-fit ${btnBase}`}
             >
-              Resubmit Documents
+              Resubmit documents
             </button>
           )}
         </div>
@@ -2070,29 +2088,38 @@ export const OrganizationManager = () => {
   // ====================================================
 
   return (
+    // pb-28 keeps the last section clear of the fixed bottom navigation on small screens
     <div className="flex flex-col gap-6 sm:gap-8 pb-28 lg:pb-16">
       {/* ================================================
           HEADER
       ================================================= */}
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-base-200/50 p-4 sm:p-6 rounded-3xl border border-base-200">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-black tracking-tight text-base-content">Organization Management</h1>
+      <div className={`${panelClass} flex flex-col md:flex-row justify-between items-start md:items-center gap-4 p-4 sm:p-6`}>
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="w-12 h-12 rounded-2xl bg-primary text-primary-content flex items-center justify-center shrink-0 shadow-sm">
+            <Building2 size={22} />
+          </div>
 
-          <p className="text-xs text-base-content/60 mt-1">
-            Manage your organization profile, verification, and operational team members.
-          </p>
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-base-content">
+              Organization management
+            </h1>
+
+            <p className="text-xs text-base-content/60 mt-1 leading-relaxed">
+              Manage your organization profile, verification, and the team that runs your events.
+            </p>
+          </div>
         </div>
 
-        <div className="flex flex-col items-start md:items-end gap-1">
+        <div className="flex flex-col items-start md:items-end gap-1.5 w-full md:w-auto">
           <button
             onClick={openCreateModal}
             disabled={ownsOrganization}
             title={ownsOrganization ? "You already have an organization" : undefined}
-            className="btn btn-primary btn-sm gap-2 rounded-xl text-xs font-bold shadow-sm"
+            className={`btn btn-primary btn-sm gap-2 shadow-sm w-full md:w-auto ${btnBase}`}
           >
             <Plus size={16} />
-            <span>Create Organization</span>
+            <span>Create organization</span>
           </button>
 
           {ownsOrganization && (
@@ -2104,18 +2131,21 @@ export const OrganizationManager = () => {
       </div>
 
       {/* ================================================
-          NOTIFICATIONS
+          NOTIFICATIONS (stick under the top edge so they stay visible while scrolling)
       ================================================= */}
 
       {successMessage && (
-        <div className="alert alert-success text-xs font-bold rounded-2xl shadow-sm">
+        <div
+          role="status"
+          className="alert alert-success text-xs font-bold rounded-2xl shadow-lg sticky top-3 z-40"
+        >
           <CheckCircle2 size={18} className="shrink-0" />
           <span className="break-words min-w-0">{successMessage}</span>
         </div>
       )}
 
       {errorMessage && (
-        <div className="alert alert-error text-xs font-bold rounded-2xl shadow-sm">
+        <div role="alert" className="alert alert-error text-xs font-bold rounded-2xl shadow-lg sticky top-3 z-40">
           <AlertCircle size={18} className="shrink-0" />
           <span className="break-words min-w-0">{errorMessage}</span>
         </div>
@@ -2130,17 +2160,19 @@ export const OrganizationManager = () => {
           <span className="loading loading-spinner loading-lg text-primary" />
         </div>
       ) : organizationIds.length === 0 ? (
-        <div className="text-center py-16 bg-base-200/30 rounded-3xl border border-dashed border-base-300 p-8">
-          <Building2 size={48} className="mx-auto text-primary/40 mb-3" />
+        <div className="text-center py-16 bg-base-100 rounded-3xl border border-dashed border-base-300 p-8">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto mb-4">
+            <Building2 size={30} />
+          </div>
 
-          <h3 className="font-bold text-sm text-base-content">No Organizations Found</h3>
+          <h3 className="font-black text-base text-base-content">Set up your organization</h3>
 
-          <p className="text-xs text-base-content/60 mt-1 mb-4">
-            You haven't created or joined any organizations yet.
+          <p className="text-xs text-base-content/60 mt-1 mb-5 max-w-sm mx-auto leading-relaxed">
+            Create an organization to sell tickets, get paid, and add your team.
           </p>
 
-          <button onClick={openCreateModal} className="btn btn-primary btn-sm rounded-xl text-xs font-bold">
-            Create Your First Organization
+          <button onClick={openCreateModal} className={`btn btn-primary btn-sm ${btnBase}`}>
+            Create your organization
           </button>
         </div>
       ) : (
@@ -2150,7 +2182,7 @@ export const OrganizationManager = () => {
           ============================================= */}
 
           {organizationIds.length > 1 && (
-            <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 custom-scrollbar">
               {organizationIds.map((id) => (
                 <OrgTab key={id} orgId={id} active={activeOrgId === id} onSelect={() => setSelectedOrgId(id)} />
               ))}
@@ -2164,84 +2196,96 @@ export const OrganizationManager = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* MAIN INFO */}
 
-            <div className="lg:col-span-2 bg-base-200/40 border border-base-200 p-4 sm:p-6 rounded-3xl flex flex-col justify-between gap-6">
+            <div className={`lg:col-span-2 ${panelClass} overflow-hidden flex flex-col`}>
               {orgDetailsLoading ? (
-                <div className="flex justify-center py-10">
+                <div className="flex justify-center py-16">
                   <span className="loading loading-spinner loading-md text-primary" />
                 </div>
               ) : (
                 <>
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                    <div className="relative shrink-0">
-                      <OrgLogo url={org?.logoUrl} name={org?.name} />
+                  {/* banner: the logo overlaps it so the organization feels like a profile */}
+                  <div className="h-20 sm:h-24 bg-primary/10 border-b border-base-300/40" />
 
-                      {isVerified && (
-                        <span
-                          className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-success text-success-content flex items-center justify-center border-2 border-base-100"
-                          title="Verified organization"
-                        >
-                          <Check size={13} />
-                        </span>
-                      )}
-                    </div>
+                  <div className="px-4 sm:px-6 pb-4 sm:pb-6 flex flex-col gap-5">
+                    <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4 -mt-10 sm:-mt-12">
+                      <div className="relative shrink-0 w-fit">
+                        <OrgLogo
+                          url={org?.logoUrl}
+                          name={org?.name}
+                          size="w-20 h-20 sm:w-24 sm:h-24 ring-4 ring-base-100"
+                          iconSize={34}
+                        />
 
-                    <div className="flex flex-col gap-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-lg font-black tracking-tight text-base-content break-words">
-                          {org?.name || "Organization"}
-                        </h2>
-
-                        {org && <VerificationBadge isVerified={isVerified} status={verificationStatus} />}
-
-                        {org && (
+                        {isVerified && (
                           <span
-                            className={`badge badge-sm font-bold ${
-                              org.isActive ? "badge-outline badge-success" : "badge-error text-error-content"
-                            }`}
+                            className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-success text-success-content flex items-center justify-center border-2 border-base-100"
+                            title="Verified organization"
                           >
-                            {org.isActive ? "Active" : "Suspended"}
+                            <Check size={14} />
                           </span>
                         )}
                       </div>
 
-                      {org?.slug && <span className="text-xs text-base-content/50 break-all">@{org.slug}</span>}
+                      <div className="flex flex-col gap-1 min-w-0 sm:pb-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="text-lg sm:text-xl font-black tracking-tight text-base-content break-words">
+                            {org?.name || "Organization"}
+                          </h2>
 
-                      {currentMembership && (
-                        <span className="text-xs text-primary font-semibold">
-                          Your role: {ROLE_LABELS[currentMembership.orgRole] ?? currentMembership.orgRole}
-                        </span>
-                      )}
+                          {org && <VerificationBadge isVerified={isVerified} status={verificationStatus} />}
+
+                          {org && (
+                            <span
+                              className={`badge badge-sm font-bold ${
+                                org.isActive ? "badge-outline badge-success" : "badge-error text-error-content"
+                              }`}
+                            >
+                              {org.isActive ? "Active" : "Suspended"}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+                          {org?.slug && <span className="text-base-content/50 break-all">@{org.slug}</span>}
+
+                          {currentMembership && (
+                            <span className="text-primary font-semibold">
+                              Your role: {ROLE_LABELS[currentMembership.orgRole] ?? currentMembership.orgRole}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-base-200 text-xs">
-                    <DetailRow icon={<Mail size={16} />} label="Support email" value={org?.supportEmail} />
-                    <DetailRow icon={<Phone size={16} />} label="Support phone" value={org?.supportPhone} />
-                    <DetailRow icon={<Globe size={16} />} label="Page link" value={org?.slug ? `/${org.slug}` : ""} />
-                    <DetailRow
-                      icon={<CalendarDays size={16} />}
-                      label="Created"
-                      value={formatDate(org?.createdAt)}
-                    />
-                  </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <DetailRow icon={<Mail size={15} />} label="Support email" value={org?.supportEmail} />
+                      <DetailRow icon={<Phone size={15} />} label="Support phone" value={org?.supportPhone} />
+                      <DetailRow icon={<Globe size={15} />} label="Page link" value={org?.slug ? `/${org.slug}` : ""} />
+                      <DetailRow
+                        icon={<CalendarDays size={15} />}
+                        label="Created"
+                        value={formatDate(org?.createdAt)}
+                      />
+                    </div>
 
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    <button
-                      onClick={openEditModal}
-                      disabled={!org}
-                      className="btn btn-sm btn-outline rounded-xl text-xs font-bold gap-2"
-                    >
-                      <Edit size={14} />
-                      Edit Profile
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <button
+                        onClick={openEditModal}
+                        disabled={!org}
+                        className={`btn btn-sm btn-outline gap-2 ${btnBase}`}
+                      >
+                        <Edit size={14} />
+                        Edit profile
+                      </button>
 
-                    <button
-                      onClick={goToWallet}
-                      className="btn btn-sm btn-ghost bg-base-200 hover:bg-base-300 rounded-xl text-xs font-bold gap-2"
-                    >
-                      <WalletIcon size={14} className="text-primary" />
-                      Wallet & Payouts
-                    </button>
+                      <button
+                        onClick={goToWallet}
+                        className={`btn btn-sm btn-ghost bg-base-200 hover:bg-base-300 gap-2 ${btnBase}`}
+                      >
+                        <WalletIcon size={14} className="text-primary" />
+                        Wallet & payouts
+                      </button>
+                    </div>
                   </div>
                 </>
               )}
@@ -2249,26 +2293,26 @@ export const OrganizationManager = () => {
 
             {/* WALLET & PAYOUTS WIDGET (payouts are managed only in the wallet) */}
 
-            <div className="bg-base-200/40 border border-base-200 p-4 sm:p-6 rounded-3xl flex flex-col justify-between gap-4">
+            <div className="rounded-3xl bg-primary text-primary-content p-4 sm:p-6 flex flex-col justify-between gap-5 shadow-sm">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-widest text-base-content/50">
-                  Earnings & Payouts
-                </span>
+                <span className="text-sm font-bold">Earnings & payouts</span>
 
-                <WalletIcon size={18} className="text-primary" />
+                <span className="w-9 h-9 rounded-xl bg-primary-content/15 flex items-center justify-center">
+                  <WalletIcon size={18} />
+                </span>
               </div>
 
-              <p className="text-xs text-base-content/70 leading-relaxed">
+              <p className="text-xs text-primary-content/80 leading-relaxed">
                 Ticket sales go to your wallet after the platform commission is taken off. Add your M-Pesa or bank
                 account and request payouts from the wallet.
               </p>
 
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-base-content/60 flex items-center gap-1">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs text-primary-content/70 flex items-center gap-1">
                   <Percent size={12} /> Platform commission
                 </span>
 
-                <span className="text-sm font-black text-primary">
+                <span className="text-3xl font-black tracking-tight">
                   {org?.commissionPercentage !== undefined && org?.commissionPercentage !== null
                     ? `${org.commissionPercentage}%`
                     : "—"}
@@ -2277,10 +2321,10 @@ export const OrganizationManager = () => {
 
               <button
                 onClick={goToWallet}
-                className="w-full btn btn-sm btn-primary rounded-xl text-xs font-bold mt-2 gap-2"
+                className={`w-full btn btn-sm border-0 bg-base-100 text-base-content hover:bg-base-200 gap-2 ${btnBase}`}
               >
                 <WalletIcon size={14} />
-                Open Wallet
+                Open wallet
               </button>
             </div>
           </div>
@@ -2303,25 +2347,30 @@ export const OrganizationManager = () => {
               MEMBERS
           ============================================= */}
 
-          <div className="bg-base-200/40 border border-base-200 p-4 sm:p-6 rounded-3xl flex flex-col gap-6">
+          <div className={`${panelClass} p-4 sm:p-6 flex flex-col gap-5`}>
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
                 <h3 className="text-base font-black tracking-tight text-base-content flex items-center gap-2">
-                  <Users size={18} className="text-primary shrink-0" />
-                  Organization Team & Staff
+                  <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <Users size={17} />
+                  </span>
+                  Team & staff
                   {members.length > 0 && (
                     <span className="badge badge-sm badge-ghost font-bold">{members.length}</span>
                   )}
                 </h3>
 
-                <p className="text-xs text-base-content/60 mt-0.5">
+                <p className="text-xs text-base-content/60 mt-1">
                   Manage permissions and roles for scanners and organization managers.
                 </p>
               </div>
 
-              <button onClick={openMemberModal} className="btn btn-sm btn-primary rounded-xl text-xs font-bold gap-2">
+              <button
+                onClick={openMemberModal}
+                className={`btn btn-sm btn-primary gap-2 w-full sm:w-auto ${btnBase}`}
+              >
                 <Plus size={15} />
-                Add Team Member
+                Add team member
               </button>
             </div>
 
@@ -2338,10 +2387,10 @@ export const OrganizationManager = () => {
                 ))}
               </div>
             ) : sortedMembers.length === 0 ? (
-              <div className="text-center py-10 bg-base-100/50 rounded-2xl border border-dashed border-base-300 p-6">
+              <div className="text-center py-10 bg-base-200/30 rounded-2xl border border-dashed border-base-300 p-6">
                 <Users size={28} className="mx-auto text-primary/40 mb-2" />
-                <p className="text-xs font-bold text-base-content">No team members yet</p>
-                <p className="text-[11px] text-base-content/60 mt-0.5">
+                <p className="text-sm font-bold text-base-content">No team members yet</p>
+                <p className="text-xs text-base-content/60 mt-0.5">
                   Add gate scanners and managers so they can work with your events.
                 </p>
               </div>
@@ -2361,13 +2410,16 @@ export const OrganizationManager = () => {
         </div>
       )}
 
+      {/* Extra room for the phone home bar, on top of pb-28 for the fixed bottom nav */}
+      <div className="h-[env(safe-area-inset-bottom)] lg:hidden" aria-hidden />
+
       {/* ==================================================
           CREATE ORGANIZATION MODAL
       ================================================= */}
 
       <AnimatePresence>
         {isCreateModalOpen && (
-          <ModalShell title="Create New Organization" onClose={closeCreateModal}>
+          <ModalShell title="Create new organization" onClose={closeCreateModal}>
             <form onSubmit={handleCreateOrg} className="flex flex-col gap-4 text-xs">
               <LogoUploader
                 value={formData.logoUrl}
@@ -2377,7 +2429,7 @@ export const OrganizationManager = () => {
               />
 
               <div className="flex flex-col gap-1.5">
-                <label className={labelClass}>Organization Name</label>
+                <label className={labelClass}>Organization name</label>
 
                 <input
                   type="text"
@@ -2405,7 +2457,7 @@ export const OrganizationManager = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="flex flex-col gap-1.5">
-                  <label className={labelClass}>Support Email</label>
+                  <label className={labelClass}>Support email</label>
 
                   <input
                     type="email"
@@ -2419,7 +2471,7 @@ export const OrganizationManager = () => {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className={labelClass}>Support Phone</label>
+                  <label className={labelClass}>Support phone</label>
 
                   <input
                     type="tel"
@@ -2443,7 +2495,7 @@ export const OrganizationManager = () => {
               <ModalActions
                 onCancel={closeCreateModal}
                 isLoading={isCreating || isUploadingLogo}
-                submitLabel="Save Organization"
+                submitLabel="Create organization"
               />
             </form>
           </ModalShell>
@@ -2456,7 +2508,7 @@ export const OrganizationManager = () => {
 
       <AnimatePresence>
         {isEditModalOpen && (
-          <ModalShell title="Edit Organization Profile" onClose={closeEditModal}>
+          <ModalShell title="Edit organization profile" onClose={closeEditModal}>
             <form onSubmit={handleUpdateOrg} className="flex flex-col gap-4 text-xs">
               <LogoUploader
                 value={formData.logoUrl}
@@ -2466,7 +2518,7 @@ export const OrganizationManager = () => {
               />
 
               <div className="flex flex-col gap-1.5">
-                <label className={labelClass}>Organization Name</label>
+                <label className={labelClass}>Organization name</label>
 
                 <input
                   type="text"
@@ -2479,7 +2531,7 @@ export const OrganizationManager = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="flex flex-col gap-1.5">
-                  <label className={labelClass}>Support Email</label>
+                  <label className={labelClass}>Support email</label>
 
                   <input
                     type="email"
@@ -2492,7 +2544,7 @@ export const OrganizationManager = () => {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className={labelClass}>Support Phone</label>
+                  <label className={labelClass}>Support phone</label>
 
                   <input
                     type="tel"
@@ -2508,7 +2560,7 @@ export const OrganizationManager = () => {
               <ModalActions
                 onCancel={closeEditModal}
                 isLoading={isUpdating || isUploadingLogo}
-                submitLabel="Save Changes"
+                submitLabel="Save changes"
               />
             </form>
           </ModalShell>
@@ -2521,7 +2573,7 @@ export const OrganizationManager = () => {
 
       <AnimatePresence>
         {isMemberModalOpen && (
-          <ModalShell title="Add Team Member" maxWidth="max-w-md" onClose={() => setIsMemberModalOpen(false)}>
+          <ModalShell title="Add team member" maxWidth="max-w-md" onClose={() => setIsMemberModalOpen(false)}>
             <form onSubmit={handleAddMemberSubmit} className="flex flex-col gap-4 text-xs">
               <UserPicker
                 value={selectedUser}
@@ -2530,7 +2582,7 @@ export const OrganizationManager = () => {
               />
 
               <div className="flex flex-col gap-1.5">
-                <label className={labelClass}>Organization Role</label>
+                <label className={labelClass}>Organization role</label>
 
                 <select
                   value={newMemberData.orgRole}
@@ -2553,7 +2605,7 @@ export const OrganizationManager = () => {
               <ModalActions
                 onCancel={() => setIsMemberModalOpen(false)}
                 isLoading={isAddingMember}
-                submitLabel="Add Member"
+                submitLabel="Add member"
               />
             </form>
           </ModalShell>
@@ -2582,7 +2634,7 @@ export const OrganizationManager = () => {
                   type="button"
                   onClick={() => setMemberToRemove(null)}
                   disabled={isRemoving}
-                  className="btn btn-ghost btn-sm rounded-xl font-bold w-1/2 text-xs"
+                  className={`btn btn-ghost btn-sm w-1/2 ${btnBase}`}
                 >
                   Keep member
                 </button>
@@ -2591,7 +2643,7 @@ export const OrganizationManager = () => {
                   type="button"
                   onClick={handleConfirmRemove}
                   disabled={isRemoving}
-                  className="btn btn-error btn-sm rounded-xl font-bold w-1/2 text-xs text-error-content"
+                  className={`btn btn-error btn-sm w-1/2 text-error-content ${btnBase}`}
                 >
                   {isRemoving ? <span className="loading loading-spinner loading-xs" /> : "Remove"}
                 </button>

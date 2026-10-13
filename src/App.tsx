@@ -54,6 +54,9 @@ import { UserDashBoard } from './pages/UserDashboard';
 import UserProfileManager from './DashBoards/dashboard/UserProfileManager';
 import MyBookings from './DashBoards/dashboard/MyBookings';
 import MyTickets from './DashBoards/dashboard/TicketManager';
+import AdminOrganizationManager from './DashBoards/adminDashboard/Adminorganizationmanager ';
+import AdminWalletManager from './DashBoards/adminDashboard/AdminWalletManager';
+import AdminAnalytics from './DashBoards/adminDashboard/AdminAnalytics';
 
 function App() {
   const Router = createBrowserRouter([
@@ -108,12 +111,12 @@ function App() {
       ),
       errorElement: <Error />,
       children: [
-        { path: 'analytics', element: <Analytics /> },
+        { path: 'analytics', element: <AdminAnalytics /> },
         { path: 'verification', element: <AdminVerificationManager /> },
-        { path: 'AllBookings', element: <AllBookings /> },
+        { path: 'wallets', element: <AdminWalletManager /> },
         { path: 'supportTickets', element: <AdminSupportTickets /> },
         { path: 'users', element: <AdminManageUsers/> },
-        { path: 'AllVenues', element: <AllVenues /> },
+        { path: 'organizations', element: <AdminOrganizationManager /> },
         { path: 'events', element: <AdminEventManager /> },
         { path: 'ticketTypes', element: <TicketTypes /> },
         { path: 'AllPayments', element: <AllPayments /> },

@@ -1,353 +1,188 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 
-// ==========================================
-// TYPES (Inferred from Zod / Backend API)
-// ==========================================
-
-export type OrgRole =
-  | 'owner'
-  | 'admin'
-  | 'manager'
-  | 'scanner';
-
-export interface Organization {
-  id: number;
-  name: string;
-  slug: string;
-  supportEmail?: string | null;
-  supportPhone?: string | null;
-  logoUrl?: string | null;
-  payoutPhone?: string | null;
-  payoutType: 'mpesa_phone' | 'paybill' | 'bank';
-  commissionPercentage: string;
-  isVerified: boolean;
-  isActive: boolean;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export interface OrgMember {
-  id: number;
-  orgId: number;
-  digitalId: number;
-  orgRole: OrgRole;
-  createdAt?: string;
-}
-
-export interface OrgStats {
-  totalEvents?: number;
-  totalTicketsSold?: number;
-  totalRevenue?: number;
-  activeScannersCount?: number;
-  [key: string]: any;
-}
-
-export interface CreateOrganizationRequest {
-  name: string;
-  slug: string;
-  supportEmail?: string | null;
-  supportPhone?: string | null;
-  logoUrl?: string | null;
-  payoutPhone?: string | null;
-  payoutType?: 'mpesa_phone' | 'paybill' | 'bank';
-  commissionPercentage?: string;
-}
-
-export type UpdateOrganizationRequest = Partial<CreateOrganizationRequest>;
-
-export interface UpdateCommissionRequest {
-  commissionPercentage: string;
-}
-
-export interface VerifyOrganizationRequest {
-  isVerified: boolean;
-}
-
-export interface ToggleOrganizationStatusRequest {
-  isActive: boolean;
-}
-
-export interface AddOrganizationMemberRequest {
-  orgId: number;
-  digitalId: number;
-  orgRole: OrgRole;
-}
-
-export interface UpdateMemberRoleRequest {
-  orgRole: OrgRole;
-}
-
-export interface UpdatePayoutConfigRequest {
-  payoutPhone: string;
-  payoutType: 'mpesa_phone' | 'paybill' | 'bank';
-}
-
-// ==========================================
-// RTK QUERY API SLICE
-// ==========================================
-
-// Dynamically uses your production environment variable or falls back to localhost for local testing
-const API_BASE_URL = 
-  import.meta.env.VITE_API_BASE_URL 
-    ? `${import.meta.env.VITE_API_BASE_URL}/api/organizations` 
-    : 'http://localhost:5000/api/organizations';
+// Used by the admin organization page for the team roles
+export type OrgRole = 'owner' | 'admin' | 'manager' | 'scanner';
 
 export const organizationsApi = createApi({
   reducerPath: 'organizationsApi',
   baseQuery: fetchBaseQuery({
-    baseUrl: API_BASE_URL,
-    
-    // CRITICAL: Tells the browser/fetch client to attach the HTTP-only 'auth_token' cookie with requests
+    baseUrl: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/`,
     credentials: 'include',
-
-    prepareHeaders: (headers) => {
-      headers.set('Accept', 'application/json');
-      return headers;
-    },
   }),
-  tagTypes: ['Organization', 'OrgMembers', 'OrgStats'],
+  refetchOnReconnect: true,
+  refetchOnMountOrArgChange: true,
+
+  tagTypes: ['organizations', 'organization', 'orgMembers', 'orgStats'],
   endpoints: (builder) => ({
-    // 1. Create Organization
-    createOrganization: builder.mutation<Organization, CreateOrganizationRequest>({
-      query: (body) => ({
-        url: '',
+    // 1. Create a New Organization
+    createOrganization: builder.mutation({
+      query: (createOrganizationPayload) => ({
+        url: 'organizations',
         method: 'POST',
-        body,
+        body: createOrganizationPayload,
       }),
-      invalidatesTags: ['Organization'],
+      invalidatesTags: ['organizations']
     }),
 
-    // 2. List Active Organizations
-    getActiveOrganizations: builder.query<Organization[], void>({
-      query: () => '/active',
-      providesTags: ['Organization'],
+    // 2. Get Active Organizations
+    getActiveOrganizations: builder.query({
+      query: () => 'organizations/active',
+      providesTags: ['organizations']
     }),
 
-    // 3. Admin: Get All Organizations
-    getAllOrganizationsAdmin: builder.query<Organization[], void>({
-      query: () => '/admin/all',
-      providesTags: ['Organization'],
+    // 3. Get All Organizations (Admin Only)
+    getAllOrganizationsAdmin: builder.query({
+      query: () => 'organizations/admin/all',
+      providesTags: ['organizations']
     }),
 
-    // 4. Search Organizations by Query
-    searchOrganizations: builder.query<Organization[], string>({
-      query: (q) => `/search?q=${encodeURIComponent(q)}`,
+    // 4. Search Organizations
+    searchOrganizations: builder.query({
+      query: (q) => `organizations/search?q=${encodeURIComponent(q)}`,
+      providesTags: ['organizations']
     }),
 
-    // 5. Get Organization by URL Slug
-    getOrganizationBySlug: builder.query<Organization, string>({
-      query: (slug) => `/slug/${slug}`,
-      providesTags: (_result, _error, slug) => [
-        { type: 'Organization', id: slug }
-      ],
+    // 5. Get Single Organization by Slug
+    getOrganizationBySlug: builder.query({
+      query: (slug) => `organizations/slug/${slug}`,
+      providesTags: (_result, _error, slug) => [{ type: 'organization', id: slug }]
     }),
 
-    // 6. Get Organization Summary Dashboard Stats
-    getOrganizationStats: builder.query<OrgStats, number | string>({
-      query: (orgId) => `/${orgId}/stats`,
-      providesTags: (_result, _error, orgId) => [
-        { type: 'OrgStats', id: orgId }
-      ],
+    // 6. Get Organization Stats
+    getOrganizationStats: builder.query({
+      query: (orgId) => `organizations/${orgId}/stats`,
+      providesTags: (_result, _error, orgId) => [{ type: 'orgStats', id: orgId }]
     }),
 
-    // 7. Get Total Active Members Count in an Organization
-    getOrganizationMembersCount: builder.query<
-      { count: number },
-      number | string
-    >({
-      query: (orgId) => `/${orgId}/members/count`,
-      providesTags: (_result, _error, orgId) => [
-        { type: 'OrgMembers', id: orgId }
-      ],
+    // 7. Get Organization Members Count
+    getOrganizationMembersCount: builder.query({
+      query: (orgId) => `organizations/${orgId}/members/count`,
+      providesTags: (_result, _error, orgId) => [{ type: 'orgMembers', id: orgId }]
     }),
 
-    // 8. Get All Members for an Organization
-    getOrganizationMembers: builder.query<OrgMember[], number | string>({
-      query: (orgId) => `/${orgId}/members`,
-      providesTags: (_result, _error, orgId) => [
-        { type: 'OrgMembers', id: orgId }
-      ],
+    // 8. Get All Members of an Organization
+    getOrganizationMembers: builder.query({
+      query: (orgId) => `organizations/${orgId}/members`,
+      providesTags: (_result, _error, orgId) => [{ type: 'orgMembers', id: orgId }]
     }),
 
-    // 9. Check Member Mapping by User Digital ID and Org ID
-    checkMemberMapping: builder.query<
-      OrgMember,
-      { orgId: number | string; digitalId: number | string }
-    >({
-      query: ({ orgId, digitalId }) =>
-        `/${orgId}/members/user/${digitalId}`,
+    // 9. Check Member Mapping by User Digital ID
+    checkMemberMapping: builder.query({
+      query: ({ orgId, digitalId }) => `organizations/${orgId}/members/user/${digitalId}`,
+      providesTags: (_result, _error, { orgId }) => [{ type: 'orgMembers', id: orgId }]
     }),
 
     // 10. Get Organization with Full Relations
-    getOrganizationRelations: builder.query<Organization, number | string>({
-      query: (orgId) => `/${orgId}/relations`,
-      providesTags: (_result, _error, orgId) => [
-        { type: 'Organization', id: orgId }
-      ],
+    getOrganizationRelations: builder.query({
+      query: (orgId) => `organizations/${orgId}/relations`,
+      providesTags: (_result, _error, orgId) => [{ type: 'organization', id: orgId }]
     }),
 
-    // 11. Get Organization by ID (Public Profile)
-    getOrganizationById: builder.query<Organization, number | string>({
-      query: (orgId) => `/${orgId}`,
-      providesTags: (_result, _error, orgId) => [
-        { type: 'Organization', id: orgId }
-      ],
+    // 11. Get Single Organization by ID
+    getOrganizationById: builder.query({
+      query: (orgId) => `organizations/${orgId}`,
+      providesTags: (_result, _error, orgId) => [{ type: 'organization', id: orgId }]
     }),
 
-    // 12. Update Organization Profile Details
-    updateOrganization: builder.mutation<
-      Organization,
-      {
-        orgId: number | string;
-        data: UpdateOrganizationRequest;
-      }
-    >({
+    // 12. Get All Organizations a User Belongs To
+    getUserOrganizations: builder.query({
+      query: (digitalId) => `organizations/user/${digitalId}`,
+      providesTags: ['organizations']
+    }),
+
+    // 13. Update Organization Details
+    updateOrganization: builder.mutation({
       query: ({ orgId, data }) => ({
-        url: `/${orgId}`,
+        url: `organizations/${orgId}`,
         method: 'PUT',
         body: data,
       }),
-      invalidatesTags: (_result, _error, { orgId }) => [
-        { type: 'Organization', id: orgId },
-        'Organization',
-      ],
+      invalidatesTags: (_result, _error, { orgId }) => ['organizations', { type: 'organization', id: orgId }]
     }),
 
-    // 13. Update Payout Configuration
-    updatePayoutConfig: builder.mutation<
-      Organization,
-      {
-        orgId: number | string;
-        data: UpdatePayoutConfigRequest;
-      }
-    >({
+    // 14. Update Payout Configuration
+    updatePayoutConfig: builder.mutation({
       query: ({ orgId, data }) => ({
-        url: `/${orgId}/payout`,
+        url: `organizations/${orgId}/payout`,
         method: 'PUT',
         body: data,
       }),
-      invalidatesTags: (_result, _error, { orgId }) => [
-        { type: 'Organization', id: orgId }
-      ],
+      invalidatesTags: (_result, _error, { orgId }) => ['organizations', { type: 'organization', id: orgId }]
     }),
 
-    // 14. Admin: Update Organization Commission Percentage
-    updateCommission: builder.mutation<
-      Organization,
-      {
-        orgId: number | string;
-        data: UpdateCommissionRequest;
-      }
-    >({
+    // 15. Update Commission Percentage (Admin Only)
+    updateCommission: builder.mutation({
       query: ({ orgId, data }) => ({
-        url: `/${orgId}/commission`,
+        url: `organizations/${orgId}/commission`,
         method: 'PATCH',
         body: data,
       }),
-      invalidatesTags: (_result, _error, { orgId }) => [
-        { type: 'Organization', id: orgId }
-      ],
+      invalidatesTags: (_result, _error, { orgId }) => ['organizations', { type: 'organization', id: orgId }]
     }),
 
-    // 15. Admin: Verify or Unverify Organization Badge
-    verifyOrganization: builder.mutation<
-      Organization,
-      {
-        orgId: number | string;
-        data: VerifyOrganizationRequest;
-      }
-    >({
+    // 16. Verify or Unverify Organization (Admin Only)
+    verifyOrganization: builder.mutation({
       query: ({ orgId, data }) => ({
-        url: `/${orgId}/verify`,
+        url: `organizations/${orgId}/verify`,
         method: 'PATCH',
         body: data,
       }),
-      invalidatesTags: (_result, _error, { orgId }) => [
-        { type: 'Organization', id: orgId }
-      ],
+      invalidatesTags: (_result, _error, { orgId }) => ['organizations', { type: 'organization', id: orgId }]
     }),
 
-    // 16. Admin: Toggle Organization Active/Suspended Status
-    toggleOrganizationStatus: builder.mutation<
-      Organization,
-      {
-        orgId: number | string;
-        data: ToggleOrganizationStatusRequest;
-      }
-    >({
+    // 17. Activate or Suspend Organization (Admin Only)
+    toggleOrganizationStatus: builder.mutation({
       query: ({ orgId, data }) => ({
-        url: `/${orgId}/status`,
+        url: `organizations/${orgId}/status`,
         method: 'PATCH',
         body: data,
       }),
-      invalidatesTags: (_result, _error, { orgId }) => [
-        { type: 'Organization', id: orgId }
-      ],
+      invalidatesTags: (_result, _error, { orgId }) => ['organizations', { type: 'organization', id: orgId }]
     }),
 
-    // 17. Delete Organization
-    deleteOrganization: builder.mutation<
-      { success: boolean },
-      number | string
-    >({
+    // 18. Delete an Organization (Admin Only)
+    deleteOrganization: builder.mutation({
       query: (orgId) => ({
-        url: `/${orgId}`,
+        url: `organizations/${orgId}`,
         method: 'DELETE',
       }),
-      invalidatesTags: ['Organization'],
-    }),
-
-    // 18. Get All Organizations a Specific User Belongs To
-    getUserOrganizations: builder.query<OrgMember[], number | string>({
-      query: (digitalId) => `/user/${digitalId}`,
+      invalidatesTags: ['organizations']
     }),
 
     // 19. Add a Member to an Organization
-    addOrganizationMember: builder.mutation<
-      OrgMember,
-      AddOrganizationMemberRequest
-    >({
-      query: (body) => ({
-        url: '/members',
+    addOrganizationMember: builder.mutation({
+      query: (addMemberPayload) => ({
+        url: 'organizations/members',
         method: 'POST',
-        body,
+        body: addMemberPayload,
       }),
       invalidatesTags: (_result, _error, { orgId }) => [
-        { type: 'OrgMembers', id: orgId }
-      ],
+        { type: 'orgMembers', id: orgId },
+        { type: 'orgStats', id: orgId },
+      ]
     }),
 
-    // 20. Update Organization Member Role
-    updateMemberRole: builder.mutation<
-      OrgMember,
-      {
-        memberId: number | string;
-        data: UpdateMemberRoleRequest;
-      }
-    >({
+    // 20. Update a Member's Role
+    updateMemberRole: builder.mutation({
       query: ({ memberId, data }) => ({
-        url: `/members/${memberId}/role`,
+        url: `organizations/members/${memberId}/role`,
         method: 'PATCH',
         body: data,
       }),
-      invalidatesTags: ['OrgMembers'],
+      invalidatesTags: ['orgMembers', 'orgStats']
     }),
 
-    // 21. Remove Member from Organization
-    removeOrganizationMember: builder.mutation<
-      { success: boolean },
-      number | string
-    >({
+    // 21. Remove a Member from an Organization
+    removeOrganizationMember: builder.mutation({
       query: (memberId) => ({
-        url: `/members/${memberId}`,
+        url: `organizations/members/${memberId}`,
         method: 'DELETE',
       }),
-      invalidatesTags: ['OrgMembers'],
+      invalidatesTags: ['orgMembers', 'orgStats']
     }),
   }),
 });
 
-// Export hooks for functional components
 export const {
   useCreateOrganizationMutation,
   useGetActiveOrganizationsQuery,
@@ -360,13 +195,13 @@ export const {
   useCheckMemberMappingQuery,
   useGetOrganizationRelationsQuery,
   useGetOrganizationByIdQuery,
+  useGetUserOrganizationsQuery,
   useUpdateOrganizationMutation,
   useUpdatePayoutConfigMutation,
   useUpdateCommissionMutation,
   useVerifyOrganizationMutation,
   useToggleOrganizationStatusMutation,
   useDeleteOrganizationMutation,
-  useGetUserOrganizationsQuery,
   useAddOrganizationMemberMutation,
   useUpdateMemberRoleMutation,
   useRemoveOrganizationMemberMutation,

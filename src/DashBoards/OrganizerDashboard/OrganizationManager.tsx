@@ -40,8 +40,6 @@ import {
   useGetOrganizationMembersQuery,
   useAddOrganizationMemberMutation,
   useRemoveOrganizationMemberMutation,
-  type Organization,
-  type OrgMember,
   type OrgRole,
 } from "../../features/APIS/organizationApi";
 
@@ -76,6 +74,35 @@ const CLOUDINARY_CLOUD_NAME = "dwibg4vvf";
 const CLOUDINARY_UPLOAD_PRESET = "tickets";
 const MAX_LOGO_SIZE_MB = 5;
 const MAX_DOC_SIZE_MB = 8;
+
+// ======================================================
+// API TYPES (organizationApi no longer exports these, so they live here)
+// ======================================================
+
+interface Organization {
+  id: number;
+  orgId?: number;
+  name: string;
+  slug: string;
+  supportEmail?: string | null;
+  supportPhone?: string | null;
+  logoUrl?: string | null;
+  payoutPhone?: string | null;
+  payoutType?: "mpesa_phone" | "paybill" | "bank";
+  commissionPercentage?: string;
+  isVerified: boolean;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface OrgMember {
+  id: number;
+  orgId: number;
+  digitalId: number;
+  orgRole: OrgRole;
+  createdAt?: string;
+}
 
 // ======================================================
 // LOCAL TYPES
@@ -137,7 +164,7 @@ const VERIFICATION_STEPS = ["Details", "Documents", "Selfies"];
 
 const VERIFICATION_REVIEW_TIME = "10 to 60 minutes";
 
-// Remembers that an organization was just created, so the verification flow can open after the page reloads
+// Fallback flag: used only when the create response has no id, so verification can open after a reload
 const JUST_CREATED_KEY = "orgManager:justCreated";
 
 // ======================================================
@@ -1859,7 +1886,7 @@ export const OrganizationManager = () => {
     if (activeOrgId) refetchVerification();
   };
 
-  // After the post-create reload: show the success message and go straight to verification
+  // Fallback only: if the create response had no id, the page reloads and this opens verification afterwards
   useEffect(() => {
     if (!activeOrgId || !digitalId) return;
 
@@ -1925,15 +1952,23 @@ export const OrganizationManager = () => {
       if (lastError) throw lastError;
 
       const createdOrg = unwrapOrg(created);
+      const newOrgId = Number(createdOrg?.orgId ?? createdOrg?.id);
 
       setIsCreateModalOpen(false);
       setFormData(EMPTY_ORG_FORM);
       setModalError("");
 
-      // Reload the page so the brand-new organization is fetched fresh.
-      // The flag lets us show the success message and open verification once the page is back.
+      if (newOrgId) {
+        // The API refreshes the organization lists by itself, so no page reload is needed
+        setSelectedOrgId(newOrgId);
+        showSuccess("Organization created successfully! Next, let's verify it.");
+        openVerificationModal("create");
+        return;
+      }
+
+      // Fallback: the response had no id, so reload and let the effect above open verification
       try {
-        sessionStorage.setItem(JUST_CREATED_KEY, String(createdOrg?.id ?? "1"));
+        sessionStorage.setItem(JUST_CREATED_KEY, "1");
       } catch {
         // storage can be blocked in private mode; the reload still works
       }

@@ -15,6 +15,7 @@ import {
   House,
   ShieldCheck,
   LayoutDashboard,
+  Wallet,
 } from "lucide-react";
 import { clearCredentials } from "../../features/Auth/AuthSlice";
 import { type RootState } from "../../App/store";
@@ -29,12 +30,16 @@ interface AdminSideNavProps {
 const navSections = [
   {
     title: "Overview",
-    items: [{ name: "Analytics", path: "analytics", icon: TrendingUp }],
+    items: [
+      { name: "Analytics", path: "analytics", icon: TrendingUp },
+      { name: "wallet", path: "wallets", icon: Wallet }
+    ],
+    
   },
   {
     title: "Event Pipeline",
     items: [
-      // { name: "Manage Venues", path: "Allvenues", icon: House },
+      { name: "Manage Organizations", path: "organizations", icon: House },
       { name: "Manage Events", path: "events", icon: Calendar },
       // { name: "Manage Medias", path: "AllMedia", icon: Camera },
       // { name: "Ticket Types", path: "ticketTypes", icon: FileText },

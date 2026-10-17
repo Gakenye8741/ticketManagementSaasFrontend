@@ -1390,7 +1390,7 @@ export const AdminEventManager = () => {
   // API: ORGANIZATIONS, VENUES, TICKET TYPES (used to enrich every event)
   // ---------------------------------------------------------------------------
 
-  const orgsQ = useGetAllOrganizationsAdminQuery();
+  const orgsQ = useGetAllOrganizationsAdminQuery(undefined);
   const venuesQ = useGetAllVenuesQuery();
   const ticketTypesQ = useGetAllTicketTypesQuery(undefined);
 
@@ -1531,7 +1531,7 @@ export const AdminEventManager = () => {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg sm:text-xl font-black tracking-tight">Events</h1>
-              <span className="badge badge-primary badge-xs font-bold px-2 py-0.5">Admin</span>
+
             </div>
             <p className="text-[11px] text-base-content/60">
               <span className="font-bold text-base-content">{totalEvents}</span> total events ·{" "}

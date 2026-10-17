@@ -35,6 +35,7 @@ import {
   useGetTotalPaidByOrgQuery,
   useRequestPayoutMutation,
   useGetPayoutMethodsByOrgQuery,
+  useGetBanksQuery,
   useAddPayoutMethodMutation,
   useUpdatePayoutMethodMutation,
   useSetDefaultPayoutMethodMutation,
@@ -46,9 +47,11 @@ import usePageTitle from "../../hooks/usePageTitle";
 
 const DEFAULT_CURRENCY = "KES";
 const CURRENCIES = ["KES", "USD", "EUR", "GBP"];
-const ACCOUNT_TYPES = ["M-Pesa", "Paybill", "Bank"];
+// Paybill is not supported by the payout system yet
+const ACCOUNT_TYPES = ["M-Pesa", "Till", "Bank"];
+const MIN_PAYOUT = 100; // keep in sync with MIN_PAYOUT_KES on the server
 const PAGE_SIZE = 10;
-const WALLET_REFRESH_MS = 30_000; // keeps the balance fresh while the page is open
+const WALLET_REFRESH_MS = 30_000; // keeps the balance and payout statuses fresh while the page is open
 
 type Tab = "overview" | "payouts" | "methods";
 type StatusFilter = "all" | Payout["status"];
@@ -56,7 +59,18 @@ type StatusFilter = "all" | Payout["status"];
 const statusBadge: Record<Payout["status"], string> = {
   Completed: "badge-success text-success-content",
   Pending: "badge-warning text-warning-content",
+  Processing: "badge-info text-info-content",
   Failed: "badge-error text-error-content",
+  Reversed: "badge-neutral text-neutral-content",
+};
+
+/** Plain-language status names for organizers */
+const statusLabel: Record<Payout["status"], string> = {
+  Completed: "Paid",
+  Pending: "Pending",
+  Processing: "Sending",
+  Failed: "Failed",
+  Reversed: "Reversed",
 };
 
 // ---------------------------------------------------------------------------
@@ -78,16 +92,31 @@ const fmtDate = (d?: string | null) =>
 
 const mask = (n?: string) => (n ? `•••• ${String(n).slice(-4)}` : "—");
 
-const errMsg = (err: any, fallback: string) => err?.data?.message || err?.data?.error || fallback;
+const errMsg = (err: any, fallback: string) => {
+  const m = err?.data?.message || err?.data?.error;
+  if (typeof m === "string" && m) return m;
+  // zod errors come back as { errors: { field: { _errors: [...] } } }
+  const fieldErrors = err?.data?.errors;
+  if (fieldErrors && typeof fieldErrors === "object") {
+    for (const v of Object.values(fieldErrors) as any[]) {
+      const first = v?._errors?.[0];
+      if (first) return first;
+    }
+  }
+  return fallback;
+};
+
+const isBankType = (t?: string) => (t || "").toLowerCase().includes("bank");
+const isTillType = (t?: string) => (t || "").toLowerCase().includes("till");
 
 const methodIcon = (type?: string) => {
   const t = (type || "").toLowerCase();
-  if (t.includes("pesa")) return <Smartphone size={18} />;
+  if (t.includes("pesa") || t.includes("till")) return <Smartphone size={18} />;
   if (t.includes("bank")) return <Landmark size={18} />;
   return <CreditCard size={18} />;
 };
 
-const emptyMethodForm = { accountType: "M-Pesa", accountNumber: "", accountName: "", isDefault: false };
+const emptyMethodForm = { accountType: "M-Pesa", accountNumber: "", accountName: "", bankCode: "", isDefault: false };
 
 export const WalletManager = () => {
   usePageTitle("Wallet");
@@ -126,18 +155,22 @@ export const WalletManager = () => {
   });
   const totalPaidQ = useGetTotalPaidByOrgQuery(orgId, { skip: !orgId || walletExists !== true });
   const methodsQ = useGetPayoutMethodsByOrgQuery(orgId, { skip: !orgId });
+  const banksQ = useGetBanksQuery(undefined, { skip: !orgId });
 
   const payouts = useMemo(
     () => [...(payoutsQ.data ?? [])].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
     [payoutsQ.data]
   );
   const methods = useMemo(() => methodsQ.data ?? [], [methodsQ.data]);
+  const banks = useMemo(() => banksQ.data ?? [], [banksQ.data]);
+  const bankName = (code?: string | null) => banks.find((b) => b.code === code)?.name;
   const defaultMethod = overview?.defaultMethod ?? methods.find((m) => m.isDefault) ?? methods[0];
 
   const totalPaid =
     totalPaidQ.data?.totalPaidOut ??
     payouts.filter((p) => p.status === "Completed").reduce((s, p) => s + num(p.amount), 0);
-  const pendingPayoutsCount = payouts.filter((p) => p.status === "Pending").length;
+  // Requests that have not finished yet (waiting to be sent, or sent and awaiting confirmation)
+  const inProgressCount = payouts.filter((p) => p.status === "Pending" || p.status === "Processing").length;
 
   // ---------------------------------------------------------------------------
   // MUTATIONS
@@ -212,6 +245,7 @@ export const WalletManager = () => {
     const amount = Number(requestForm.amount);
 
     if (!amount || amount <= 0) return setRequestError("Enter an amount greater than zero.");
+    if (amount < MIN_PAYOUT) return setRequestError(`The minimum payout is ${money(MIN_PAYOUT)}.`);
     if (amount > available) return setRequestError(`You can request up to ${money(available)}.`);
     if (!requestForm.methodId) return setRequestError("Choose where the money should be sent.");
 
@@ -242,6 +276,7 @@ export const WalletManager = () => {
       accountType: m.accountType,
       accountNumber: m.accountNumber,
       accountName: m.accountName ?? "",
+      bankCode: m.bankCode ?? "",
       isDefault: m.isDefault,
     });
     setEditingMethod(m);
@@ -252,6 +287,10 @@ export const WalletManager = () => {
   const handleSubmitMethod = async (e: FormEvent) => {
     e.preventDefault();
     setMethodError("");
+
+    const bank = isBankType(methodForm.accountType);
+    if (bank && !methodForm.bankCode) return setMethodError("Choose a bank.");
+
     try {
       if (methodModal === "add") {
         await addMethod({
@@ -259,6 +298,7 @@ export const WalletManager = () => {
           accountType: methodForm.accountType,
           accountNumber: methodForm.accountNumber.trim(),
           accountName: methodForm.accountName.trim(),
+          bankCode: bank ? methodForm.bankCode : undefined,
           isDefault: methodForm.isDefault,
         }).unwrap();
         setSuccessMessage("Payout method added.");
@@ -269,6 +309,7 @@ export const WalletManager = () => {
           accountType: methodForm.accountType,
           accountNumber: methodForm.accountNumber.trim(),
           accountName: methodForm.accountName.trim(),
+          bankCode: bank ? methodForm.bankCode : null,
         }).unwrap();
         setSuccessMessage("Payout method updated.");
       }
@@ -302,7 +343,7 @@ export const WalletManager = () => {
 
   const exportPayoutsCsv = () => {
     const rows = [
-      ["Payout #", "Amount", "Fee", "Currency", "Sent to", "Account", "Status", "Reference", "Requested", "Updated"],
+      ["Payout #", "Amount", "Fee", "Currency", "Sent to", "Account", "Status", "Reference", "Note", "Requested", "Updated"],
       ...filteredPayouts.map((p) => [
         p.payoutId,
         p.amount,
@@ -310,8 +351,9 @@ export const WalletManager = () => {
         currency,
         p.destinationType,
         p.destinationAccount,
-        p.status,
+        statusLabel[p.status] ?? p.status,
         p.transactionReference ?? "",
+        p.failureReason ?? "",
         fmtDate(p.createdAt),
         fmtDate(p.updatedAt),
       ]),
@@ -370,7 +412,7 @@ export const WalletManager = () => {
           <h2 className="font-black text-base text-base-content">Set up your wallet</h2>
           <p className="text-xs text-base-content/60 max-w-sm leading-relaxed">
             Your wallet holds the money from your ticket sales. Once it is created you can add a payout method and request
-            payouts to your M-Pesa or bank account.
+            payouts to your M-Pesa, Till or bank account.
           </p>
           <div className="flex items-center gap-2 mt-2">
             <select
@@ -442,9 +484,9 @@ export const WalletManager = () => {
               <span className="font-bold text-base-content">Wallet Guide</span>
               <p className="text-base-content/70 leading-relaxed text-[11px]">
                 Every ticket sale is added to your wallet after the platform fee is taken off. <b>Available</b> money can be
-                paid out. When you request a payout, that amount moves to <b>Being paid out</b> until it is sent. A payout
-                starts as Pending, then becomes Completed once paid, or Failed, in which case the money returns to your
-                available balance.
+                paid out. When you request a payout, that amount moves to <b>Being paid out</b>. A payout starts as{" "}
+                <b>Pending</b>, becomes <b>Sending</b> once our team has sent it, then <b>Paid</b> when it arrives. If it{" "}
+                <b>Failed</b> or was <b>Reversed</b>, the money returns to your available balance.
               </p>
             </div>
           </div>
@@ -509,9 +551,9 @@ export const WalletManager = () => {
             </div>
             <div className="rounded-xl bg-white/15 p-3 flex flex-col gap-0.5">
               <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold opacity-80">
-                <Clock size={11} /> Pending requests
+                <Clock size={11} /> Requests in progress
               </span>
-              <span className="text-base font-black">{pendingPayoutsCount}</span>
+              <span className="text-base font-black">{inProgressCount}</span>
             </div>
           </div>
         </div>
@@ -597,10 +639,12 @@ export const WalletManager = () => {
                       </span>
                       <span className="text-[10px] text-base-content/50">{fmtDate(p.createdAt)}</span>
                     </div>
-                    <span className={`badge badge-sm font-bold shrink-0 ${statusBadge[p.status]}`}>{p.status}</span>
+                    <span className={`badge badge-sm font-bold shrink-0 ${statusBadge[p.status]}`}>{statusLabel[p.status]}</span>
                     <span
                       className={`text-xs font-black shrink-0 ${
-                        p.status === "Failed" ? "text-base-content/40 line-through" : "text-base-content"
+                        p.status === "Failed" || p.status === "Reversed"
+                          ? "text-base-content/40 line-through"
+                          : "text-base-content"
                       }`}
                     >
                       −{money(p.amount)}
@@ -670,8 +714,10 @@ export const WalletManager = () => {
             >
               <option value="all">All statuses</option>
               <option value="Pending">Pending</option>
-              <option value="Completed">Completed</option>
+              <option value="Processing">Sending</option>
+              <option value="Completed">Paid</option>
               <option value="Failed">Failed</option>
+              <option value="Reversed">Reversed</option>
             </select>
 
             <button
@@ -735,7 +781,12 @@ export const WalletManager = () => {
                           {p.destinationType} · {mask(p.destinationAccount)}
                         </td>
                         <td className="py-3 px-4">
-                          <span className={`badge badge-sm font-bold ${statusBadge[p.status]}`}>{p.status}</span>
+                          <div className="flex flex-col gap-1 items-start">
+                            <span className={`badge badge-sm font-bold ${statusBadge[p.status]}`}>{statusLabel[p.status]}</span>
+                            {p.failureReason && (p.status === "Failed" || p.status === "Reversed" || p.status === "Pending") && (
+                              <span className="text-[10px] text-base-content/50 max-w-[14rem] break-words">{p.failureReason}</span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 px-4 font-mono text-[11px] text-base-content/70">{p.transactionReference || "—"}</td>
                       </tr>
@@ -799,56 +850,69 @@ export const WalletManager = () => {
             <div className="text-center py-14 bg-base-200/20 rounded-2xl border border-dashed border-base-300 p-6">
               <Landmark size={36} className="mx-auto text-primary/40 mb-2" />
               <h3 className="font-bold text-xs text-base-content">No Payout Methods</h3>
-              <p className="text-[11px] text-base-content/60 mt-0.5 mb-3">Add an M-Pesa number or bank account to receive payouts.</p>
+              <p className="text-[11px] text-base-content/60 mt-0.5 mb-3">Add an M-Pesa number, Till or bank account to receive payouts.</p>
               <button onClick={openAddMethod} className="btn btn-primary btn-xs rounded-xl font-bold">
                 Add Payout Method
               </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {methods.map((m) => (
-                <div
-                  key={m.methodId}
-                  className={`bg-base-100 border rounded-2xl shadow-sm p-4 flex flex-col gap-3 ${
-                    m.isDefault ? "border-primary/40 ring-1 ring-primary/20" : "border-base-200"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="p-2.5 bg-primary/10 text-primary rounded-xl shrink-0">{methodIcon(m.accountType)}</div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-xs font-black text-base-content truncate">{m.accountName || m.accountType}</span>
-                        <span className="text-[11px] text-base-content/60">{m.accountType}</span>
+              {methods.map((m) => {
+                const unsupported = (m.accountType || "").toLowerCase().includes("paybill");
+                return (
+                  <div
+                    key={m.methodId}
+                    className={`bg-base-100 border rounded-2xl shadow-sm p-4 flex flex-col gap-3 ${
+                      m.isDefault ? "border-primary/40 ring-1 ring-primary/20" : "border-base-200"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2.5 bg-primary/10 text-primary rounded-xl shrink-0">{methodIcon(m.accountType)}</div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-xs font-black text-base-content truncate">{m.accountName || m.accountType}</span>
+                          <span className="text-[11px] text-base-content/60">
+                            {m.accountType}
+                            {isBankType(m.accountType) && bankName(m.bankCode) ? ` · ${bankName(m.bankCode)}` : ""}
+                          </span>
+                        </div>
+                      </div>
+                      {m.isDefault && (
+                        <span className="badge badge-primary badge-sm font-bold gap-1 shrink-0">
+                          <Star size={10} className="fill-current" /> Default
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl bg-base-200/50 px-3 py-2 font-mono text-xs text-base-content/80">{m.accountNumber}</div>
+
+                    {unsupported && (
+                      <div className="flex items-start gap-2 rounded-xl bg-warning/10 text-warning-content/80 px-3 py-2 text-[11px]">
+                        <AlertTriangle size={13} className="shrink-0 mt-0.5 text-warning" />
+                        <span>Paybill payouts are not supported yet. Please add an M-Pesa, Till or bank account instead.</span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-base-200">
+                      {!m.isDefault ? (
+                        <button onClick={() => handleSetDefault(m)} className="btn btn-ghost btn-xs text-primary hover:bg-primary/10 rounded-lg gap-1 text-[11px]">
+                          <Star size={12} /> Make default
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => openEditMethod(m)} className="btn btn-ghost btn-xs text-primary hover:bg-primary/10 rounded-lg" title="Edit">
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => setMethodToDelete(m)} className="btn btn-ghost btn-xs text-error hover:bg-error/10 rounded-lg" title="Remove">
+                          <Trash2 size={13} />
+                        </button>
                       </div>
                     </div>
-                    {m.isDefault && (
-                      <span className="badge badge-primary badge-sm font-bold gap-1 shrink-0">
-                        <Star size={10} className="fill-current" /> Default
-                      </span>
-                    )}
                   </div>
-
-                  <div className="rounded-xl bg-base-200/50 px-3 py-2 font-mono text-xs text-base-content/80">{m.accountNumber}</div>
-
-                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-base-200">
-                    {!m.isDefault ? (
-                      <button onClick={() => handleSetDefault(m)} className="btn btn-ghost btn-xs text-primary hover:bg-primary/10 rounded-lg gap-1 text-[11px]">
-                        <Star size={12} /> Make default
-                      </button>
-                    ) : (
-                      <span />
-                    )}
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => openEditMethod(m)} className="btn btn-ghost btn-xs text-primary hover:bg-primary/10 rounded-lg" title="Edit">
-                        <Pencil size={13} />
-                      </button>
-                      <button onClick={() => setMethodToDelete(m)} className="btn btn-ghost btn-xs text-error hover:bg-error/10 rounded-lg" title="Remove">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -900,9 +964,9 @@ export const WalletManager = () => {
                       <input
                         type="number"
                         step="0.01"
-                        min="0"
+                        min={MIN_PAYOUT}
                         required
-                        placeholder="e.g. 2500"
+                        placeholder={`Minimum ${MIN_PAYOUT}`}
                         value={requestForm.amount}
                         onChange={(e) => setRequestForm({ ...requestForm, amount: e.target.value })}
                         className="input input-bordered input-sm join-item rounded-l-xl w-full text-xs"
@@ -959,7 +1023,7 @@ export const WalletManager = () => {
       <AnimatePresence>
         {methodModal && (
           <div className={modalBackdrop}>
-            <motion.div {...modalMotion} className="bg-base-100 border border-base-200 w-full max-w-md rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col gap-4">
+            <motion.div {...modalMotion} className="bg-base-100 border border-base-200 w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col gap-4">
               <div className="flex justify-between items-center border-b border-base-200 pb-3">
                 <div className="flex items-center gap-2">
                   <Landmark size={16} className="text-primary" />
@@ -977,9 +1041,15 @@ export const WalletManager = () => {
                   <label className="font-semibold text-base-content/70 text-[11px]">Account type</label>
                   <select
                     value={methodForm.accountType}
-                    onChange={(e) => setMethodForm({ ...methodForm, accountType: e.target.value })}
+                    onChange={(e) => setMethodForm({ ...methodForm, accountType: e.target.value, bankCode: "" })}
                     className="select select-bordered select-sm rounded-xl w-full text-xs"
                   >
+                    {/* keep an old saved type (e.g. Paybill) visible when editing, so it can be changed */}
+                    {!ACCOUNT_TYPES.includes(methodForm.accountType) && (
+                      <option value={methodForm.accountType} disabled>
+                        {methodForm.accountType} (not supported)
+                      </option>
+                    )}
                     {ACCOUNT_TYPES.map((t) => (
                       <option key={t} value={t}>
                         {t}
@@ -988,14 +1058,48 @@ export const WalletManager = () => {
                   </select>
                 </div>
 
+                {isBankType(methodForm.accountType) && (
+                  <div className="flex flex-col gap-1">
+                    <label className="font-semibold text-base-content/70 text-[11px]">Bank</label>
+                    <select
+                      required
+                      value={methodForm.bankCode}
+                      onChange={(e) => setMethodForm({ ...methodForm, bankCode: e.target.value })}
+                      className="select select-bordered select-sm rounded-xl w-full text-xs"
+                      disabled={banksQ.isLoading}
+                    >
+                      <option value="">{banksQ.isLoading ? "Loading banks..." : "Choose a bank"}</option>
+                      {banks.map((b) => (
+                        <option key={b.code} value={b.code}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                    {banksQ.isError && (
+                      <span className="text-[11px] text-error">Could not load the bank list. Close this and try again.</span>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-1">
                   <label className="font-semibold text-base-content/70 text-[11px]">
-                    {methodForm.accountType === "Bank" ? "Account number" : methodForm.accountType === "Paybill" ? "Paybill number" : "Phone number"}
+                    {isBankType(methodForm.accountType)
+                      ? "Account number"
+                      : isTillType(methodForm.accountType)
+                        ? "Till number"
+                        : "Safaricom phone number"}
                   </label>
                   <input
                     type="text"
+                    inputMode="numeric"
                     required
-                    placeholder={methodForm.accountType === "M-Pesa" ? "254712345678" : "Enter number"}
+                    placeholder={
+                      isBankType(methodForm.accountType)
+                        ? "Bank account number"
+                        : isTillType(methodForm.accountType)
+                          ? "e.g. 5123456"
+                          : "0712345678 or 254712345678"
+                    }
                     value={methodForm.accountNumber}
                     onChange={(e) => setMethodForm({ ...methodForm, accountNumber: e.target.value })}
                     className="input input-bordered input-sm rounded-xl w-full text-xs"
@@ -1067,7 +1171,8 @@ export const WalletManager = () => {
                   <span className="font-bold text-base-content">
                     {methodToDelete.accountType} · {mask(methodToDelete.accountNumber)}
                   </span>{" "}
-                  will be removed. Payouts already requested are not affected.
+                  will be removed. A payout that is still Pending to this account can no longer be sent, so it will need to be
+                  requested again.
                 </p>
               </div>
               <div className="flex items-center justify-center gap-2 w-full pt-2 border-t border-base-200 mt-1">

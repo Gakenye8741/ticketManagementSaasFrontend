@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useSelector } from "react-redux";
-import { useSearchParams } from "react-router-dom"; // NEW (claim)
-import { motion, AnimatePresence } from "framer-motion";
+import { useSearchParams } from "react-router-dom";
+import { motion } from "framer-motion";
 import {
   Ticket as TicketIcon,
   UserPlus,
@@ -32,25 +32,24 @@ import {
   ChevronsRight,
   Hourglass,
   ArrowRightLeft,
-  Gift, // NEW (claim)
-  Link2, // NEW (claim)
+  Gift,
+  Link2,
 } from "lucide-react";
 import { type RootState } from "../../App/store";
 import {
   useGetTicketsByPurchaserIdQuery,
-  useGetTicketsByHolderIdQuery, // NEW (claim): claimed tickets are held by me, not purchased by me
+  useGetTicketsByHolderIdQuery, // claimed tickets are held by me, not purchased by me
   useAssignTicketMutation,
   useUnassignTicketMutation,
   useInitiateTicketTransferMutation,
-  useClaimTransferredTicketMutation, // NEW (claim)
+  useClaimTransferredTicketMutation,
   type Ticket as TicketType,
 } from "../../features/APIS/ticketsApi";
-import { useGetAllEventsQuery, } from "../../features/APIS/EventsApi";
-import {
-  useGetAllTicketTypesQuery,
-} from "../../features/APIS/ticketsType.Api";
+import { useGetAllEventsQuery } from "../../features/APIS/EventsApi";
+import { useGetAllTicketTypesQuery } from "../../features/APIS/ticketsType.Api";
 import { useGetPrimaryMediaByEventIdQuery } from "../../features/APIS/mediaApi";
 import usePageTitle from "../../hooks/usePageTitle";
+import ModalShell from "../../components/ModalShell";
 
 /* ==========================================
    TYPES + HELPERS
@@ -61,13 +60,13 @@ type TicketRow = TicketType & {
   ticketTypeName?: string;
   _event?: any;
   _typeName?: string;
-  _received?: boolean; // NEW (claim): bought by someone else and claimed/transferred to me
-  _gone?: boolean; // NEW (claim): the ticket now belongs to someone else
+  _received?: boolean; // bought by someone else and claimed/transferred to me
+  _gone?: boolean; // the ticket now belongs to someone else
   [key: string]: any;
 };
 
 type TicketState = "unassigned" | "assigned" | "scanned" | "transferred";
-type Filter = "all" | TicketState | "received"; // NEW (claim): "received"
+type Filter = "all" | TicketState | "received";
 type ViewMode = "cards" | "table";
 
 const VIEW_KEY = "mytickets_view_mode";
@@ -86,7 +85,7 @@ const toList = (res: any): any[] => {
 };
 
 const getState = (t: TicketRow): TicketState => {
-  if (t.transferStatus === "transferred" && t._gone) return "transferred"; // NEW (claim): receivers keep full control
+  if (t.transferStatus === "transferred" && t._gone) return "transferred"; // receivers keep full control
   if (t.isScanned) return "scanned";
   const assigned = t.isAssigned ?? Boolean(t.attendeeEmail || t.attendeeName);
   return assigned ? "assigned" : "unassigned";
@@ -162,48 +161,6 @@ const EventThumb = ({ eventId, title }: { eventId: number | string; title: strin
   );
 };
 
-const modalBackdrop = "fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs";
-const modalMotion = {
-  initial: { opacity: 0, scale: 0.96, y: 10 },
-  animate: { opacity: 1, scale: 1, y: 0 },
-  exit: { opacity: 0, scale: 0.96, y: 10 },
-};
-
-const ModalShell = ({
-  title,
-  icon,
-  onClose,
-  children,
-  maxW = "max-w-md",
-}: {
-  title: string;
-  icon: ReactNode;
-  onClose: () => void;
-  children: ReactNode;
-  maxW?: string;
-}) => (
-  <div className={modalBackdrop} onClick={onClose}>
-    <motion.div
-      {...modalMotion}
-      onClick={(e) => e.stopPropagation()}
-      role="dialog"
-      aria-label={title}
-      className={`bg-base-100 border border-base-200 w-full ${maxW} max-h-[92vh] overflow-y-auto rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col gap-4`}
-    >
-      <div className="flex justify-between items-center border-b border-base-200 pb-3">
-        <div className="flex items-center gap-2">
-          <span className="text-primary">{icon}</span>
-          <h3 className="font-black text-xs uppercase tracking-wider text-base-content">{title}</h3>
-        </div>
-        <button onClick={onClose} className="btn btn-ghost btn-xs btn-square rounded-lg" aria-label="Close">
-          <X size={14} />
-        </button>
-      </div>
-      {children}
-    </motion.div>
-  </div>
-);
-
 /** One-line description of the ticket, used at the top of each modal */
 const TicketSummary = ({ ticket }: { ticket: TicketRow }) => (
   <div className="flex items-center gap-3 bg-base-200/50 border border-base-200 rounded-xl p-3">
@@ -227,7 +184,7 @@ const filterTabs: { key: Filter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "unassigned", label: "Not assigned" },
   { key: "assigned", label: "Assigned" },
-  { key: "received", label: "Received" }, // NEW (claim)
+  { key: "received", label: "Received" },
   { key: "scanned", label: "Checked in" },
   { key: "transferred", label: "Transferred" },
 ];
@@ -237,10 +194,10 @@ export default function MyTickets() {
 
   const user = useSelector((state: RootState) => state.auth.user);
   const digitalId = Number((user as { digitalId?: number } | null)?.digitalId);
-  // NEW (claim): used to prefill the claim form
+  // Used to prefill the claim form
   const me = user as { firstName?: string; lastName?: string; email?: string; phone?: string } | null;
 
-  // NEW (claim): lets a shared link like /my-tickets?claim=CODE open the claim form
+  // Lets a shared link like /my-tickets?claim=CODE open the claim form
   const [searchParams, setSearchParams] = useSearchParams();
   const claimParam = searchParams.get("claim");
 
@@ -253,7 +210,7 @@ export default function MyTickets() {
     isError: purchasedError,
     refetch: refetchPurchased,
   } = useGetTicketsByPurchaserIdQuery(digitalId, { skip: !digitalId });
-  // NEW (claim): tickets I hold (claimed or transferred to me)
+  // Tickets I hold (claimed or transferred to me)
   const heldQ = useGetTicketsByHolderIdQuery(digitalId, { skip: !digitalId });
   const isLoading = purchasedLoading || heldQ.isLoading;
   const isError = purchasedError && heldQ.isError;
@@ -278,7 +235,7 @@ export default function MyTickets() {
   }, [typesQ.data]);
 
   const tickets: TicketRow[] = useMemo(() => {
-    // NEW (claim): merge purchased + held tickets, each ticket once
+    // Merge purchased + held tickets, each ticket once
     const byId = new Map<number, any>();
     [...toList(data), ...toList(heldQ.data)].forEach((t: any) => {
       const id = t.ticketId ?? t.id;
@@ -291,7 +248,7 @@ export default function MyTickets() {
         eventTitle: t.eventTitle ?? ev?.title,
         ticketTypeName: t.ticketTypeName ?? typeNameById.get(String(t.ticketTypeId)),
         _event: ev,
-        // NEW (claim): the backend columns are purchaserDigitalId (buyer) and digitalId (current holder)
+        // The backend columns are purchaserDigitalId (buyer) and digitalId (current holder)
         _received:
           Boolean(t.purchaserDigitalId ?? t.purchaserId) &&
           Number(t.purchaserDigitalId ?? t.purchaserId) !== digitalId,
@@ -306,7 +263,7 @@ export default function MyTickets() {
   const [assignTicket, { isLoading: assigning }] = useAssignTicketMutation();
   const [unassignTicket, { isLoading: unassigning }] = useUnassignTicketMutation();
   const [initiateTransfer, { isLoading: transferring }] = useInitiateTicketTransferMutation();
-  const [claimTicket, { isLoading: claiming }] = useClaimTransferredTicketMutation(); // NEW (claim)
+  const [claimTicket, { isLoading: claiming }] = useClaimTransferredTicketMutation();
 
   // ---------------------------------------------------------------------------
   // UI STATE
@@ -341,7 +298,7 @@ export default function MyTickets() {
   const [transferError, setTransferError] = useState("");
   const [copied, setCopied] = useState("");
 
-  // NEW (claim): claim form state
+  // Claim form state
   const [claimOpen, setClaimOpen] = useState(false);
   const [claimForm, setClaimForm] = useState({ token: "", name: "", email: "", phone: "" });
   const [claimError, setClaimError] = useState("");
@@ -358,7 +315,7 @@ export default function MyTickets() {
   }, [successMessage]);
 
   // ---------------------------------------------------------------------------
-  // NEW (claim): CLAIM FLOW
+  // CLAIM FLOW
   // ---------------------------------------------------------------------------
   const openClaim = (token = "") => {
     setClaimForm({
@@ -419,7 +376,7 @@ export default function MyTickets() {
     const c: Record<Filter, number> = { all: tickets.length, unassigned: 0, assigned: 0, scanned: 0, transferred: 0, received: 0 };
     tickets.forEach((t) => {
       c[getState(t)] += 1;
-      if (t._received) c.received += 1; // NEW (claim)
+      if (t._received) c.received += 1;
     });
     return c;
   }, [tickets]);
@@ -428,7 +385,7 @@ export default function MyTickets() {
     const q = search.trim().toLowerCase();
     return tickets.filter((t) => {
       if (filter === "received") {
-        if (!t._received) return false; // NEW (claim)
+        if (!t._received) return false;
       } else if (filter !== "all" && getState(t) !== filter) {
         return false;
       }
@@ -512,7 +469,7 @@ export default function MyTickets() {
       const res: any = await initiateTransfer({ ticketId: getId(transferFor), holderId: digitalId }).unwrap();
       const token = res?.data?.claimToken ?? res?.claimToken ?? res?.data?.token ?? res?.token;
       setClaimToken(token ?? "Transfer started. Share the claim link you received.");
-      refetchPurchased(); // NEW (claim): show the "transfer pending" state right away
+      refetchPurchased(); // show the "transfer pending" state right away
     } catch (err) {
       setTransferError(errMsg(err));
     }
@@ -561,6 +518,10 @@ export default function MyTickets() {
     );
   };
 
+  // Detail modal helpers
+  const detailState = detailFor ? getState(detailFor) : null;
+  const detailEditable = detailState !== null && detailState !== "scanned" && detailState !== "transferred";
+
   // ---------------------------------------------------------------------------
   // RENDER
   // ---------------------------------------------------------------------------
@@ -585,7 +546,6 @@ export default function MyTickets() {
             </p>
           </div>
         </div>
-        {/* NEW (claim) */}
         {digitalId ? (
           <button onClick={() => openClaim()} className="btn btn-primary btn-sm rounded-xl gap-2 text-xs font-bold">
             <Gift size={14} /> Claim a ticket
@@ -643,7 +603,7 @@ export default function MyTickets() {
           <h3 className="font-bold text-xs text-base-content">Sign in to see your tickets</h3>
           <p className="text-[11px] text-base-content/60 mt-0.5">
             {claimParam
-              ? "Someone sent you a ticket. Sign in or create an account, then open the link again to claim it." // NEW (claim)
+              ? "Someone sent you a ticket. Sign in or create an account, then open the link again to claim it."
               : "Your tickets appear here once you are logged in."}
           </p>
         </div>
@@ -799,7 +759,6 @@ export default function MyTickets() {
                             </div>
                             <div className="flex flex-col items-end gap-1 shrink-0">
                               <span className={`badge badge-sm font-bold ${meta.badge}`}>{meta.label}</span>
-                              {/* NEW (claim) */}
                               {t._received && (
                                 <span className="badge badge-sm badge-outline gap-1 font-bold">
                                   <Gift size={10} /> Received
@@ -910,7 +869,6 @@ export default function MyTickets() {
                               <td className="py-3 px-4">
                                 <div className="flex flex-wrap items-center gap-1">
                                   <span className={`badge badge-sm font-bold ${stateMeta[state].badge}`}>{stateMeta[state].label}</span>
-                                  {/* NEW (claim) */}
                                   {t._received && <span className="badge badge-sm badge-outline font-bold">Received</span>}
                                 </div>
                               </td>
@@ -993,17 +951,37 @@ export default function MyTickets() {
         </>
       )}
 
-      {/* ====================== MODALS ====================== */}
+      {/* ====================== MODALS (shared ModalShell) ====================== */}
 
-      {/* Ticket detail */}
-      <AnimatePresence>
-        {detailFor && (
-          <ModalShell title={`Ticket #${getId(detailFor)}`} icon={<TicketIcon size={16} />} onClose={() => setDetailFor(null)}>
+      {/* MODAL: TICKET DETAILS */}
+      <ModalShell
+        open={!!detailFor}
+        onClose={() => setDetailFor(null)}
+        icon={<TicketIcon size={16} />}
+        title={detailFor ? `Ticket #${getId(detailFor)}` : ""}
+        footer={
+          detailFor && detailEditable ? (
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                onClick={() => openTransfer(detailFor)}
+                className="btn btn-ghost btn-sm rounded-xl text-xs font-bold gap-1 text-info bg-info/10 hover:bg-info/20 flex-1 sm:flex-none"
+              >
+                <Send size={13} /> Transfer
+              </button>
+              <button onClick={() => openAssign(detailFor)} className="btn btn-primary btn-sm rounded-xl text-xs font-bold gap-1 flex-1 sm:flex-none">
+                {detailState === "assigned" ? <Pencil size={13} /> : <UserPlus size={13} />}
+                {detailState === "assigned" ? "Change attendee" : "Assign attendee"}
+              </button>
+            </div>
+          ) : undefined
+        }
+      >
+        {detailFor && detailState && (
+          <div className="flex flex-col gap-4">
             <TicketSummary ticket={detailFor} />
 
-            <div className="flex items-center gap-2">
-              <span className={`badge badge-sm font-bold ${stateMeta[getState(detailFor)].badge}`}>{stateMeta[getState(detailFor)].label}</span>
-              {/* NEW (claim) */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`badge badge-sm font-bold ${stateMeta[detailState].badge}`}>{stateMeta[detailState].label}</span>
               {detailFor._received && (
                 <span className="badge badge-sm badge-outline gap-1 font-bold">
                   <Gift size={10} /> Received
@@ -1070,38 +1048,38 @@ export default function MyTickets() {
               </div>
             )}
 
-            {getState(detailFor) === "scanned" && (
+            {detailState === "scanned" && (
               <p className="text-xs text-base-content/50 flex items-center gap-2">
                 <QrCode size={14} className="text-primary shrink-0" />
                 This ticket has been scanned at the gate, so it can't be changed.
               </p>
             )}
-
-            {getState(detailFor) !== "scanned" && getState(detailFor) !== "transferred" && (
-              <div className="flex flex-wrap justify-end gap-2 pt-3 border-t border-base-200">
-                <button onClick={() => openTransfer(detailFor)} className="btn btn-ghost btn-sm rounded-xl text-xs font-bold gap-1 text-info bg-info/10 hover:bg-info/20">
-                  <Send size={13} /> Transfer
-                </button>
-                <button onClick={() => openAssign(detailFor)} className="btn btn-primary btn-sm rounded-xl text-xs font-bold gap-1">
-                  {getState(detailFor) === "assigned" ? <Pencil size={13} /> : <UserPlus size={13} />}
-                  {getState(detailFor) === "assigned" ? "Change attendee" : "Assign attendee"}
-                </button>
-              </div>
-            )}
-          </ModalShell>
+          </div>
         )}
-      </AnimatePresence>
+      </ModalShell>
 
-      {/* Assign / change attendee */}
-      <AnimatePresence>
+      {/* MODAL: ASSIGN / CHANGE ATTENDEE */}
+      <ModalShell
+        open={!!assignFor}
+        onClose={() => setAssignFor(null)}
+        icon={<UserPlus size={16} />}
+        title={assignFor && getState(assignFor) === "assigned" ? "Change attendee" : "Assign attendee"}
+        dismissible={!assigning}
+        footer={
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setAssignFor(null)} disabled={assigning} className="btn btn-ghost btn-sm rounded-xl font-bold flex-1 sm:flex-none">
+              Cancel
+            </button>
+            <button type="submit" form="assign-form" disabled={assigning} className="btn btn-primary btn-sm rounded-xl font-bold flex-1 sm:flex-none">
+              {assigning ? <span className="loading loading-spinner loading-xs"></span> : "Save attendee"}
+            </button>
+          </div>
+        }
+      >
         {assignFor && (
-          <ModalShell
-            title={getState(assignFor) === "assigned" ? "Change attendee" : "Assign attendee"}
-            icon={<UserPlus size={16} />}
-            onClose={() => setAssignFor(null)}
-          >
+          <div className="flex flex-col gap-4">
             <TicketSummary ticket={assignFor} />
-            <form onSubmit={handleAssign} className="flex flex-col gap-3 text-xs">
+            <form id="assign-form" onSubmit={handleAssign} className="flex flex-col gap-3 text-xs">
               <div className="flex flex-col gap-1">
                 <label className="font-semibold text-base-content/70 text-[11px]">Full name</label>
                 <input
@@ -1140,60 +1118,78 @@ export default function MyTickets() {
                   <span>{formError}</span>
                 </div>
               )}
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-base-200 mt-1">
-                <button type="button" onClick={() => setAssignFor(null)} className="btn btn-ghost btn-xs sm:btn-sm rounded-xl font-bold">
-                  Cancel
-                </button>
-                <button type="submit" disabled={assigning} className="btn btn-primary btn-xs sm:btn-sm rounded-xl font-bold">
-                  {assigning ? <span className="loading loading-spinner loading-xs"></span> : "Save attendee"}
-                </button>
-              </div>
             </form>
-          </ModalShell>
-        )}
-      </AnimatePresence>
-
-      {/* Unassign confirmation */}
-      <AnimatePresence>
-        {unassignFor && (
-          <div className={`${modalBackdrop} z-[60]`} onClick={() => setUnassignFor(null)}>
-            <motion.div
-              {...modalMotion}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-base-100 border border-base-200 w-full max-w-sm rounded-2xl p-5 shadow-2xl flex flex-col items-center text-center gap-4"
-            >
-              <div className="w-12 h-12 rounded-2xl bg-warning/10 text-warning flex items-center justify-center shrink-0">
-                <AlertTriangle size={24} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <h3 className="font-black text-sm text-base-content tracking-tight">Remove this attendee?</h3>
-                <p className="text-xs text-base-content/60 leading-relaxed px-2">
-                  <span className="font-bold text-base-content">{unassignFor.attendeeName || unassignFor.attendeeEmail}</span> will no longer be
-                  linked to ticket #{getId(unassignFor)}. The ticket stays with you.
-                </p>
-              </div>
-              <div className="flex items-center justify-center gap-2 w-full pt-2 border-t border-base-200 mt-1">
-                <button onClick={() => setUnassignFor(null)} className="btn btn-ghost btn-sm rounded-xl font-bold w-1/2 text-xs">
-                  Cancel
-                </button>
-                <button
-                  onClick={handleUnassign}
-                  disabled={unassigning}
-                  className="btn btn-warning btn-sm rounded-xl font-bold w-1/2 text-xs text-warning-content shadow-sm"
-                >
-                  {unassigning ? <span className="loading loading-spinner loading-xs"></span> : "Remove"}
-                </button>
-              </div>
-            </motion.div>
           </div>
         )}
-      </AnimatePresence>
+      </ModalShell>
 
-      {/* Transfer */}
-      <AnimatePresence>
+      {/* MODAL: REMOVE ATTENDEE CONFIRMATION */}
+      <ModalShell
+        open={!!unassignFor}
+        onClose={() => setUnassignFor(null)}
+        placement="center"
+        maxWidth="sm"
+        hideHeader
+        dismissible={!unassigning}
+        footer={
+          <div className="flex items-center justify-center gap-2 w-full">
+            <button onClick={() => setUnassignFor(null)} disabled={unassigning} className="btn btn-ghost btn-sm rounded-xl font-bold w-1/2 text-xs">
+              Cancel
+            </button>
+            <button
+              onClick={handleUnassign}
+              disabled={unassigning}
+              className="btn btn-warning btn-sm rounded-xl font-bold w-1/2 text-xs text-warning-content shadow-sm"
+            >
+              {unassigning ? <span className="loading loading-spinner loading-xs"></span> : "Remove"}
+            </button>
+          </div>
+        }
+      >
+        {unassignFor && (
+          <div className="flex flex-col items-center text-center gap-4 py-2">
+            <div className="w-12 h-12 rounded-2xl bg-warning/10 text-warning flex items-center justify-center shrink-0">
+              <AlertTriangle size={24} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <h3 className="font-black text-sm text-base-content tracking-tight">Remove this attendee?</h3>
+              <p className="text-xs text-base-content/60 leading-relaxed px-2">
+                <span className="font-bold text-base-content">{unassignFor.attendeeName || unassignFor.attendeeEmail}</span> will no longer be
+                linked to ticket #{getId(unassignFor)}. The ticket stays with you.
+              </p>
+            </div>
+          </div>
+        )}
+      </ModalShell>
+
+      {/* MODAL: TRANSFER */}
+      <ModalShell
+        open={!!transferFor}
+        onClose={() => setTransferFor(null)}
+        icon={<Send size={16} />}
+        title="Transfer this ticket"
+        dismissible={!transferring}
+        footer={
+          !claimToken ? (
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setTransferFor(null)} disabled={transferring} className="btn btn-ghost btn-sm rounded-xl font-bold flex-1 sm:flex-none">
+                Cancel
+              </button>
+              <button onClick={handleTransfer} disabled={transferring} className="btn btn-primary btn-sm rounded-xl font-bold flex-1 sm:flex-none">
+                {transferring ? <span className="loading loading-spinner loading-xs"></span> : "Create claim code"}
+              </button>
+            </div>
+          ) : (
+            <div className="flex justify-end">
+              <button onClick={() => setTransferFor(null)} className="btn btn-primary btn-sm rounded-xl font-bold">
+                Done
+              </button>
+            </div>
+          )
+        }
+      >
         {transferFor && (
-          <ModalShell title="Transfer this ticket" icon={<Send size={16} />} onClose={() => setTransferFor(null)}>
+          <div className="flex flex-col gap-4">
             <TicketSummary ticket={transferFor} />
 
             {!claimToken ? (
@@ -1208,18 +1204,10 @@ export default function MyTickets() {
                     <span>{transferError}</span>
                   </div>
                 )}
-                <div className="flex justify-end gap-2 pt-3 border-t border-base-200">
-                  <button onClick={() => setTransferFor(null)} className="btn btn-ghost btn-xs sm:btn-sm rounded-xl font-bold">
-                    Cancel
-                  </button>
-                  <button onClick={handleTransfer} disabled={transferring} className="btn btn-primary btn-xs sm:btn-sm rounded-xl font-bold">
-                    {transferring ? <span className="loading loading-spinner loading-xs"></span> : "Create claim code"}
-                  </button>
-                </div>
               </>
             ) : (
               <>
-                {/* NEW (claim): shareable link that opens the claim form with the code filled in */}
+                {/* Shareable link that opens the claim form with the code filled in */}
                 <p className="text-xs text-base-content/60">Share this link with the new ticket holder:</p>
                 <div className="flex items-center gap-2 bg-base-200/60 border border-base-200 rounded-xl p-2">
                   <code className="text-[11px] font-mono flex-1 truncate px-1">{claimLink(claimToken)}</code>
@@ -1237,91 +1225,91 @@ export default function MyTickets() {
                     {copied === "claim" ? "Copied" : "Copy"}
                   </button>
                 </div>
-                <div className="flex justify-end pt-3 border-t border-base-200">
-                  <button onClick={() => setTransferFor(null)} className="btn btn-primary btn-xs sm:btn-sm rounded-xl font-bold">
-                    Done
-                  </button>
-                </div>
               </>
             )}
-          </ModalShell>
+          </div>
         )}
-      </AnimatePresence>
+      </ModalShell>
 
-      {/* NEW (claim): Claim a ticket */}
-      <AnimatePresence>
-        {claimOpen && (
-          <ModalShell title="Claim a ticket" icon={<Gift size={16} />} onClose={closeClaim}>
-            <p className="text-xs text-base-content/60 leading-relaxed">
-              Paste the claim code someone sent you. The ticket moves into your account, and the details below become the
-              attendee on the ticket.
-            </p>
-            <form onSubmit={handleClaim} className="flex flex-col gap-3 text-xs">
-              <div className="flex flex-col gap-1">
-                <label className="font-semibold text-base-content/70 text-[11px]">Claim code</label>
-                <input
-                  className="input input-bordered input-xs sm:input-sm rounded-xl w-full text-xs font-mono"
-                  value={claimForm.token}
-                  onChange={(e) => setClaimForm({ ...claimForm, token: e.target.value })}
-                  placeholder="Paste the code here"
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="font-semibold text-base-content/70 text-[11px]">Attendee name</label>
-                <input
-                  className="input input-bordered input-xs sm:input-sm rounded-xl w-full text-xs"
-                  value={claimForm.name}
-                  onChange={(e) => setClaimForm({ ...claimForm, name: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="font-semibold text-base-content/70 text-[11px]">Attendee email</label>
-                <input
-                  type="email"
-                  className="input input-bordered input-xs sm:input-sm rounded-xl w-full text-xs"
-                  value={claimForm.email}
-                  onChange={(e) => setClaimForm({ ...claimForm, email: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="font-semibold text-base-content/70 text-[11px]">Phone (optional)</label>
-                <input
-                  type="tel"
-                  className="input input-bordered input-xs sm:input-sm rounded-xl w-full text-xs"
-                  value={claimForm.phone}
-                  onChange={(e) => setClaimForm({ ...claimForm, phone: e.target.value })}
-                  placeholder="254712345678"
-                />
-              </div>
-
-              {claimError && (
-                <div className="alert alert-error text-xs font-semibold py-2 rounded-xl">
-                  <AlertCircle size={16} className="shrink-0" />
-                  <span>{claimError}</span>
-                </div>
+      {/* MODAL: CLAIM A TICKET */}
+      <ModalShell
+        open={claimOpen}
+        onClose={closeClaim}
+        icon={<Gift size={16} />}
+        title="Claim a ticket"
+        dismissible={!claiming}
+        footer={
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={closeClaim} disabled={claiming} className="btn btn-ghost btn-sm rounded-xl font-bold flex-1 sm:flex-none">
+              Cancel
+            </button>
+            <button type="submit" form="claim-form" disabled={claiming} className="btn btn-primary btn-sm rounded-xl font-bold gap-1 flex-1 sm:flex-none">
+              {claiming ? (
+                <span className="loading loading-spinner loading-xs"></span>
+              ) : (
+                <>
+                  <Gift size={13} /> Claim ticket
+                </>
               )}
+            </button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-xs text-base-content/60 leading-relaxed">
+            Paste the claim code someone sent you. The ticket moves into your account, and the details below become the
+            attendee on the ticket.
+          </p>
+          <form id="claim-form" onSubmit={handleClaim} className="flex flex-col gap-3 text-xs">
+            <div className="flex flex-col gap-1">
+              <label className="font-semibold text-base-content/70 text-[11px]">Claim code</label>
+              <input
+                className="input input-bordered input-xs sm:input-sm rounded-xl w-full text-xs font-mono"
+                value={claimForm.token}
+                onChange={(e) => setClaimForm({ ...claimForm, token: e.target.value })}
+                placeholder="Paste the code here"
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="font-semibold text-base-content/70 text-[11px]">Attendee name</label>
+              <input
+                className="input input-bordered input-xs sm:input-sm rounded-xl w-full text-xs"
+                value={claimForm.name}
+                onChange={(e) => setClaimForm({ ...claimForm, name: e.target.value })}
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="font-semibold text-base-content/70 text-[11px]">Attendee email</label>
+              <input
+                type="email"
+                className="input input-bordered input-xs sm:input-sm rounded-xl w-full text-xs"
+                value={claimForm.email}
+                onChange={(e) => setClaimForm({ ...claimForm, email: e.target.value })}
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="font-semibold text-base-content/70 text-[11px]">Phone (optional)</label>
+              <input
+                type="tel"
+                className="input input-bordered input-xs sm:input-sm rounded-xl w-full text-xs"
+                value={claimForm.phone}
+                onChange={(e) => setClaimForm({ ...claimForm, phone: e.target.value })}
+                placeholder="254712345678"
+              />
+            </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-base-200 mt-1">
-                <button type="button" onClick={closeClaim} className="btn btn-ghost btn-xs sm:btn-sm rounded-xl font-bold">
-                  Cancel
-                </button>
-                <button type="submit" disabled={claiming} className="btn btn-primary btn-xs sm:btn-sm rounded-xl font-bold gap-1">
-                  {claiming ? (
-                    <span className="loading loading-spinner loading-xs"></span>
-                  ) : (
-                    <>
-                      <Gift size={13} /> Claim ticket
-                    </>
-                  )}
-                </button>
+            {claimError && (
+              <div className="alert alert-error text-xs font-semibold py-2 rounded-xl">
+                <AlertCircle size={16} className="shrink-0" />
+                <span>{claimError}</span>
               </div>
-            </form>
-          </ModalShell>
-        )}
-      </AnimatePresence>
+            )}
+          </form>
+        </div>
+      </ModalShell>
     </div>
   );
 }

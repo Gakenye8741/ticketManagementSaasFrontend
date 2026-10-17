@@ -33,8 +33,7 @@ const navigationLinks = [
     title: "My Activity",
     items: [
       { path: "my-bookings", label: "Bookings", icon: ShoppingBag },
-      { path: "tickets", label: "My Tickets", icon: Ticket },
-      { path: "qr-codes", label: "QR Wallet", icon: QrCode },
+      { path: "tickets", label: "My Tickets", icon: Ticket }
     ],
   },
   {

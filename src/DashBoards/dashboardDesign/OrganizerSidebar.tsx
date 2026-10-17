@@ -19,6 +19,7 @@ import {
   TicketCheckIcon,
   Wallet2,
   HouseIcon,
+  FileBarChart,
 } from "lucide-react";
 import { type RootState } from "../../App/store";
 
@@ -31,36 +32,50 @@ export const OrganizerSidebar = ({ isCollapsed = false }: OrganizerSidebarProps)
   const user = useSelector((state: RootState) => state.auth.user);
 
   const navigationLinks = [
-    {
-      title: "Overview",
-      items: [
-        { path: "/organizer/dashboard", label: "Dashboard", icon: LayoutDashboard },
-        { path: "/organizer-dashboard/wallet", label: "My Wallet", icon: Wallet2 },
-        { path: "/organizer-dashboard/analytics", label: "Analytics & Sales", icon: BarChart3 },
-        { path: "/organizer-dashboard/my-organization", label: "My Organization", icon: Building2 },
-      ]
-    },
-    {
-      title: "Event Management",
-      items: [
-        { path: "/organizer-dashboard/my-venues", label: "My venues", icon: HouseIcon },
-        { path: "/organizer-dashboard/my-events", label: "My Events", icon: Calendar },
-        { path: "/organizer-dashboard/ticket-types", label: "Manage TicketsTypes", icon: Ticket },
-        { path: "/organizer-dashboard/media", label: "Manage Event Media", icon: Images },
-        { path: "/organizer-dashboard/bookings", label: "Manage Event Bookings", icon: CalendarCheck },
-        { path: "/organizer-dashboard/payments", label: "Manage Event Payments", icon: Wallet },
-        { path: "/organizer-dashboard/tickets", label: "Manage Event Tickets", icon: TicketCheckIcon },
-      ]
-    },
- 
-    {
-      title: "Account",
-      items: [
-        { path: "/organizer-dashboard/profile", label: "Organizer Profile", icon: UserCog },
-        { path: "/contact", label: "Support", icon: HelpCircle },
-      ]
-    }
-  ];
+  {
+    title: "Overview",
+    items: [
+      { path: "/organizer-dashboard/analytics", label: "Analytics & Sales", icon: BarChart3 },
+      { path: "/organizer-dashboard/wallet", label: "My Wallet", icon: Wallet2 },
+    ]
+  },
+  {
+    title: "Setup",
+    items: [
+      { path: "/organizer-dashboard/my-organization", label: "My Organization", icon: Building2 },
+      { path: "/organizer-dashboard/my-venues", label: "My Venues", icon: HouseIcon },
+    ]
+  },
+  {
+    title: "Event Management",
+    items: [
+      { path: "/organizer-dashboard/my-events", label: "My Events", icon: Calendar },
+      { path: "/organizer-dashboard/ticket-types", label: "Manage Ticket Types", icon: Ticket },
+      { path: "/organizer-dashboard/media", label: "Manage Event Media", icon: Images },
+    ]
+  },
+  {
+    title: "Sales & Operations",
+    items: [
+      { path: "/organizer-dashboard/bookings", label: "Manage Event Bookings", icon: CalendarCheck },
+      { path: "/organizer-dashboard/payments", label: "Manage Event Payments", icon: Wallet },
+      { path: "/organizer-dashboard/tickets", label: "Manage Event Tickets", icon: TicketCheckIcon },
+    ]
+  },
+  {
+    title: "Reports",
+    items: [
+      { path: "/organizer-dashboard/sales-report", label: "Event Sales Report", icon: FileBarChart },
+    ]
+  },
+  {
+    title: "Account",
+    items: [
+      { path: "/organizer-dashboard/profile", label: "Organizer Profile", icon: UserCog },
+      { path: "/contact", label: "Support", icon: HelpCircle },
+    ]
+  }
+];
 
   return (
     <aside className="w-full h-full bg-base-100 flex flex-col justify-between shrink-0 select-none">

@@ -1,10 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Ticket as TicketIcon,
   Search,
-  X,
   Eye,
   Download,
   Lock,
@@ -34,11 +33,12 @@ import {
   useCountScannedAttendeesQuery,
   type Ticket,
 } from "../../features/APIS/ticketsApi";
-import { useGetBookingByIdQuery } from "../../features/APIS/BookingsApi";
+import { useGetBookingsByEventIdQuery, type Booking } from "../../features/APIS/BookingsApi";
 import { useGetTicketTypesByEventIdQuery } from "../../features/APIS/ticketsType.Api";
 import { useGetEventsByOrganizationQuery } from "../../features/APIS/EventsApi";
 import usePageTitle from "../../hooks/usePageTitle";
 import { useOrganizerOrg } from "../../hooks/useOrganizerOrg";
+import ModalShell from "../../components/ModalShell";
 
 // Change this to match the currency used on your other pages
 const CURRENCY = "KSH";
@@ -47,6 +47,8 @@ const TABLE_SIZES = [10, 20, 50];
 const CARD_SIZES = [8, 12, 24, 48];
 
 type ViewMode = "table" | "cards";
+type ScanFilter = "all" | "scanned" | "not-scanned";
+type AssignFilter = "all" | "assigned" | "unassigned";
 
 /** Page numbers with ellipses, e.g. 1 … 4 5 6 … 20 */
 const getPageNumbers = (current: number, total: number): (number | "…")[] => {
@@ -61,20 +63,26 @@ const getPageNumbers = (current: number, total: number): (number | "…")[] => {
   return pages;
 };
 
-type ScanFilter = "all" | "scanned" | "not-scanned";
-type AssignFilter = "all" | "assigned" | "unassigned";
-
 // ---------------------------------------------------------------------------
 // HELPERS (the backend may name fields slightly differently, so read defensively)
 // ---------------------------------------------------------------------------
-const tId = (t: Ticket) => (t.ticketId ?? t.id) as number;
+const tId = (t: Ticket) => ((t as any).ticketId ?? (t as any).id) as number;
+const tBooking = (t: any): number => Number(t.bookingId);
 const tName = (t: any): string => t.attendeeName ?? t.name ?? "";
 const tEmail = (t: any): string => t.attendeeEmail ?? t.email ?? "";
 const tPhone = (t: any): string => t.attendeePhone ?? t.phone ?? "";
 const tToken = (t: any): string => t.ticketToken ?? t.token ?? t.tokenUuid ?? "";
+const tNumber = (t: any): string => t.ticketNumber ?? "";
 const tScanned = (t: any): boolean => Boolean(t.isScanned ?? t.scanned ?? t.scannedAt);
+const tAssigned = (t: any): boolean =>
+  Boolean(t.isAssigned ?? (tName(t) || tEmail(t) || tPhone(t) || t.holderId));
+const tTypeId = (t: any): string | null => {
+  const v = t?.ticketTypeId;
+  return v !== undefined && v !== null && v !== "" ? String(v) : null;
+};
 
-const toArray = (d: any): Ticket[] => (Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : Array.isArray(d?.tickets) ? d.tickets : []);
+const toArray = (d: any): any[] =>
+  Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : Array.isArray(d?.tickets) ? d.tickets : [];
 
 const pickCount = (d: any, fallback: number): number => {
   if (typeof d === "number") return d;
@@ -88,12 +96,30 @@ const fmtMoney = (v: unknown) =>
   `${CURRENCY}${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
 // ---------------------------------------------------------------------------
-// PURCHASER INFO (loaded from the booking when a ticket is opened)
+// MODAL WRAPPER
+// If your ModalShell uses different prop names, change them in this one place.
 // ---------------------------------------------------------------------------
-const PurchaserInfo = ({ bookingId }: { bookingId: number }) => {
-  const { data, isLoading, isError } = useGetBookingByIdQuery(bookingId, { skip: !bookingId });
-  const booking: any = (data as any)?.data ?? data;
+const TicketModal = ({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) => {
+  const Shell = ModalShell as any;
+  return (
+    <Shell isOpen={true} onClose={onClose} title={title}>
+      {children}
+    </Shell>
+  );
+};
 
+// ---------------------------------------------------------------------------
+// PURCHASER INFO (from the booking the ticket belongs to)
+// ---------------------------------------------------------------------------
+const PurchaserInfo = ({ booking, isLoading }: { booking?: Booking; isLoading: boolean }) => {
   if (isLoading) {
     return (
       <div className="flex justify-center py-3">
@@ -101,7 +127,7 @@ const PurchaserInfo = ({ bookingId }: { bookingId: number }) => {
       </div>
     );
   }
-  if (isError || !booking) {
+  if (!booking) {
     return <p className="text-[11px] text-base-content/50">Booking details are not available.</p>;
   }
 
@@ -157,7 +183,7 @@ export const TicketsManager = () => {
   const eventTitle = activeEvent?.title || `Event #${selectedEventId}`;
 
   // ---------------------------------------------------------------------------
-  // TICKETS + COUNTS + TICKET TYPES
+  // TICKETS + COUNTS + TICKET TYPES + BOOKINGS
   // ---------------------------------------------------------------------------
   const skipEvent = !numericEventId || isNaN(numericEventId);
 
@@ -170,27 +196,59 @@ export const TicketsManager = () => {
   const { data: totalCountData } = useCountEventTicketsQuery(numericEventId, { skip: skipEvent });
   const { data: scannedCountData } = useCountScannedAttendeesQuery(numericEventId, { skip: skipEvent });
 
+  // Ticket types for the selected event (Ticket Types API)
   const { data: ticketTypesData } = useGetTicketTypesByEventIdQuery(selectedEventId, { skip: !selectedEventId });
+
+  // All bookings for the selected event (one request, not one per ticket)
+  const { data: bookingsData, isLoading: bookingsLoading } = useGetBookingsByEventIdQuery(numericEventId, {
+    skip: skipEvent,
+  });
 
   // Safety net: only keep tickets that belong to the selected event
   const tickets: Ticket[] = useMemo(
-    () => toArray(ticketsData).filter((t) => !t.eventId || Number(t.eventId) === numericEventId),
+    () => toArray(ticketsData).filter((t: any) => !t.eventId || Number(t.eventId) === numericEventId),
     [ticketsData, numericEventId]
   );
 
-  const ticketTypeList = useMemo(() => {
-    const d: any = ticketTypesData;
-    return Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [];
-  }, [ticketTypesData]);
+  const ticketTypeList = useMemo(() => toArray(ticketTypesData), [ticketTypesData]);
 
-  const ticketNameById = useMemo(() => {
+  // ticketTypeId -> ticket type name
+  const typeNameById = useMemo(() => {
     const map = new Map<string, string>();
-    ticketTypeList.forEach((t: any) => map.set(String(t.ticketTypeId || t.id || t._id), t.name));
+    ticketTypeList.forEach((t: any) => {
+      const id = t.ticketTypeId ?? t.id ?? t._id;
+      if (id !== undefined && id !== null) map.set(String(id), t.name ?? t.title ?? `Ticket type #${id}`);
+    });
     return map;
   }, [ticketTypeList]);
 
-  const getTypeName = (t: Ticket) =>
-    ticketNameById.get(String(t.ticketTypeId)) || (t.ticketTypeId ? `Ticket #${t.ticketTypeId}` : "—");
+  // bookingId -> booking
+  const bookingById = useMemo(() => {
+    const map = new Map<number, Booking>();
+    toArray(bookingsData).forEach((b: Booking) => map.set(Number(b.bookingId), b));
+    return map;
+  }, [bookingsData]);
+
+  /** The ticket's type id: from the ticket itself, otherwise from its booking. */
+  const resolveTypeId = useCallback(
+    (t: Ticket): string | null => {
+      const own = tTypeId(t);
+      if (own) return own;
+      const b = bookingById.get(tBooking(t));
+      return b?.ticketTypeId !== undefined && b?.ticketTypeId !== null ? String(b.ticketTypeId) : null;
+    },
+    [bookingById]
+  );
+
+  /** Ticket type name for display and CSV. */
+  const getTypeName = useCallback(
+    (t: Ticket): string => {
+      const id = resolveTypeId(t);
+      if (id) return typeNameById.get(id) || `Ticket type #${id}`;
+      return bookingsLoading ? "…" : "—";
+    },
+    [resolveTypeId, typeNameById, bookingsLoading]
+  );
 
   // ---------------------------------------------------------------------------
   // UI STATE
@@ -224,25 +282,26 @@ export const TicketsManager = () => {
     const q = search.trim().toLowerCase();
     return tickets.filter((t) => {
       const scanned = tScanned(t);
-      const assigned = Boolean(tName(t) || tEmail(t) || t.holderId);
+      const assigned = tAssigned(t);
 
       if (scanFilter === "scanned" && !scanned) return false;
       if (scanFilter === "not-scanned" && scanned) return false;
       if (assignFilter === "assigned" && !assigned) return false;
       if (assignFilter === "unassigned" && assigned) return false;
-      if (typeFilter !== "all" && String(t.ticketTypeId) !== typeFilter) return false;
+      if (typeFilter !== "all" && resolveTypeId(t) !== typeFilter) return false;
 
       if (!q) return true;
       return (
         String(tId(t)).includes(q) ||
-        String(t.bookingId).includes(q) ||
+        String(tBooking(t)).includes(q) ||
+        tNumber(t).toLowerCase().includes(q) ||
         tName(t).toLowerCase().includes(q) ||
         tEmail(t).toLowerCase().includes(q) ||
         tPhone(t).toLowerCase().includes(q) ||
         tToken(t).toLowerCase().includes(q)
       );
     });
-  }, [tickets, search, scanFilter, assignFilter, typeFilter]);
+  }, [tickets, search, scanFilter, assignFilter, typeFilter, resolveTypeId]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -255,7 +314,7 @@ export const TicketsManager = () => {
   const totalTickets = pickCount(totalCountData, tickets.length);
   const scannedTickets = pickCount(scannedCountData, listScanned);
   const notScanned = Math.max(totalTickets - scannedTickets, 0);
-  const assignedCount = tickets.filter((t) => tName(t) || tEmail(t) || t.holderId).length;
+  const assignedCount = tickets.filter(tAssigned).length;
   const unassignedCount = tickets.length - assignedCount;
 
   // ---------------------------------------------------------------------------
@@ -286,16 +345,28 @@ export const TicketsManager = () => {
   };
 
   const handleExportCsv = () => {
-    const header = ["Ticket #", "Booking #", "Ticket type", "Attendee", "Email", "Phone", "Scanned", "Scanned at", "Token"];
+    const header = [
+      "Ticket #",
+      "Ticket number",
+      "Booking #",
+      "Ticket type",
+      "Attendee",
+      "Email",
+      "Phone",
+      "Scanned",
+      "Scanned at",
+      "Token",
+    ];
     const rows = filtered.map((t) => [
       tId(t),
-      t.bookingId,
+      tNumber(t),
+      tBooking(t),
       getTypeName(t),
       tName(t),
       tEmail(t),
       tPhone(t),
       tScanned(t) ? "Yes" : "No",
-      t.scannedAt || "",
+      (t as any).scannedAt || "",
       tToken(t),
     ]);
     const csv = [header, ...rows]
@@ -309,13 +380,6 @@ export const TicketsManager = () => {
     a.download = `tickets-${(eventTitle || "event").replace(/\s+/g, "-").toLowerCase()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  const modalBackdrop = "fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs";
-  const modalMotion = {
-    initial: { opacity: 0, scale: 0.96, y: 10 },
-    animate: { opacity: 1, scale: 1, y: 0 },
-    exit: { opacity: 0, scale: 0.96, y: 10 },
   };
 
   // --- WHILE WE CHECK THE ORGANIZER'S ORGANIZATION ---
@@ -415,10 +479,10 @@ export const TicketsManager = () => {
             <div className="flex flex-col gap-1">
               <span className="font-bold text-base-content">Tickets Guide</span>
               <p className="text-base-content/70 leading-relaxed text-[11px]">
-                Every ticket issued for your event appears here, with the attendee it was assigned to and whether it has
-                been scanned at the gate. Search by name, phone, email, ticket number or token, open a ticket to see who
-                booked it, and download the list as a CSV. This page is for viewing only. Tickets are scanned from the
-                Gate Pass Scanner.
+                Every ticket issued for your event appears here, with its ticket type, the attendee it was assigned to
+                and whether it has been scanned at the gate. Search by name, phone, email, ticket number or token, open
+                a ticket to see who booked it, and download the list as a CSV. This page is for viewing only. Tickets
+                are scanned from the Gate Pass Scanner.
               </p>
             </div>
           </div>
@@ -533,9 +597,9 @@ export const TicketsManager = () => {
           >
             <option value="all">All ticket types</option>
             {ticketTypeList.map((t: any) => {
-              const id = t.ticketTypeId || t.id || t._id;
+              const id = t.ticketTypeId ?? t.id ?? t._id;
               return (
-                <option key={id} value={id}>
+                <option key={id} value={String(id)}>
                   {t.name}
                 </option>
               );
@@ -631,7 +695,7 @@ export const TicketsManager = () => {
                             <div className="flex flex-col">
                               <span className="font-bold text-base-content">#{tId(t)}</span>
                               <span className="text-[10px] text-base-content/50 font-mono">
-                                {tToken(t) ? `${tToken(t).slice(0, 12)}…` : "—"}
+                                {tNumber(t) || (tToken(t) ? `${tToken(t).slice(0, 12)}…` : "—")}
                               </span>
                             </div>
                           </td>
@@ -649,12 +713,14 @@ export const TicketsManager = () => {
                             )}
                           </td>
                           <td className="py-3 px-4 font-semibold text-base-content/70">{getTypeName(t)}</td>
-                          <td className="py-3 px-4 font-semibold text-base-content/70">#{t.bookingId}</td>
+                          <td className="py-3 px-4 font-semibold text-base-content/70">#{tBooking(t)}</td>
                           <td className="py-3 px-4">
                             {scanned ? (
                               <div className="flex flex-col">
                                 <span className="badge badge-sm badge-success text-success-content font-bold">Scanned</span>
-                                <span className="text-[10px] text-base-content/50 mt-0.5">{fmtDate(t.scannedAt)}</span>
+                                <span className="text-[10px] text-base-content/50 mt-0.5">
+                                  {fmtDate((t as any).scannedAt)}
+                                </span>
                               </div>
                             ) : (
                               <span className="badge badge-sm badge-ghost font-bold">Not scanned</span>
@@ -720,7 +786,9 @@ export const TicketsManager = () => {
                           ) : (
                             <span className="badge badge-sm badge-ghost font-bold">Not scanned</span>
                           )}
-                          {scanned && <span className="text-[10px] text-base-content/50">{fmtDate(t.scannedAt)}</span>}
+                          {scanned && (
+                            <span className="text-[10px] text-base-content/50">{fmtDate((t as any).scannedAt)}</span>
+                          )}
                         </div>
                       </div>
 
@@ -756,9 +824,9 @@ export const TicketsManager = () => {
 
                     <div className="px-4 py-3 flex items-center justify-between gap-2 bg-base-200/30">
                       <div className="flex flex-col min-w-0">
-                        <span className="text-[11px] font-semibold text-base-content/70">Booking #{t.bookingId}</span>
+                        <span className="text-[11px] font-semibold text-base-content/70">Booking #{tBooking(t)}</span>
                         <span className="text-[10px] font-mono text-base-content/40 truncate">
-                          {tToken(t) ? `${tToken(t).slice(0, 14)}…` : "—"}
+                          {tNumber(t) || (tToken(t) ? `${tToken(t).slice(0, 14)}…` : "—")}
                         </span>
                       </div>
                       <span className="flex items-center gap-1 text-[11px] font-bold text-primary shrink-0 group-hover:translate-x-0.5 transition-transform">
@@ -860,109 +928,103 @@ export const TicketsManager = () => {
         </>
       )}
 
+           {/* =================================================================== */}
+      {/* TICKET DETAIL MODAL (uses ModalShell)                               */}
       {/* =================================================================== */}
-      {/* TICKET DETAIL MODAL                                                 */}
-      {/* =================================================================== */}
-      <AnimatePresence>
+      <ModalShell
+        open={Boolean(detailTicket)}
+        onClose={() => setDetailTicket(null)}
+        title={detailTicket ? `Ticket #${tId(detailTicket)}` : ""}
+        icon={<TicketIcon size={16} />}
+        footer={
+          <div className="flex justify-end">
+            <button onClick={() => setDetailTicket(null)} className="btn btn-ghost btn-xs sm:btn-sm rounded-xl font-bold">
+              Close
+            </button>
+          </div>
+        }
+      >
         {detailTicket && (
-          <div className={modalBackdrop} onClick={() => setDetailTicket(null)}>
-            <motion.div
-              {...modalMotion}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-base-100 border border-base-200 w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl p-4 sm:p-5 shadow-xl flex flex-col gap-4"
-            >
-              <div className="flex justify-between items-center border-b border-base-200 pb-3">
-                <div className="flex items-center gap-2">
-                  <TicketIcon size={16} className="text-primary" />
-                  <h3 className="font-black text-xs uppercase tracking-wider text-base-content">
-                    Ticket #{tId(detailTicket)}
-                  </h3>
-                  {tScanned(detailTicket) ? (
-                    <span className="badge badge-sm badge-success text-success-content font-bold gap-1">
-                      <CheckCircle2 size={10} /> Scanned
-                    </span>
-                  ) : (
-                    <span className="badge badge-sm badge-ghost font-bold">Not scanned</span>
+          <div className="flex flex-col gap-4 text-xs">
+            {/* Scan status */}
+            <div className="flex items-center gap-2">
+              {tScanned(detailTicket) ? (
+                <span className="badge badge-sm badge-success text-success-content font-bold gap-1">
+                  <CheckCircle2 size={10} /> Scanned
+                </span>
+              ) : (
+                <span className="badge badge-sm badge-ghost font-bold">Not scanned</span>
+              )}
+            </div>
+
+            {/* Attendee */}
+            <div className="rounded-xl bg-base-200/40 p-3 flex flex-col gap-2">
+              <span className="text-[10px] uppercase tracking-widest text-base-content/40 font-bold">Attendee</span>
+              {tName(detailTicket) || tEmail(detailTicket) || tPhone(detailTicket) ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <User size={13} className="text-primary shrink-0" />
+                    <span className="font-bold text-base-content">{tName(detailTicket) || "Name not set"}</span>
+                  </div>
+                  {tEmail(detailTicket) && (
+                    <div className="flex items-center gap-2 text-base-content/70">
+                      <Mail size={13} className="shrink-0" />
+                      <span className="break-all">{tEmail(detailTicket)}</span>
+                    </div>
                   )}
-                </div>
-                <button onClick={() => setDetailTicket(null)} className="btn btn-ghost btn-xs btn-square rounded-lg">
-                  <X size={14} />
-                </button>
-              </div>
-
-              <div className="flex flex-col gap-4 text-xs">
-                {/* Attendee */}
-                <div className="rounded-xl bg-base-200/40 p-3 flex flex-col gap-2">
-                  <span className="text-[10px] uppercase tracking-widest text-base-content/40 font-bold">Attendee</span>
-                  {tName(detailTicket) || tEmail(detailTicket) || tPhone(detailTicket) ? (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <User size={13} className="text-primary shrink-0" />
-                        <span className="font-bold text-base-content">{tName(detailTicket) || "Name not set"}</span>
-                      </div>
-                      {tEmail(detailTicket) && (
-                        <div className="flex items-center gap-2 text-base-content/70">
-                          <Mail size={13} className="shrink-0" />
-                          <span className="break-all">{tEmail(detailTicket)}</span>
-                        </div>
-                      )}
-                      {tPhone(detailTicket) && (
-                        <div className="flex items-center gap-2 text-base-content/70">
-                          <Phone size={13} className="shrink-0" />
-                          <span>{tPhone(detailTicket)}</span>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <span className="flex items-center gap-1.5 text-base-content/60 font-semibold">
-                      <UserX size={13} />
-                      This ticket has not been assigned to an attendee yet.
-                    </span>
+                  {tPhone(detailTicket) && (
+                    <div className="flex items-center gap-2 text-base-content/70">
+                      <Phone size={13} className="shrink-0" />
+                      <span>{tPhone(detailTicket)}</span>
+                    </div>
                   )}
-                </div>
+                </>
+              ) : (
+                <span className="flex items-center gap-1.5 text-base-content/60 font-semibold">
+                  <UserX size={13} />
+                  This ticket has not been assigned to an attendee yet.
+                </span>
+              )}
+            </div>
 
-                {/* Ticket info */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-[11px] text-base-content/60 font-semibold">Event</span>
-                    <span className="font-bold text-base-content">{eventTitle}</span>
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-[11px] text-base-content/60 font-semibold">Ticket type</span>
-                    <span className="font-bold text-base-content">{getTypeName(detailTicket)}</span>
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-[11px] text-base-content/60 font-semibold">Booking</span>
-                    <span className="font-bold text-base-content">#{detailTicket.bookingId}</span>
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-[11px] text-base-content/60 font-semibold">Scanned at</span>
-                    <span className="font-bold text-base-content">{fmtDate(detailTicket.scannedAt)}</span>
-                  </div>
-                  <div className="flex flex-col gap-0.5 col-span-2">
-                    <span className="text-[11px] text-base-content/60 font-semibold">Ticket token</span>
-                    <span className="font-bold font-mono text-base-content break-all">{tToken(detailTicket) || "—"}</span>
-                  </div>
-                </div>
-
-                {/* Purchaser (from the booking) */}
-                <div className="flex flex-col gap-2 border-t border-base-200 pt-3">
-                  <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-base-content/40 font-bold">
-                    <Receipt size={11} /> Purchased by
-                  </span>
-                  <PurchaserInfo bookingId={detailTicket.bookingId} />
-                </div>
+            {/* Ticket info */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[11px] text-base-content/60 font-semibold">Event</span>
+                <span className="font-bold text-base-content">{eventTitle}</span>
               </div>
-
-              <div className="flex justify-end pt-3 border-t border-base-200">
-                <button onClick={() => setDetailTicket(null)} className="btn btn-ghost btn-xs sm:btn-sm rounded-xl font-bold">
-                  Close
-                </button>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[11px] text-base-content/60 font-semibold">Ticket type</span>
+                <span className="font-bold text-base-content">{getTypeName(detailTicket)}</span>
               </div>
-            </motion.div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[11px] text-base-content/60 font-semibold">Booking</span>
+                <span className="font-bold text-base-content">#{tBooking(detailTicket)}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[11px] text-base-content/60 font-semibold">Scanned at</span>
+                <span className="font-bold text-base-content">{fmtDate((detailTicket as any).scannedAt)}</span>
+              </div>
+              <div className="flex flex-col gap-0.5 col-span-2">
+                <span className="text-[11px] text-base-content/60 font-semibold">Ticket number</span>
+                <span className="font-bold font-mono text-base-content break-all">{tNumber(detailTicket) || "—"}</span>
+              </div>
+              <div className="flex flex-col gap-0.5 col-span-2">
+                <span className="text-[11px] text-base-content/60 font-semibold">Ticket token</span>
+                <span className="font-bold font-mono text-base-content break-all">{tToken(detailTicket) || "—"}</span>
+              </div>
+            </div>
+
+            {/* Purchaser (from the booking) */}
+            <div className="flex flex-col gap-2 border-t border-base-200 pt-3">
+              <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-base-content/40 font-bold">
+                <Receipt size={11} /> Purchased by
+              </span>
+              <PurchaserInfo booking={bookingById.get(tBooking(detailTicket))} isLoading={bookingsLoading} />
+            </div>
           </div>
         )}
-      </AnimatePresence>
+      </ModalShell>
     </div>
   );
 };

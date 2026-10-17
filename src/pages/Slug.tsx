@@ -41,9 +41,10 @@ import { useGetVenueByIdQuery } from "../features/APIS/VenueApi";
 import { useCreateBookingMutation } from "../features/APIS/BookingsApi";
 
 import {
-  useInitiateStkPushMutation,
-  useCreateStripeCheckoutMutation,
+  useInitiatePaystackMpesaMutation,
+  useInitializePaystackCheckoutMutation,
   useCheckPaymentStatusQuery,
+  useLazyVerifyPaystackPaymentQuery,
 } from "../features/APIS/MpesaApi";
 import { Link, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
@@ -229,11 +230,16 @@ export const EventSlugPage = () => {
   const [createBooking, { isLoading: isBookingLoading }] =
     useCreateBookingMutation();
 
-  const [initiateStkPush, { isLoading: isStkLoading }] =
-    useInitiateStkPushMutation();
+  // Paystack: direct M-Pesa prompt (replaces STK push)
+  const [initiatePaystackMpesa, { isLoading: isStkLoading }] =
+    useInitiatePaystackMpesaMutation();
 
-  const [createStripeCheckout, { isLoading: isStripeLoading }] =
-    useCreateStripeCheckoutMutation();
+  // Paystack: hosted checkout page for card payments
+  const [initializePaystackCheckout, { isLoading: isCardLoading }] =
+    useInitializePaystackCheckoutMutation();
+
+  // Paystack: manual verify, used as a backup if the webhook is late
+  const [triggerVerifyPayment] = useLazyVerifyPaystackPaymentQuery();
 
   const [selectedTicketType, setSelectedTicketType] = useState<any | null>(
     null
@@ -243,11 +249,20 @@ export const EventSlugPage = () => {
 
   /**
    * One attendee object is created for every ticket.
-   * Only the first one (main contact) is required.
+   * Only the first one (the buyer / main contact) is required.
    */
   const [attendeeDetails, setAttendeeDetails] = useState<Attendee[]>([
     { name: "", email: "", phone: "" },
   ]);
+
+  /**
+   * When buying 2+ tickets we ask the buyer whether they want to name each
+   * ticket holder now. Default is "no": the buyer receives all the tickets
+   * and shares them later, so only their own details are needed.
+   */
+  const [assignNow, setAssignNow] = useState(false);
+
+  const shouldAssign = assignNow && ticketQuantity > 1;
 
   // Pre-fill only the main contact's name and email for authenticated users.
   // The phone number remains editable because it is not stored in authSlice.
@@ -275,7 +290,7 @@ export const EventSlugPage = () => {
     loggedInEmail,
   ]);
 
-  const [paymentMethod, setPaymentMethod] = useState<"mpesa" | "stripe">(
+  const [paymentMethod, setPaymentMethod] = useState<"mpesa" | "card">(
     "mpesa"
   );
 
@@ -294,6 +309,9 @@ export const EventSlugPage = () => {
   >(null);
 
   const [activeBookingId, setActiveBookingId] = useState<number | null>(null);
+
+  // Paystack reference of the M-Pesa payment that is currently pending
+  const [paymentReference, setPaymentReference] = useState<string | null>(null);
 
   const [isWaitingForMpesa, setIsWaitingForMpesa] = useState(false);
 
@@ -362,8 +380,23 @@ export const EventSlugPage = () => {
       setShowSuccessModal(true);
 
       setActiveBookingId(null);
+
+      setPaymentReference(null);
     }
   }, [statusResponse]);
+
+  // Backup for a late webhook: while waiting for M-Pesa, ask the server to
+  // verify the payment with Paystack every few seconds. The server records the
+  // result, and the booking-status polling above then picks it up.
+  useEffect(() => {
+    if (!isWaitingForMpesa || !paymentReference) return;
+
+    const interval = window.setInterval(() => {
+      triggerVerifyPayment(paymentReference);
+    }, 8000);
+
+    return () => window.clearInterval(interval);
+  }, [isWaitingForMpesa, paymentReference, triggerVerifyPayment]);
 
   // Show the event name in the browser tab
   useEffect(() => {
@@ -402,6 +435,9 @@ export const EventSlugPage = () => {
 
     setTicketQuantity(clampedQty);
 
+    // A single ticket never needs the "assign now" choice
+    if (clampedQty <= 1) setAssignNow(false);
+
     setAttendeeDetails((prev) => {
       const updated = [...prev];
 
@@ -439,9 +475,9 @@ export const EventSlugPage = () => {
   };
 
   /**
-   * Only the main contact (ticket 1) is required.
-   * Other tickets may be left completely blank.
-   * If someone starts filling another ticket, we ask for at least a name.
+   * Only the buyer / main contact (ticket 1) is required.
+   * Other tickets are only checked when the buyer chose to assign them now.
+   * If they start filling another ticket, we ask for at least a name.
    */
   const validateAttendees = () => {
     if (attendeeDetails.length !== ticketQuantity) {
@@ -466,18 +502,20 @@ export const EventSlugPage = () => {
       return false;
     }
 
-    for (let i = 1; i < attendeeDetails.length; i++) {
-      const a = attendeeDetails[i];
+    if (shouldAssign) {
+      for (let i = 1; i < attendeeDetails.length; i++) {
+        const a = attendeeDetails[i];
 
-      if (isBlankAttendee(a)) continue;
+        if (isBlankAttendee(a)) continue;
 
-      if (!a.name.trim()) {
-        setCheckoutError(
-          `You started adding details for ticket ${
-            i + 1
-          }. Please enter a name, or clear the fields to skip it.`
-        );
-        return false;
+        if (!a.name.trim()) {
+          setCheckoutError(
+            `You started adding details for ticket ${
+              i + 1
+            }. Please enter a name, or clear the fields to skip it.`
+          );
+          return false;
+        }
       }
     }
 
@@ -486,8 +524,10 @@ export const EventSlugPage = () => {
 
   /**
    * Always returns one attendee per ticket, so the backend still gets
-   * quantity === attendees.length. Blank tickets (or missing email/phone)
-   * fall back to the main contact, so those tickets go to them.
+   * quantity === attendees.length.
+   * - Not assigning now: every ticket goes to the buyer.
+   * - Assigning now: blank tickets (or missing email/phone) fall back to the
+   *   main contact.
    */
   const getBookingAttendees = () => {
     const main = {
@@ -495,6 +535,10 @@ export const EventSlugPage = () => {
       email: attendeeDetails[0].email.trim(),
       phone: attendeeDetails[0].phone.trim(),
     };
+
+    if (!shouldAssign) {
+      return attendeeDetails.map(() => ({ ...main }));
+    }
 
     return attendeeDetails.map((a, i) => {
       if (i === 0 || isBlankAttendee(a)) return { ...main };
@@ -553,7 +597,7 @@ export const EventSlugPage = () => {
         guestEmail: primaryAttendee.email.trim(),
         guestPhone: primaryAttendee.phone.trim(),
 
-        // One attendee per ticket (blank tickets use the main contact)
+        // One attendee per ticket (unassigned tickets use the main contact)
         attendees: getBookingAttendees(),
 
         idempotencyKey,
@@ -575,12 +619,22 @@ export const EventSlugPage = () => {
 
       setActiveBookingId(Number(createdBookingId));
 
-      const stkPayload = {
+      // Paystack sends the "Enter PIN" prompt to this phone.
+      // The amount comes from the booking in the database.
+      const mpesaPayload = {
         phoneNumber: primaryAttendee.phone.trim(),
         bookingId: Number(createdBookingId),
+        email: primaryAttendee.email.trim(),
       };
 
-      await initiateStkPush(stkPayload).unwrap();
+      const mpesaResponse: any = await initiatePaystackMpesa(
+        mpesaPayload
+      ).unwrap();
+
+      // Keep the reference so we can verify the payment if the webhook is late
+      const mpesaData = mpesaResponse?.data || mpesaResponse;
+
+      setPaymentReference(mpesaData?.reference || null);
 
       setIsWaitingForMpesa(true);
     } catch (err: any) {
@@ -595,7 +649,7 @@ export const EventSlugPage = () => {
     }
   };
 
-  const handleStripeCheckout = async () => {
+  const handleCardCheckout = async () => {
     setCheckoutError(null);
     setCheckoutSuccessMessage(null);
 
@@ -621,13 +675,9 @@ export const EventSlugPage = () => {
     const primaryAttendee = attendeeDetails[0];
 
     try {
-      const idempotencyKey = `checkout-stripe-${Date.now()}-${Math.random()
+      const idempotencyKey = `checkout-card-${Date.now()}-${Math.random()
         .toString(36)
         .substring(2, 9)}`;
-
-      const unitPrice = Number(selectedTicketType.price || 0);
-
-      const totalAmount = unitPrice * ticketQuantity;
 
       const bookingPayload = {
         eventId: Number(eventId),
@@ -641,7 +691,7 @@ export const EventSlugPage = () => {
         guestEmail: primaryAttendee.email.trim(),
         guestPhone: primaryAttendee.phone.trim(),
 
-        // One attendee per ticket (blank tickets use the main contact)
+        // One attendee per ticket (unassigned tickets use the main contact)
         attendees: getBookingAttendees(),
 
         idempotencyKey,
@@ -657,44 +707,47 @@ export const EventSlugPage = () => {
 
       if (!createdBookingId) {
         throw new Error(
-          "Booking created, but failed to retrieve booking ID for Stripe checkout."
+          "Booking created, but failed to retrieve booking ID for card checkout."
         );
       }
 
-      const stripePayload = {
+      // The amount comes from the booking in the database
+      const checkoutPayload = {
         bookingId: Number(createdBookingId),
-        amount: totalAmount,
-        eventName: event?.title || "Event Ticket",
-        ticketTypeName: selectedTicketType.name,
-        quantity: Number(ticketQuantity),
+        email: primaryAttendee.email.trim(),
       };
 
-      const stripeResponse: any = await createStripeCheckout(
-        stripePayload
+      const checkoutResponse: any = await initializePaystackCheckout(
+        checkoutPayload
       ).unwrap();
 
-      if (stripeResponse?.url) {
-        setCheckoutSuccessMessage("Redirecting to Stripe checkout gateway...");
+      const checkoutData = checkoutResponse?.data || checkoutResponse;
 
-        window.location.href = stripeResponse.url;
+      const authorizationUrl =
+        checkoutData?.authorizationUrl || checkoutData?.authorization_url;
+
+      if (authorizationUrl) {
+        setCheckoutSuccessMessage("Redirecting to secure Paystack checkout...");
+
+        window.location.href = authorizationUrl;
       } else {
         throw new Error(
-          "Stripe checkout session initialized, but no redirect URL was returned."
+          "Paystack checkout initialized, but no redirect URL was returned."
         );
       }
     } catch (err: any) {
-      console.error("Stripe Checkout Error:", err);
+      console.error("Card Checkout Error:", err);
 
       setCheckoutError(
         err?.data?.message ||
           err?.data?.error ||
           err?.message ||
-          "Failed to initiate Stripe card payment."
+          "Failed to initiate card payment."
       );
     }
   };
 
-  const isProcessing = isBookingLoading || isStkLoading || isStripeLoading;
+  const isProcessing = isBookingLoading || isStkLoading || isCardLoading;
 
   const total = Number(selectedTicketType?.price || 0) * ticketQuantity;
 
@@ -887,6 +940,12 @@ export const EventSlugPage = () => {
     { label: "Get your tickets by email", state: "todo" },
   ];
 
+  // Only show every ticket's form when the buyer chose to assign now;
+  // otherwise just the buyer's own details.
+  const visibleAttendees = shouldAssign
+    ? attendeeDetails
+    : attendeeDetails.slice(0, 1);
+
   return (
     <div className="min-h-screen bg-base-100 text-base-content flex flex-col justify-between font-sans selection:bg-primary selection:text-primary-content relative">
       <Navbar />
@@ -960,6 +1019,7 @@ export const EventSlugPage = () => {
                 onClick={() => {
                   setIsWaitingForMpesa(false);
                   setActiveBookingId(null);
+                  setPaymentReference(null);
                 }}
                 className="btn btn-ghost h-12 rounded-2xl text-base-content/70 w-full"
               >
@@ -1696,14 +1756,77 @@ export const EventSlugPage = () => {
 
                         <p className="text-sm text-base-content/60 mt-0.5">
                           {ticketQuantity > 1
-                            ? "Only your details are required. Adding details for the other tickets is optional."
+                            ? shouldAssign
+                              ? "Your details are required. Details for the other tickets are optional."
+                              : "Just your details are needed. All tickets will be sent to you."
                             : "Add your details so we can send your ticket."}
                         </p>
                       </div>
                     </div>
 
+                    {/* Ask whether to assign the tickets now (2+ tickets only) */}
+                    {ticketQuantity > 1 && (
+                      <div className="rounded-2xl border border-base-300 bg-base-200/60 p-4 space-y-3">
+                        <div>
+                          <p className="text-sm font-bold">
+                            Do you want to assign these {ticketQuantity}{" "}
+                            tickets now?
+                          </p>
+
+                          <p className="text-xs text-base-content/60 mt-0.5">
+                            If not, all tickets will be sent to you and you can
+                            share them with your guests later.
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setAssignNow(false)}
+                            className={`flex items-center gap-2.5 rounded-xl border-2 px-3.5 py-3 text-left text-sm font-bold transition-all ${
+                              !assignNow
+                                ? "border-primary bg-primary/10"
+                                : "border-base-300 bg-base-100 hover:border-base-content/30"
+                            }`}
+                          >
+                            <span
+                              className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border-2 ${
+                                !assignNow
+                                  ? "bg-primary border-primary text-primary-content"
+                                  : "border-base-content/25 text-transparent"
+                              }`}
+                            >
+                              <Check size={12} strokeWidth={3} />
+                            </span>
+                            No, send them all to me
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setAssignNow(true)}
+                            className={`flex items-center gap-2.5 rounded-xl border-2 px-3.5 py-3 text-left text-sm font-bold transition-all ${
+                              assignNow
+                                ? "border-primary bg-primary/10"
+                                : "border-base-300 bg-base-100 hover:border-base-content/30"
+                            }`}
+                          >
+                            <span
+                              className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border-2 ${
+                                assignNow
+                                  ? "bg-primary border-primary text-primary-content"
+                                  : "border-base-content/25 text-transparent"
+                              }`}
+                            >
+                              <Check size={12} strokeWidth={3} />
+                            </span>
+                            Yes, assign now
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-3">
-                      {attendeeDetails.map((attendee, index) => (
+                      {visibleAttendees.map((attendee, index) => (
                         <div
                           key={index}
                           className="p-4 sm:p-5 rounded-2xl bg-base-100 border border-base-300 shadow-sm space-y-4"
@@ -1716,12 +1839,16 @@ export const EventSlugPage = () => {
 
                               <div className="min-w-0">
                                 <p className="text-sm font-bold leading-tight">
-                                  ticket {index + 1}
+                                  {shouldAssign
+                                    ? `ticket ${index + 1}`
+                                    : "Your details"}
                                 </p>
 
                                 {index === 0 ? (
                                   <p className="text-xs font-semibold text-primary">
-                                    Main contact · required
+                                    {shouldAssign
+                                      ? "Main contact · required"
+                                      : "Buyer · required"}
                                   </p>
                                 ) : (
                                   <p className="text-xs font-semibold text-base-content/50">
@@ -1731,12 +1858,14 @@ export const EventSlugPage = () => {
                               </div>
                             </div>
 
-                            <span className="text-xs font-semibold text-base-content/50 shrink-0">
-                              KES{" "}
-                              {Number(
-                                selectedTicketType.price || 0
-                              ).toLocaleString()}
-                            </span>
+                            {shouldAssign && (
+                              <span className="text-xs font-semibold text-base-content/50 shrink-0">
+                                KES{" "}
+                                {Number(
+                                  selectedTicketType.price || 0
+                                ).toLocaleString()}
+                              </span>
+                            )}
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1825,10 +1954,10 @@ export const EventSlugPage = () => {
                         </div>
                       ))}
 
-                      {ticketQuantity > 1 && (
+                      {shouldAssign && (
                         <p className="text-xs text-base-content/60 flex items-start gap-2 px-1">
                           <Info size={14} className="shrink-0 mt-0.5" />
-                          tickets without details are sent to the main
+                          Tickets without details are sent to the main
                           contact's email.
                         </p>
                       )}
@@ -2144,14 +2273,14 @@ export const EventSlugPage = () => {
 
                             <button
                               type="button"
-                              onClick={() => setPaymentMethod("stripe")}
+                              onClick={() => setPaymentMethod("card")}
                               className={`relative flex flex-col items-center gap-2 rounded-2xl border-2 p-3 transition-all ${
-                                paymentMethod === "stripe"
+                                paymentMethod === "card"
                                   ? "border-primary bg-primary/10 shadow-md"
                                   : "border-base-300 bg-base-100 hover:border-base-content/30"
                               }`}
                             >
-                              {paymentMethod === "stripe" && (
+                              {paymentMethod === "card" && (
                                 <span className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-primary text-primary-content flex items-center justify-center">
                                   <Check size={12} strokeWidth={3} />
                                 </span>
@@ -2233,7 +2362,7 @@ export const EventSlugPage = () => {
                           </>
                         ) : (
                           <button
-                            onClick={handleStripeCheckout}
+                            onClick={handleCardCheckout}
                             disabled={isProcessing}
                             className="btn btn-primary w-full h-14 rounded-2xl font-black text-base shadow-lg shadow-primary/25 gap-2"
                           >

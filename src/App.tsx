@@ -8,17 +8,14 @@ import { AdminDashBoard } from './pages/AdminDashBoard';
 import ProtectedRoutes from './components/ProtectedRoutes';
 import Error from './pages/Error';
 // import UserProfile from './DashBoards/dashboard/UserProfile';
-import { Analytics } from './DashBoards/adminDashboard/Analytics';
+
 import AdminManageUsers from './DashBoards/adminDashboard/AllUsers';
-import { AllVenues } from './DashBoards/adminDashboard/AllVenues';
-// import BookingsByNationalId from './DashBoards/dashboard/BookingsById';
 import { TicketTypes } from './DashBoards/adminDashboard/getAllTicketTypes';
-import { AllBookings } from './DashBoards/adminDashboard/AllBookings';
+
 // import { EventDetailPage } from './content-folders/Events/eventPage';
 import UserSupportTickets from './DashBoards/dashboard/SupportTickets';
 import AdminSupportTickets from './DashBoards/adminDashboard/AllTicketSupport';
 import ContactForm from './pages/Contact';
-import GetPaymentsByNationalId from './DashBoards/dashboard/GetPaymentsByNationalId';
 import AllPayments from './DashBoards/adminDashboard/GetAllPayments';
 import RootLayout from './DashBoards/dashboardDesign/RootLayout';
 import EmailVerification from './pages/EmailVerification';
@@ -28,8 +25,6 @@ import SalesReport from './DashBoards/adminDashboard/SalesReport';
 // import AdminUserProfile from './DashBoards/adminDashboard/AdminUserProfile';
 import { Toaster } from 'react-hot-toast';
 import BackButtonHandler from './pages/BackButtonHandler';
-import QrCodes from './DashBoards/dashboard/QRcodes';
-import { UserAnalyticsPage } from './DashBoards/dashboard/UserAnalyticsPage';
 import { EventsPage } from './pages/Events';
 import { EventSlugPage } from './pages/Slug';
 import TicketViewPage from './pages/TicketViewPage'; // 👈 Imported the new Ticket View page
@@ -57,6 +52,12 @@ import MyTickets from './DashBoards/dashboard/TicketManager';
 import AdminOrganizationManager from './DashBoards/adminDashboard/Adminorganizationmanager ';
 import AdminWalletManager from './DashBoards/adminDashboard/AdminWalletManager';
 import AdminAnalytics from './DashBoards/adminDashboard/AdminAnalytics';
+import PrivacyPolicy from './pages/Privacypolicy';
+import TermsAndConditions from './pages/Termsandconditions';
+import PaymentVerify from './pages/PaymentVerify';
+import MyPayments from './DashBoards/dashboard/Payments';
+import UserAnalytics from './DashBoards/dashboard/UserAnalytics';
+import EventSalesReport from './DashBoards/OrganizerDashboard/EventSalesReport';
 
 function App() {
   const Router = createBrowserRouter([
@@ -72,6 +73,8 @@ function App() {
         { path: '/', element: <Home /> },
         { path: '/about', element: <AboutPage /> },
         { path: '/events', element: <EventsPage /> },
+        { path: '/privacy-policy', element: <PrivacyPolicy /> },
+        { path: '/terms-and-conditions', element: <TermsAndConditions /> },
         { path: '/events/:slug', element: <EventSlugPage /> },
         { path: '/login', element: <Login /> },
         { path: '/pricing', element: <PricingSection /> },
@@ -81,6 +84,7 @@ function App() {
         { path: "/forgot-password", element: <ForgotPassword />, errorElement: <Error /> },
         { path: "/reset-password/:token", element: <ResetPassword />, errorElement: <Error /> },
         { path: '/tickets/view/:ticketToken', element: <TicketViewPage /> }, 
+        { path: "/payment/verify", element: <PaymentVerify /> },
       ],
     },
 
@@ -96,10 +100,10 @@ function App() {
         { path: 'profile', element: <UserProfileManager /> },
         { path: 'my-bookings', element: <MyBookings /> },
         { path: 'supportTickets', element: <UserSupportTickets /> },
-        { path: 'Payments', element: <GetPaymentsByNationalId /> },
+        { path: 'payments', element: <MyPayments /> },
         { path: 'tickets', element: <MyTickets /> },
-        { path: 'qr-codes', element: <QrCodes /> },
-        { path: 'analytics', element: <UserAnalyticsPage /> },
+        { path: 'analytics', element: <UserAnalytics /> },
+
       ],
     },
     {
@@ -144,6 +148,7 @@ function App() {
         { path: 'wallet', element: <WalletManager /> },
         { path: 'profile', element: <OrganizerProfileManager /> },
         { path: 'my-venues', element: <VenueManager /> },
+        { path: 'sales-report', element: <EventSalesReport /> },
      
       ],
     },

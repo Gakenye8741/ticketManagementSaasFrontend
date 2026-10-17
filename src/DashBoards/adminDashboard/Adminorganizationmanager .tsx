@@ -1638,7 +1638,6 @@ export const AdminOrganizationManager = () => {
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <h1 className="text-lg sm:text-xl font-black tracking-tight">Organizations</h1>
-              <span className="badge badge-primary badge-xs font-bold px-2 py-0.5">Admin</span>
             </div>
             <p className="text-[11px] text-base-content/60">
               <span className="font-bold text-base-content">{orgs.length}</span> total organizations ·{" "}

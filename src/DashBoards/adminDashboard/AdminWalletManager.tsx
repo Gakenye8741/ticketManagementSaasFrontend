@@ -32,14 +32,18 @@
  *    Every mutation invalidates the "Wallet" cache tag, so the numbers on
  *    screen refresh by themselves, no manual reload.
  *
- * 3. PENDING PAYOUTS  (walletApi)
- *    `getPendingPayouts` lists every payout waiting to be settled.
- *      - View as cards or as a table (toggle top right).
- *      - Filter by organization.
- *      - Mark ONE payout paid (needs the M-Pesa/bank reference) or failed.
- *      - Select several and mark them paid/failed in one request (bulk).
- *    Settling a payout invalidates "Payouts" + "Wallet", so lists and
- *    balances update right away.
+ * 3. PAYOUTS TO SETTLE  (walletApi + Paystack Transfers)
+ *    `getPendingPayouts` lists every payout that is still open:
+ *      - PENDING    = requested by the organizer, waiting for you.
+ *                     "Send" pays it through Paystack. "Paid manually" records
+ *                     a payment you made outside Paystack. "Reject" returns
+ *                     the money to the organizer's available balance.
+ *      - PROCESSING = already sent to Paystack, waiting for confirmation.
+ *                     Paystack tells our server by webhook and the payout
+ *                     leaves this list by itself. "Check status" asks Paystack
+ *                     directly if it seems stuck.
+ *    The list refreshes every 15 seconds. You can view cards or a table,
+ *    filter by organization, and send several Pending payouts at once.
  *
  * 4. FEEDBACK
  *    Success and error banners are dismissible (the X). Success banners also
@@ -47,8 +51,8 @@
  *    that happen inside a modal show inside that modal, so they are never
  *    hidden behind the overlay.
  *
- * NOTE: this page is for admins. Protect the route with your admin guard;
- * the backend must still enforce the admin role on every endpoint.
+ * NOTE: this page is for admins. The backend enforces the admin role on
+ * every endpoint it calls.
  * ======================================================================
  */
 
@@ -77,6 +81,7 @@ import {
   Info,
   LayoutGrid,
   Table as TableIcon,
+  Send,
 } from "lucide-react";
 
 import {
@@ -89,7 +94,9 @@ import {
   useResetWalletMutation,
   useGetPendingPayoutsQuery,
   useUpdatePayoutStatusMutation,
-  useBulkUpdatePayoutStatusMutation,
+  useSendPayoutMutation,
+  useReconcilePayoutMutation,
+  useBulkSendPayoutsMutation,
   type Payout,
 } from "../../features/APIS/WalletApi"; // 👈 adjust to where your walletApi lives
 
@@ -120,6 +127,9 @@ interface Organization {
 const orgIdOf = (o: Organization): number => Number(o.orgId ?? o.id);
 
 type ViewMode = "cards" | "table";
+
+/** How often the payout list refreshes by itself, so Processing payouts disappear once Paystack confirms them */
+const PAYOUTS_REFRESH_MS = 15_000;
 
 // ======================================================
 // STYLES (same system as OrganizationManager)
@@ -692,7 +702,7 @@ const OrgWalletPanel = ({ orgs, orgsLoading, orgsError, onSuccess, onError }: Wa
         <>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <StatTile icon={<WalletIcon size={15} />} label="Available balance" value={money(wallet.balance, currency)} hint="Net of platform fee" />
-            <StatTile icon={<Clock size={15} />} label="Pending balance" value={money(wallet.pendingBalance, currency)} hint="Held in pending payouts" />
+            <StatTile icon={<Clock size={15} />} label="Pending balance" value={money(wallet.pendingBalance, currency)} hint="Held in open payouts" />
             <StatTile icon={<Banknote size={15} />} label="Total earned" value={money(wallet.totalEarned, currency)} hint="Lifetime net earnings" />
           </div>
 
@@ -774,6 +784,7 @@ const OrgWalletPanel = ({ orgs, orgsLoading, orgsError, onSuccess, onError }: Wa
               <>
                 This sets the pending balance of <b className="text-base-content">{org?.name ?? orgId}</b> to zero
                 {wallet ? ` (currently ${money(wallet.pendingBalance, currency)})` : ""}. Only do this after the related payouts are settled.
+                It is blocked while any payout of this organization is being sent.
               </>
             }
             confirmLabel="Clear pending"
@@ -839,31 +850,37 @@ const OrgWalletPanel = ({ orgs, orgsLoading, orgsError, onSuccess, onError }: Wa
 };
 
 // ======================================================
-// PENDING PAYOUTS (cards or table)
+// PAYOUTS TO SETTLE (cards or table)
 // ======================================================
 
 type PayoutDialog =
-  | { kind: "pay"; payout: Payout }
-  | { kind: "fail"; payout: Payout }
-  | { kind: "bulk"; status: "Completed" | "Failed" }
+  | { kind: "send"; payout: Payout }
+  | { kind: "pay"; payout: Payout } // paid outside Paystack
+  | { kind: "reject"; payout: Payout }
+  | { kind: "bulk" }
   | null;
 
-const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number, Organization> }) => {
-  const { data: payouts = [], isLoading, isFetching, isError, error, refetch } = useGetPendingPayoutsQuery();
+const PendingPayouts = ({ orgMap, onSuccess, onError }: PanelProps & { orgMap: Map<number, Organization> }) => {
+  const { data: payouts = [], isLoading, isFetching, isError, error, refetch } = useGetPendingPayoutsQuery(undefined, {
+    pollingInterval: PAYOUTS_REFRESH_MS,
+  });
 
   const [updateStatus, { isLoading: updating }] = useUpdatePayoutStatusMutation();
-  const [bulkUpdate, { isLoading: bulking }] = useBulkUpdatePayoutStatusMutation();
+  const [sendPayout, { isLoading: sending }] = useSendPayoutMutation();
+  const [reconcilePayout] = useReconcilePayoutMutation();
+  const [bulkSend, { isLoading: bulking }] = useBulkSendPayoutsMutation();
 
   const [view, setView] = useState<ViewMode>("cards");
   const [orgFilter, setOrgFilter] = useState<number | "all">("all");
   const [selected, setSelected] = useState<number[]>([]);
+  const [checking, setChecking] = useState<number | null>(null); // payout currently being checked with Paystack
   const [dialog, setDialog] = useState<PayoutDialog>(null);
   const [reference, setReference] = useState("");
   const [modalError, setModalError] = useState("");
 
   const orgName = (id: number) => orgMap.get(id)?.name ?? `Organization ${id}`;
 
-  // Organizations that currently have pending payouts (feeds the filter dropdown)
+  // Organizations that currently have open payouts (feeds the filter dropdown)
   const filterOptions = useMemo(
     () => Array.from(new Set(payouts.map((p) => p.orgId))).sort((a, b) => orgName(a).localeCompare(orgName(b))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -875,22 +892,26 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
     [payouts, orgFilter]
   );
 
-  // Selection only counts payouts that are still pending AND currently visible
+  // Only Pending payouts can be sent; Processing ones are already with Paystack
+  const selectable = useMemo(() => visible.filter((p) => p.status === "Pending"), [visible]);
+  const processingCount = visible.length - selectable.length;
+
+  // Selection only counts payouts that are still Pending AND currently visible
   const activeSelected = useMemo(
-    () => selected.filter((id) => visible.some((p) => p.payoutId === id)),
-    [selected, visible]
+    () => selected.filter((id) => selectable.some((p) => p.payoutId === id)),
+    [selected, selectable]
   );
 
-  const visibleTotal = useMemo(() => visible.reduce((sum, p) => sum + Number(p.amount), 0), [visible]);
+  const openTotal = useMemo(() => visible.reduce((sum, p) => sum + Number(p.amount), 0), [visible]);
   const selectedTotal = useMemo(
-    () => visible.filter((p) => activeSelected.includes(p.payoutId)).reduce((sum, p) => sum + Number(p.amount), 0),
-    [visible, activeSelected]
+    () => selectable.filter((p) => activeSelected.includes(p.payoutId)).reduce((sum, p) => sum + Number(p.amount), 0),
+    [selectable, activeSelected]
   );
 
-  const allSelected = visible.length > 0 && activeSelected.length === visible.length;
+  const allSelected = selectable.length > 0 && activeSelected.length === selectable.length;
 
   const toggle = (id: number) => setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
-  const toggleAll = () => setSelected(allSelected ? [] : visible.map((p) => p.payoutId));
+  const toggleAll = () => setSelected(allSelected ? [] : selectable.map((p) => p.payoutId));
 
   const openDialog = (d: Exclude<PayoutDialog, null>) => {
     setReference("");
@@ -899,6 +920,39 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
   };
   const closeDialog = () => setDialog(null);
 
+  // ---- send one payout through Paystack ----
+  const handleSend = async () => {
+    const current = dialog;
+    if (current?.kind !== "send") return;
+    setModalError("");
+
+    try {
+      await sendPayout({ payoutId: current.payout.payoutId }).unwrap();
+      onSuccess(`Payout #${current.payout.payoutId} sent to Paystack. It will complete automatically once Paystack confirms.`);
+      closeDialog();
+    } catch (err) {
+      setModalError(getErrorMessage(err, "Failed to send the payout."));
+    }
+  };
+
+  // ---- ask Paystack what happened to a Processing payout ----
+  const handleCheck = async (p: Payout) => {
+    setChecking(p.payoutId);
+    try {
+      const res = await reconcilePayout({ payoutId: p.payoutId }).unwrap();
+      if (res.status === "Processing") {
+        onSuccess(`Payout #${p.payoutId} is still with Paystack. Check again in a minute.`);
+      } else {
+        onSuccess(`Payout #${p.payoutId} is now ${res.status}.`);
+      }
+    } catch (err) {
+      onError(getErrorMessage(err, "Could not check this payout with Paystack."));
+    } finally {
+      setChecking(null);
+    }
+  };
+
+  // ---- paid outside Paystack ----
   const handlePaySubmit = async (e: FormEvent) => {
     e.preventDefault();
     const current = dialog;
@@ -914,61 +968,94 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
 
     try {
       await updateStatus({ payoutId: current.payout.payoutId, status: "Completed", transactionReference: ref }).unwrap();
-      onSuccess(`Payout #${current.payout.payoutId} to ${orgName(current.payout.orgId)} marked as paid.`);
+      onSuccess(`Payout #${current.payout.payoutId} to ${orgName(current.payout.orgId)} recorded as paid.`);
       closeDialog();
     } catch (err) {
       setModalError(getErrorMessage(err, "Failed to update payout."));
     }
   };
 
-  const handleFail = async () => {
+  // ---- reject: money goes back to the organizer's available balance ----
+  const handleReject = async () => {
     const current = dialog;
-    if (current?.kind !== "fail") return;
+    if (current?.kind !== "reject") return;
     setModalError("");
 
     try {
       await updateStatus({ payoutId: current.payout.payoutId, status: "Failed" }).unwrap();
-      onSuccess(`Payout #${current.payout.payoutId} marked as failed.`);
+      onSuccess(`Payout #${current.payout.payoutId} rejected. The money is back in the organization's available balance.`);
       closeDialog();
     } catch (err) {
-      setModalError(getErrorMessage(err, "Failed to update payout."));
+      setModalError(getErrorMessage(err, "Failed to reject the payout."));
     }
   };
 
+  // ---- send several Pending payouts ----
   const handleBulk = async () => {
-    const current = dialog;
-    if (current?.kind !== "bulk") return;
+    if (dialog?.kind !== "bulk") return;
     setModalError("");
 
     try {
-      const res = await bulkUpdate({ payoutIds: activeSelected, status: current.status }).unwrap();
-      onSuccess(
-        `${res.updatedCount} payout${res.updatedCount === 1 ? "" : "s"} marked as ${current.status === "Completed" ? "paid" : "failed"}.`
-      );
+      const results = await bulkSend({ payoutIds: activeSelected }).unwrap();
+      const ok = results.filter((r) => r.ok).length;
+      const failed = results.filter((r) => !r.ok);
+
       setSelected([]);
       closeDialog();
+
+      if (failed.length === 0) {
+        onSuccess(`${ok} payout${ok === 1 ? "" : "s"} sent to Paystack.`);
+      } else {
+        onError(
+          `${ok} of ${results.length} sent. #${failed[0].payoutId} failed: ${failed[0].error ?? "unknown error"}` +
+            (failed.length > 1 ? ` (and ${failed.length - 1} more, see their notes in the list)` : "")
+        );
+      }
     } catch (err) {
-      setModalError(getErrorMessage(err, "Failed to update payouts."));
+      setModalError(getErrorMessage(err, "Failed to send payouts."));
     }
   };
 
-  /** The two per-payout buttons, shared by the card and table layouts */
-  const rowActions = (p: Payout, compact = false) => (
-    <div className="flex gap-2">
-      <button
-        onClick={() => openDialog({ kind: "pay", payout: p })}
-        className={`btn btn-primary gap-1.5 ${compact ? "btn-xs rounded-lg font-bold" : `btn-sm flex-1 lg:flex-none ${btnBase}`}`}
-      >
-        <Check size={13} /> Mark paid
-      </button>
-      <button
-        onClick={() => openDialog({ kind: "fail", payout: p })}
-        className={`btn btn-ghost text-error hover:bg-error/10 ${compact ? "btn-xs rounded-lg font-bold" : `btn-sm flex-1 lg:flex-none ${btnBase}`}`}
-      >
-        Fail
-      </button>
-    </div>
-  );
+  /** Status badge, shared by the card and table layouts */
+  const statusBadge = (p: Payout) =>
+    p.status === "Processing" ? (
+      <span className="badge badge-sm badge-info gap-1 font-bold text-info-content">
+        <span className="loading loading-spinner loading-xs" /> Sending
+      </span>
+    ) : (
+      <span className="badge badge-sm badge-warning font-bold text-warning-content">Pending</span>
+    );
+
+  /** Action buttons, shared by the card and table layouts */
+  const rowActions = (p: Payout, compact = false) => {
+    const size = compact ? "btn-xs rounded-lg font-bold" : `btn-sm ${btnBase}`;
+
+    if (p.status === "Processing") {
+      return (
+        <button
+          onClick={() => handleCheck(p)}
+          disabled={checking === p.payoutId}
+          className={`btn btn-ghost bg-base-200 gap-1.5 ${size}`}
+        >
+          <RefreshCw size={13} className={checking === p.payoutId ? "animate-spin" : ""} /> Check status
+        </button>
+      );
+    }
+
+    return (
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => openDialog({ kind: "send", payout: p })} className={`btn btn-primary gap-1.5 ${size}`}>
+          <Send size={13} /> Send
+        </button>
+        <button onClick={() => openDialog({ kind: "pay", payout: p })} className={`btn btn-ghost bg-base-200 ${size}`}>
+          Paid manually
+        </button>
+        <button onClick={() => openDialog({ kind: "reject", payout: p })} className={`btn btn-ghost text-error hover:bg-error/10 ${size}`}>
+          Reject
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className={`${panelClass} p-4 sm:p-5 flex flex-col gap-4`}>
@@ -977,11 +1064,13 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-2">
             <Banknote size={16} className="text-primary" />
-            <h3 className="font-black text-xs uppercase tracking-wider text-base-content">Pending payouts</h3>
+            <h3 className="font-black text-xs uppercase tracking-wider text-base-content">Payouts to settle</h3>
             {payouts.length > 0 && <span className="badge badge-sm badge-ghost font-bold">{payouts.length}</span>}
           </div>
 
-          <p className="text-[11px] text-base-content/60">Send the money first, then record the transaction reference here.</p>
+          <p className="text-[11px] text-base-content/60">
+            Send payouts through Paystack. They finish by themselves once Paystack confirms, and this list updates every few seconds.
+          </p>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
@@ -1025,9 +1114,10 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
 
       {/* SUMMARY */}
       {visible.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <StatTile icon={<Clock size={15} />} label="Waiting to be paid" value={`${visible.length} payout${visible.length === 1 ? "" : "s"}`} />
-          <StatTile icon={<Banknote size={15} />} label="Total to send" value={money(visibleTotal)} />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatTile icon={<Clock size={15} />} label="Waiting to send" value={`${selectable.length}`} />
+          <StatTile icon={<Send size={15} />} label="Sending now" value={`${processingCount}`} hint="Waiting for Paystack" />
+          <StatTile icon={<Banknote size={15} />} label="Total open" value={money(openTotal)} />
           <StatTile icon={<Check size={15} />} label="Selected" value={money(selectedTotal)} hint={`${activeSelected.length} payout${activeSelected.length === 1 ? "" : "s"}`} />
         </div>
       )}
@@ -1040,11 +1130,8 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
           </span>
 
           <div className="flex flex-col sm:flex-row gap-2">
-            <button onClick={() => openDialog({ kind: "bulk", status: "Completed" })} className={`btn btn-primary btn-sm gap-2 ${btnBase}`}>
-              <Check size={14} /> Mark selected paid
-            </button>
-            <button onClick={() => openDialog({ kind: "bulk", status: "Failed" })} className={`btn btn-ghost btn-sm text-error hover:bg-error/10 ${btnBase}`}>
-              Mark selected failed
+            <button onClick={() => openDialog({ kind: "bulk" })} className={`btn btn-primary btn-sm gap-2 ${btnBase}`}>
+              <Send size={14} /> Send selected via Paystack
             </button>
             <button onClick={() => setSelected([])} className={`btn btn-ghost btn-sm gap-1 ${btnBase}`}>
               <X size={14} /> Clear selection
@@ -1067,28 +1154,36 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
           ))}
         </div>
       ) : isError ? (
-        <InlineError message={getErrorMessage(error, "Could not load pending payouts.")} />
+        <InlineError message={getErrorMessage(error, "Could not load payouts.")} />
       ) : visible.length === 0 ? (
         <div className="text-center py-14 bg-base-200/20 rounded-2xl border border-dashed border-base-300 p-6">
           <Inbox size={36} className="mx-auto text-primary/40 mb-2" />
           <p className="font-bold text-xs text-base-content">
-            {orgFilter === "all" ? "No pending payouts" : "No pending payouts for this organization"}
+            {orgFilter === "all" ? "No payouts to settle" : "No open payouts for this organization"}
           </p>
           <p className="text-[11px] text-base-content/60 mt-0.5">New payout requests will show up here.</p>
         </div>
       ) : view === "table" ? (
         <div className="overflow-x-auto bg-base-100 border border-base-200 rounded-2xl shadow-sm">
-          <table className="table table-sm w-full text-xs min-w-[760px]">
+          <table className="table table-sm w-full text-xs min-w-[900px]">
             <thead>
               <tr className="bg-base-200/50 text-base-content/70 border-b border-base-200">
                 <th className="w-10 py-3 px-4">
-                  <input type="checkbox" className="checkbox checkbox-primary checkbox-sm" checked={allSelected} onChange={toggleAll} aria-label="Select all payouts" />
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-primary checkbox-sm"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    disabled={selectable.length === 0}
+                    aria-label="Select all pending payouts"
+                  />
                 </th>
                 <th className="py-3 px-4 font-bold">Payout</th>
                 <th className="py-3 px-4 font-bold">Organization</th>
                 <th className="py-3 px-4 font-bold text-right">Amount</th>
                 <th className="py-3 px-4 font-bold text-right">Fee</th>
                 <th className="py-3 px-4 font-bold">Send to</th>
+                <th className="py-3 px-4 font-bold">Status</th>
                 <th className="py-3 px-4 font-bold">Requested</th>
                 <th className="py-3 px-4" />
               </tr>
@@ -1097,13 +1192,15 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
               {visible.map((p) => (
                 <tr key={p.payoutId} className={`hover:bg-base-200/30 border-b border-base-100 transition-colors ${activeSelected.includes(p.payoutId) ? "bg-primary/5" : ""}`}>
                   <td className="py-3 px-4">
-                    <input
-                      type="checkbox"
-                      className="checkbox checkbox-primary checkbox-sm"
-                      checked={activeSelected.includes(p.payoutId)}
-                      onChange={() => toggle(p.payoutId)}
-                      aria-label={`Select payout ${p.payoutId}`}
-                    />
+                    {p.status === "Pending" && (
+                      <input
+                        type="checkbox"
+                        className="checkbox checkbox-primary checkbox-sm"
+                        checked={activeSelected.includes(p.payoutId)}
+                        onChange={() => toggle(p.payoutId)}
+                        aria-label={`Select payout ${p.payoutId}`}
+                      />
+                    )}
                   </td>
                   <td className="py-3 px-4 font-mono text-xs">#{p.payoutId}</td>
                   <td className="py-3 px-4">
@@ -1120,8 +1217,14 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
                       <span className="text-[10px] text-base-content/50">{p.destinationType}</span>
                     </div>
                   </td>
+                  <td className="py-3 px-4">
+                    <div className="flex flex-col gap-1 items-start">
+                      {statusBadge(p)}
+                      {p.failureReason && <span className="text-[10px] text-warning max-w-[12rem] break-words">{p.failureReason}</span>}
+                    </div>
+                  </td>
                   <td className="py-3 px-4 text-xs text-base-content/60 whitespace-nowrap">{formatDate(p.createdAt)}</td>
-                  <td className="py-3 px-4 whitespace-nowrap">{rowActions(p, true)}</td>
+                  <td className="py-3 px-4">{rowActions(p, true)}</td>
                 </tr>
               ))}
             </tbody>
@@ -1129,10 +1232,12 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          <label className="flex items-center gap-3 px-1 text-xs font-bold text-base-content/60 cursor-pointer w-fit">
-            <input type="checkbox" className="checkbox checkbox-primary checkbox-sm" checked={allSelected} onChange={toggleAll} />
-            Select all
-          </label>
+          {selectable.length > 0 && (
+            <label className="flex items-center gap-3 px-1 text-xs font-bold text-base-content/60 cursor-pointer w-fit">
+              <input type="checkbox" className="checkbox checkbox-primary checkbox-sm" checked={allSelected} onChange={toggleAll} />
+              Select all pending
+            </label>
+          )}
 
           {visible.map((p) => {
             const checked = activeSelected.includes(p.payoutId);
@@ -1145,19 +1250,24 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
                 }`}
               >
                 <div className="flex items-start gap-3 flex-1 min-w-0">
-                  <input
-                    type="checkbox"
-                    className="checkbox checkbox-primary checkbox-sm mt-3.5 shrink-0"
-                    checked={checked}
-                    onChange={() => toggle(p.payoutId)}
-                    aria-label={`Select payout ${p.payoutId}`}
-                  />
+                  {p.status === "Pending" ? (
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-primary checkbox-sm mt-3.5 shrink-0"
+                      checked={checked}
+                      onChange={() => toggle(p.payoutId)}
+                      aria-label={`Select payout ${p.payoutId}`}
+                    />
+                  ) : (
+                    <span className="w-5 shrink-0" aria-hidden />
+                  )}
 
                   <OrgAvatar org={orgMap.get(p.orgId)} size="w-11 h-11" />
 
                   <div className="flex flex-col min-w-0 gap-0.5">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="font-black text-sm text-base-content tabular-nums">{money(p.amount)}</span>
+                      {statusBadge(p)}
                       <span className="badge badge-ghost badge-xs font-bold">Fee {money(p.fee)}</span>
                     </div>
 
@@ -1166,6 +1276,8 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
                     <span className="text-[11px] text-base-content/60 break-words">
                       Send to {p.destinationAccount} ({p.destinationType})
                     </span>
+
+                    {p.failureReason && <span className="text-[11px] text-warning break-words">Note: {p.failureReason}</span>}
 
                     <span className="text-[10px] text-base-content/40 font-mono">
                       Payout #{p.payoutId}, requested {formatDate(p.createdAt)}
@@ -1180,10 +1292,33 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
         </div>
       )}
 
-      {/* MARK PAID */}
+      {/* SEND ONE */}
+      <AnimatePresence>
+        {dialog?.kind === "send" && (
+          <ConfirmModal
+            title="Send payout via Paystack"
+            tone="primary"
+            icon={<Send size={22} />}
+            message={
+              <>
+                <b className="text-base-content">{money(Number(dialog.payout.amount) - Number(dialog.payout.fee))}</b> will be sent from
+                your Paystack balance to <b className="text-base-content">{orgName(dialog.payout.orgId)}</b> ({dialog.payout.destinationType}{" "}
+                <span className="font-mono">{dialog.payout.destinationAccount}</span>). Paystack charges its transfer fee to your balance.
+              </>
+            }
+            confirmLabel="Send now"
+            loading={sending}
+            error={modalError}
+            onClose={closeDialog}
+            onConfirm={handleSend}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* PAID MANUALLY */}
       <AnimatePresence>
         {dialog?.kind === "pay" && (
-          <ModalShell title="Mark payout as paid" onClose={closeDialog}>
+          <ModalShell title="Record manual payment" onClose={closeDialog}>
             <form onSubmit={handlePaySubmit} className="flex flex-col gap-4 text-xs">
               <div className="flex items-center gap-3 rounded-2xl bg-base-200/50 p-3">
                 <OrgAvatar org={orgMap.get(dialog.payout.orgId)} size="w-11 h-11" />
@@ -1194,6 +1329,14 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
                     To {dialog.payout.destinationAccount} ({dialog.payout.destinationType})
                   </span>
                 </div>
+              </div>
+
+              <div className="flex items-start gap-2 text-[11px] text-base-content/70 bg-warning/10 rounded-xl p-3">
+                <Info size={14} className="text-warning shrink-0 mt-0.5" />
+                <span>
+                  Use this only if you already paid this organization yourself, outside Paystack. To pay through Paystack, use{" "}
+                  <b>Send</b> instead, or the organization will be paid twice.
+                </span>
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -1213,52 +1356,52 @@ const PendingPayouts = ({ orgMap, onSuccess }: PanelProps & { orgMap: Map<number
 
               <InlineError message={modalError} />
 
-              <ModalActions onCancel={closeDialog} isLoading={updating} submitLabel="Mark as paid" />
+              <ModalActions onCancel={closeDialog} isLoading={updating} submitLabel="Record as paid" />
             </form>
           </ModalShell>
         )}
       </AnimatePresence>
 
-      {/* MARK FAILED */}
+      {/* REJECT */}
       <AnimatePresence>
-        {dialog?.kind === "fail" && (
+        {dialog?.kind === "reject" && (
           <ConfirmModal
-            title="Mark payout as failed"
+            title="Reject payout"
             tone="error"
             icon={<Trash2 size={22} />}
             message={
               <>
                 Payout <b className="text-base-content">#{dialog.payout.payoutId}</b> of{" "}
                 <b className="text-base-content">{money(dialog.payout.amount)}</b> to{" "}
-                <b className="text-base-content">{orgName(dialog.payout.orgId)}</b> will be marked as failed.
+                <b className="text-base-content">{orgName(dialog.payout.orgId)}</b> will be marked as failed, and the money returns to
+                their available balance.
               </>
             }
-            confirmLabel="Mark failed"
+            confirmLabel="Reject payout"
             cancelLabel="Keep pending"
             loading={updating}
             error={modalError}
             onClose={closeDialog}
-            onConfirm={handleFail}
+            onConfirm={handleReject}
           />
         )}
       </AnimatePresence>
 
-      {/* BULK */}
+      {/* BULK SEND */}
       <AnimatePresence>
         {dialog?.kind === "bulk" && (
           <ConfirmModal
-            title={dialog.status === "Completed" ? "Mark payouts as paid" : "Mark payouts as failed"}
-            tone={dialog.status === "Completed" ? "primary" : "error"}
-            icon={dialog.status === "Completed" ? <Check size={22} /> : <AlertCircle size={22} />}
+            title="Send selected payouts"
+            tone="primary"
+            icon={<Send size={22} />}
             message={
               <>
                 <b className="text-base-content">{activeSelected.length}</b> payout{activeSelected.length === 1 ? "" : "s"} totalling{" "}
-                <b className="text-base-content">{money(selectedTotal)}</b> will be marked as{" "}
-                {dialog.status === "Completed" ? "paid" : "failed"}.
-                {dialog.status === "Completed" && " Bulk updates don't store transaction references."}
+                <b className="text-base-content">{money(selectedTotal)}</b> will be sent through Paystack, one after another. Make sure
+                your Paystack balance can cover them. Any that fail stay Pending with a note explaining why.
               </>
             }
-            confirmLabel="Confirm"
+            confirmLabel="Send all"
             loading={bulking}
             error={modalError}
             onClose={closeDialog}
@@ -1284,12 +1427,12 @@ const HOW_IT_WORKS = [
     text: "Credit or debit an amount, clear a stuck pending balance, or reset the wallet. Reset asks you to type the ID first.",
   },
   {
-    title: "Settle payouts",
-    text: "Send the money outside the platform (M-Pesa or bank), then mark the payout as paid with its reference. Use Fail if it didn't go through.",
+    title: "Send payouts",
+    text: "Press Send on a Pending payout to pay it from your Paystack balance. It shows as Sending until Paystack confirms, then leaves the list by itself. If it seems stuck, press Check status.",
   },
   {
-    title: "Work in bulk",
-    text: "Tick several payouts and mark them all at once. Filter by organization or switch between cards and table to review.",
+    title: "Handle exceptions",
+    text: "Reject returns the money to the organization's balance. Paid manually is only for payments you made outside Paystack. Select several Pending payouts to send them in one go.",
   },
 ];
 
@@ -1399,9 +1542,8 @@ export const AdminWalletManager = () => {
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <h1 className="text-lg sm:text-xl font-black tracking-tight text-base-content">Wallet manager</h1>
-              <span className="badge badge-primary badge-xs font-bold px-2 py-0.5">Admin</span>
             </div>
-            <p className="text-[11px] text-base-content/60">Adjust organization wallets and settle payout requests</p>
+            <p className="text-[11px] text-base-content/60">Adjust organization wallets and send payout requests through Paystack</p>
           </div>
         </div>
 
@@ -1496,7 +1638,7 @@ export const AdminWalletManager = () => {
         </div>
       </div>
 
-      {/* PENDING PAYOUTS */}
+      {/* PAYOUTS TO SETTLE */}
       <PendingPayouts orgMap={orgMap} onSuccess={showSuccess} onError={showError} />
 
       <AnimatePresence>{showHelp && <HowItWorksModal onClose={() => setShowHelp(false)} />}</AnimatePresence>

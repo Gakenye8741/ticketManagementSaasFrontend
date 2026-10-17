@@ -559,11 +559,20 @@ const EventDataLoader = ({
 export const AnalyticsManager = () => {
   usePageTitle("Analytics");
 
-  const user = useSelector((state: RootState) => state.auth.user);
+  const user = useSelector((state: RootState) => state.auth.user) as any;
 
-  // The organizer's REAL organization. There is no fallback to a default one:
+  // The organizer's REAL organization, read from the logged-in user in the redux store
+  // (which is persisted in localStorage). There is no fallback to a default one:
   // someone without an organization must not see other people's analytics.
-  const { orgId, hasOrg, isLoading: orgLoading } = useOrganizerOrg();
+  const storeOrgId =
+    Number(user?.orgId ?? user?.organizationId ?? user?.organization?.orgId ?? user?.organization?.id) || null;
+
+  // Only used if the stored user doesn't carry an org id yet
+  const { orgId: hookOrgId, isLoading: hookLoading } = useOrganizerOrg();
+
+  const orgId = (storeOrgId ?? hookOrgId ?? null) as number | null;
+  const hasOrg = Boolean(orgId);
+  const orgLoading = !storeOrgId && hookLoading;
 
   // ---------------------------------------------------------------------------
   // EVENTS, SCOPE & ORGANIZATION OVERVIEW (only this organization's events)

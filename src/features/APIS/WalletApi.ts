@@ -18,7 +18,7 @@ export interface Wallet {
   walletId: number;
   orgId: number;
   balance: string; // available to withdraw (net of platform fee)
-  pendingBalance: string; // money tied up in payouts that are still Pending
+  pendingBalance: string; // money tied up in payouts that are Pending or Processing
   totalEarned: string; // lifetime net earnings
   currency: string;
   createdAt: string;
@@ -28,26 +28,51 @@ export interface Wallet {
 export interface PayoutMethod {
   methodId: number;
   orgId: number;
-  accountType: string;
+  accountType: string; // "M-Pesa" | "Till" | "Bank"
   accountNumber: string;
   accountName?: string;
+  bankCode?: string | null; // only for Bank
   isDefault: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
 
+/**
+ * Pending    = waiting for an admin to send it
+ * Processing = sent to Paystack, waiting for confirmation
+ * Completed  = money delivered
+ * Failed     = not delivered, money returned to the available balance
+ * Reversed   = was delivered, then reversed by Paystack, money returned to the available balance
+ */
+export type PayoutStatus = "Pending" | "Processing" | "Completed" | "Failed" | "Reversed";
+
 export interface Payout {
   payoutId: number;
   walletId: number;
   orgId: number;
+  methodId?: number | null;
   amount: string;
   fee: string;
-  status: "Pending" | "Completed" | "Failed";
+  status: PayoutStatus;
   destinationAccount: string;
   destinationType: string;
+  reference?: string | null;
   transactionReference?: string | null;
+  failureReason?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Bank {
+  name: string;
+  code: string;
+}
+
+/** One row of the answer to POST payouts/bulk-send */
+export interface BulkSendResult {
+  payoutId: number;
+  ok: boolean;
+  error?: string;
 }
 
 /** GET /wallets/:orgId/overview */
@@ -79,14 +104,14 @@ export const walletApi = createApi({
   }),
   refetchOnReconnect: true,
   refetchOnMountOrArgChange: true,
-  tagTypes: ["Wallet", "Wallets", "Payouts", "PayoutMethod", "PayoutMethods"],
+  tagTypes: ["Wallet", "Wallets", "Payouts", "PayoutMethod", "PayoutMethods", "Banks"],
 
   endpoints: (builder) => ({
     /* ==========================================
        1. WALLET ENDPOINTS
        ========================================== */
 
-    /** Get or Create Wallet */
+    /** Get or Create Wallet (organizers: orgId is taken from the login on the server) */
     getOrCreateWallet: builder.mutation<Wallet, { orgId: number; currency: string }>({
       query: (payload) => ({
         url: "wallets",
@@ -200,24 +225,42 @@ export const walletApi = createApi({
       invalidatesTags: (_r, _e, { orgId }) => ["Payouts", "Wallet", { type: "Wallet", id: orgId }],
     }),
 
-    /** Get Pending Payouts (Admin) */
+    /** Get payouts the admin still has to deal with: Pending + Processing (Admin) */
     getPendingPayouts: builder.query<Payout[], void>({
       query: () => "payouts/pending",
       transformResponse: (r: ApiResponse<Payout[]>) => unwrap(r),
       providesTags: ["Payouts"],
     }),
 
-    /** Bulk Update Payout Status (Admin) */
-    bulkUpdatePayoutStatus: builder.mutation<
-      { updatedCount: number },
-      { payoutIds: number[]; status: "Completed" | "Failed" }
-    >({
+    /** Send one Pending payout through Paystack (Admin) */
+    sendPayout: builder.mutation<Payout, { payoutId: number | string }>({
+      query: ({ payoutId }) => ({
+        url: `payouts/${payoutId}/send`,
+        method: "POST",
+      }),
+      transformResponse: (r: ApiResponse<Payout>) => unwrap(r),
+      // Also invalidated when it fails: the payout may have moved to Processing or back to Pending with a reason
+      invalidatesTags: ["Payouts", "Wallet"],
+    }),
+
+    /** Ask Paystack for the real state of a Processing payout (Admin) */
+    reconcilePayout: builder.mutation<Payout, { payoutId: number | string }>({
+      query: ({ payoutId }) => ({
+        url: `payouts/${payoutId}/reconcile`,
+        method: "POST",
+      }),
+      transformResponse: (r: ApiResponse<Payout>) => unwrap(r),
+      invalidatesTags: ["Payouts", "Wallet"],
+    }),
+
+    /** Send several Pending payouts through Paystack (Admin, max 100). Replaces the old bulk-status route. */
+    bulkSendPayouts: builder.mutation<BulkSendResult[], { payoutIds: number[] }>({
       query: (payload) => ({
-        url: "payouts/bulk-status",
-        method: "PATCH",
+        url: "payouts/bulk-send",
+        method: "POST",
         body: payload,
       }),
-      transformResponse: (r: ApiResponse<{ updatedCount: number }>) => unwrap(r),
+      transformResponse: (r: ApiResponse<BulkSendResult[]>) => unwrap(r),
       invalidatesTags: ["Payouts", "Wallet"],
     }),
 
@@ -250,7 +293,7 @@ export const walletApi = createApi({
     }),
 
     /** Get Payouts by Status */
-    getPayoutsByStatus: builder.query<Payout[], { orgId: number | string; status: Payout["status"] }>({
+    getPayoutsByStatus: builder.query<Payout[], { orgId: number | string; status: PayoutStatus }>({
       query: ({ orgId, status }) => `payouts/org/${orgId}/status/${status}`,
       transformResponse: (r: ApiResponse<Payout[]>) => unwrap(r),
       providesTags: ["Payouts"],
@@ -263,7 +306,7 @@ export const walletApi = createApi({
       providesTags: (_r, _e, id) => [{ type: "Payouts", id }],
     }),
 
-    /** Update Payout Status (Admin) */
+    /** Manual override (Admin): reject a Pending payout (Failed) or record one paid outside Paystack (Completed) */
     updatePayoutStatus: builder.mutation<
       Payout,
       { payoutId: number | string; status: "Completed" | "Failed"; transactionReference?: string }
@@ -281,10 +324,24 @@ export const walletApi = createApi({
        3. PAYOUT METHODS ENDPOINTS
        ========================================== */
 
-    /** Add Payout Method */
+    /** Kenyan banks (name + Paystack bank code) for the Bank option */
+    getBanks: builder.query<Bank[], void>({
+      query: () => "banks",
+      transformResponse: (r: ApiResponse<Bank[]>) => unwrap(r),
+      providesTags: ["Banks"],
+    }),
+
+    /** Add Payout Method (orgId is taken from the login on the server for organizers) */
     addPayoutMethod: builder.mutation<
       PayoutMethod,
-      { orgId: number; accountType: string; accountNumber: string; accountName: string; isDefault?: boolean }
+      {
+        orgId: number;
+        accountType: string;
+        accountNumber: string;
+        accountName: string;
+        bankCode?: string | null;
+        isDefault?: boolean;
+      }
     >({
       query: (payload) => ({
         url: "payout-methods",
@@ -347,6 +404,7 @@ export const walletApi = createApi({
         accountNumber?: string;
         accountName?: string;
         accountType?: string;
+        bankCode?: string | null;
       }
     >({
       query: ({ methodId, orgId, ...fields }) => ({
@@ -399,7 +457,9 @@ export const {
   useGetPlatformPendingLiabilityQuery,
   useRequestPayoutMutation,
   useGetPendingPayoutsQuery,
-  useBulkUpdatePayoutStatusMutation,
+  useSendPayoutMutation,
+  useReconcilePayoutMutation,
+  useBulkSendPayoutsMutation,
   useGetPayoutsByOrgQuery,
   useGetLatestPayoutByOrgQuery,
   useGetPayoutCountByOrgQuery,
@@ -407,6 +467,7 @@ export const {
   useGetPayoutsByStatusQuery,
   useGetPayoutByIdQuery,
   useUpdatePayoutStatusMutation,
+  useGetBanksQuery,
   useAddPayoutMethodMutation,
   useGetPayoutMethodsByOrgQuery,
   useGetDefaultPayoutMethodQuery,

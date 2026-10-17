@@ -4,7 +4,11 @@ import { userApi } from '../features/APIS/UserApi';
 import { toast, Toaster } from 'sonner';
 import { useNavigate, Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { Eye, EyeOff, ShieldCheck, User, Mail, Lock, Phone, Fingerprint, Ticket, CheckCircle2 } from 'lucide-react';
+import { Eye, EyeOff, ShieldCheck, User, Mail, Lock, Phone, Fingerprint, CheckCircle2 } from 'lucide-react';
+
+// Make sure these match the routes you registered for the two pages
+const TERMS_ROUTE = '/terms-and-conditions';
+const PRIVACY_ROUTE = '/privacy-policy';
 
 interface RegisterDetails {
   nationalId: number;
@@ -14,6 +18,7 @@ interface RegisterDetails {
   password: string;
   contactPhone: string;
   role: 'user' | 'organizer';
+  agreeToTerms: boolean; // form-only field, never sent to the server
 }
 
 const getPasswordStrength = (password: string) => {
@@ -30,14 +35,23 @@ const getPasswordStrength = (password: string) => {
 };
 
 const Register = () => {
-  const { register, handleSubmit, setValue } = useForm<RegisterDetails>({
-    defaultValues: { role: 'user' }
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<RegisterDetails>({
+    defaultValues: { role: 'user', agreeToTerms: false },
   });
   const [registerUser, { isLoading }] = userApi.useRegisterUserMutation();
   const navigate = useNavigate();
 
-  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Watching the field keeps react-hook-form's own onChange intact
+  const password = watch('password') || '';
+  const role = watch('role');
 
   // Auto-generate 8-digit National ID on load
   useEffect(() => {
@@ -46,12 +60,16 @@ const Register = () => {
   }, [setValue]);
 
   const onSubmit = async (data: RegisterDetails) => {
+    // The agreement is checked in the form only. Don't send it to the API.
+    const { agreeToTerms, ...payload } = data;
+    if (!agreeToTerms) return;
+
     try {
       const loadingToastId = toast.loading('Creating your account...');
-      const res = await registerUser(data).unwrap();
+      const res = await registerUser(payload).unwrap();
       toast.success('Account created successfully!', { id: loadingToastId });
-      navigate("/email-verification", {
-        state: { email: data.email, message: res?.message }
+      navigate('/email-verification', {
+        state: { email: payload.email, message: res?.message },
       });
     } catch (error: any) {
       const errorMessage = error?.data?.error || error?.error || 'Something went wrong.';
@@ -92,12 +110,9 @@ const Register = () => {
       `}</style>
 
       <div className="pt-16 flex-grow grid grid-cols-1 lg:grid-cols-12 overflow-hidden h-[calc(100vh-4rem)]">
-        
         {/* --- Left Side: Live Simulation of User Registering --- */}
         <div className="hidden lg:flex lg:col-span-5 xl:col-span-6 bg-primary/10 p-10 xl:p-14 flex-col justify-between h-full border-r border-base-content/10 relative overflow-hidden">
-          
           <div className="space-y-3 z-10">
-            
             <h1 className="text-4xl xl:text-5xl font-black text-base-content tracking-tight">
               Create your account and start exploring events.
             </h1>
@@ -109,7 +124,6 @@ const Register = () => {
           {/* Live Mock UI Showing a Person Filling Details */}
           <div className="relative flex items-center justify-center my-auto py-4 z-10">
             <div className="w-80 bg-base-200/90 backdrop-blur-md rounded-2xl border border-base-content/15 p-5 shadow-2xl space-y-3.5">
-              
               {/* Header simulation */}
               <div className="flex items-center justify-between pb-2 border-b border-base-content/10">
                 <div className="flex items-center gap-1.5">
@@ -139,31 +153,32 @@ const Register = () => {
 
               {/* Success Badge */}
               <div className="pt-1 flex items-center justify-between text-xs font-bold text-success">
-                <span className="flex items-center gap-1.5"><CheckCircle2 size={14} /> Validation Passed</span>
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle2 size={14} /> Validation Passed
+                </span>
                 <span className="text-[10px] font-mono opacity-60">100%</span>
               </div>
             </div>
           </div>
 
-          <div className="text-base-content/50 text-xs font-medium z-10">
-            &copy; {new Date().getFullYear()} TicketStream. All rights reserved.
+          <div className="flex items-center gap-3 text-base-content/50 text-xs font-medium z-10">
+            <span>&copy; {new Date().getFullYear()} TicketStream. All rights reserved.</span>
+            <span aria-hidden="true">|</span>
+            <Link to={TERMS_ROUTE} className="hover:text-primary hover:underline">Terms</Link>
+            <Link to={PRIVACY_ROUTE} className="hover:text-primary hover:underline">Privacy</Link>
           </div>
         </div>
 
         {/* --- Right Side: Register Portal --- */}
-        <div className="lg:col-span-7 xl:col-span-6 flex items-center justify-center p-4 sm:p-6 relative overflow-hidden bg-base-100 h-full">
+        <div className="lg:col-span-7 xl:col-span-6 flex items-start lg:items-center justify-center p-4 sm:p-6 relative overflow-y-auto bg-base-100 h-full">
           <div className="w-full max-w-lg z-10 my-auto">
             <div className="bg-base-200/70 backdrop-blur-3xl rounded-[2rem] p-5 sm:p-7 border border-base-content/10 shadow-xl">
-              
               <div className="text-center mb-4">
-                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-base-content">
-                  Create Account
-                </h2>
+                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-base-content">Create Account</h2>
                 <p className="mt-1 text-xs text-base-content/60">Fill in your details to get started</p>
               </div>
 
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
-                
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
                 {/* Names Row */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
@@ -172,21 +187,21 @@ const Register = () => {
                     </label>
                     <input
                       type="text"
-                      className="input input-bordered w-full h-10 bg-base-100/80 rounded-xl text-sm focus:border-primary"
+                      className={`input input-bordered w-full h-10 bg-base-100/80 rounded-xl text-sm focus:border-primary ${errors.firstName ? 'input-error' : ''}`}
                       placeholder="Jane"
-                      {...register('firstName', { required: true })}
+                      {...register('firstName', { required: 'First name is required' })}
                     />
+                    {errors.firstName && <p className="text-[11px] text-error ml-1">{errors.firstName.message}</p>}
                   </div>
                   <div className="space-y-1">
-                    <label className="flex items-center gap-2 text-xs font-semibold text-base-content/70 ml-1">
-                      Last Name
-                    </label>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-base-content/70 ml-1">Last Name</label>
                     <input
                       type="text"
-                      className="input input-bordered w-full h-10 bg-base-100/80 rounded-xl text-sm focus:border-primary"
+                      className={`input input-bordered w-full h-10 bg-base-100/80 rounded-xl text-sm focus:border-primary ${errors.lastName ? 'input-error' : ''}`}
                       placeholder="Doe"
-                      {...register('lastName', { required: true })}
+                      {...register('lastName', { required: 'Last name is required' })}
                     />
+                    {errors.lastName && <p className="text-[11px] text-error ml-1">{errors.lastName.message}</p>}
                   </div>
                 </div>
 
@@ -209,10 +224,11 @@ const Register = () => {
                     </label>
                     <input
                       type="text"
-                      className="input input-bordered w-full h-10 bg-base-100/80 rounded-xl text-sm focus:border-primary"
+                      className={`input input-bordered w-full h-10 bg-base-100/80 rounded-xl text-sm focus:border-primary ${errors.contactPhone ? 'input-error' : ''}`}
                       placeholder="+254..."
-                      {...register('contactPhone', { required: true })}
+                      {...register('contactPhone', { required: 'Phone number is required' })}
                     />
+                    {errors.contactPhone && <p className="text-[11px] text-error ml-1">{errors.contactPhone.message}</p>}
                   </div>
                 </div>
 
@@ -224,10 +240,14 @@ const Register = () => {
                     </label>
                     <input
                       type="email"
-                      className="input input-bordered w-full h-10 bg-base-100/80 rounded-xl text-sm focus:border-primary"
+                      className={`input input-bordered w-full h-10 bg-base-100/80 rounded-xl text-sm focus:border-primary ${errors.email ? 'input-error' : ''}`}
                       placeholder="name@example.com"
-                      {...register('email', { required: true })}
+                      {...register('email', {
+                        required: 'Email is required',
+                        pattern: { value: /^\S+@\S+\.\S+$/, message: 'Enter a valid email address' },
+                      })}
                     />
+                    {errors.email && <p className="text-[11px] text-error ml-1">{errors.email.message}</p>}
                   </div>
                   <div className="space-y-1">
                     <label className="flex items-center gap-2 text-xs font-semibold text-base-content/70 ml-1">
@@ -251,26 +271,58 @@ const Register = () => {
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
-                      className="input input-bordered w-full h-10 bg-base-100/80 rounded-xl text-sm pr-10 focus:border-primary"
+                      className={`input input-bordered w-full h-10 bg-base-100/80 rounded-xl text-sm pr-10 focus:border-primary ${errors.password ? 'input-error' : ''}`}
                       placeholder="••••••••"
-                      {...register('password', { required: true })}
-                      onChange={(e) => setPassword(e.target.value)}
+                      {...register('password', { required: 'Password is required' })}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content transition-all"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </div>
+                  {errors.password && <p className="text-[11px] text-error ml-1">{errors.password.message}</p>}
                   {password && (
                     <div className="px-1 mt-1">
                       <div className="h-1 w-full rounded bg-base-300 overflow-hidden">
-                        <div className={`h-full transition-all duration-500 ${getPasswordStrength(password).color}`} style={{ width: getPasswordStrength(password).percent }} />
+                        <div
+                          className={`h-full transition-all duration-500 ${getPasswordStrength(password).color}`}
+                          style={{ width: getPasswordStrength(password).percent }}
+                        />
                       </div>
+                      <p className="text-[10px] text-base-content/50 mt-0.5">
+                        Password strength: {getPasswordStrength(password).label}
+                      </p>
                     </div>
                   )}
+                </div>
+
+                {/* Terms & Privacy agreement */}
+                <div className="space-y-1">
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className={`checkbox checkbox-primary checkbox-sm mt-0.5 shrink-0 ${errors.agreeToTerms ? 'checkbox-error' : ''}`}
+                      {...register('agreeToTerms', {
+                        required: 'You need to accept the Terms and Privacy Policy to create an account',
+                      })}
+                    />
+                    <span className="text-xs text-base-content/70 leading-relaxed">
+                      I have read and agree to the{' '}
+                      <Link to={TERMS_ROUTE} target="_blank" rel="noopener noreferrer" className="text-primary font-semibold hover:underline">
+                        Terms and Conditions
+                      </Link>{' '}
+                      and the{' '}
+                      <Link to={PRIVACY_ROUTE} target="_blank" rel="noopener noreferrer" className="text-primary font-semibold hover:underline">
+                        Privacy Policy
+                      </Link>
+                      {role === 'organizer' && ', and I confirm I have the right to host and sell tickets for the events I list'}.
+                    </span>
+                  </label>
+                  {errors.agreeToTerms && <p className="text-[11px] text-error ml-7">{errors.agreeToTerms.message}</p>}
                 </div>
 
                 <button
@@ -283,13 +335,16 @@ const Register = () => {
               </form>
 
               <div className="mt-4 pt-3 border-t border-base-content/10 text-center">
-                <p className="text-xs text-base-content/60">Already have an account? <Link to="/login" className="text-primary font-semibold hover:underline ml-1">Sign In</Link></p>
+                <p className="text-xs text-base-content/60">
+                  Already have an account?{' '}
+                  <Link to="/login" className="text-primary font-semibold hover:underline ml-1">
+                    Sign In
+                  </Link>
+                </p>
               </div>
-
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );

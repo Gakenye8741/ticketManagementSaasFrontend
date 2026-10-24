@@ -5,10 +5,10 @@ import { skipToken } from "@reduxjs/toolkit/query";
 import { motion } from "framer-motion";
 import {
   BarChart3, Wallet, ShoppingBag, Ticket, CheckCircle2, Clock, XCircle, AlertCircle, TrendingUp,
-  CalendarDays, CreditCard, Tag, ScanLine, UserX, Percent, Trophy, Compass, Lightbulb, Download,
+  CalendarDays, CreditCard, Tag, ScanLine, UserX, Percent, Trophy, Compass, Download,
   RefreshCw, Printer, ArrowUpRight, ArrowDownRight, CalendarClock, Target, Users, Layers, MapPin,
   Ban, Timer, Grid3X3, LayoutDashboard, Activity, Award, Flame, Crown, Rocket, ShieldCheck, Star,
-  Medal, Sparkles, Gem, Hourglass, Filter, Gauge, Repeat, Coins, Sunrise,
+  Medal, Sparkles, Gem, Hourglass, Filter, Gauge, Repeat, Coins, Sunrise, Maximize2, X, Info,
 } from "lucide-react";
 import { type RootState } from "../../App/store";
 import { useGetBookingsByUserDigitalIdQuery } from "../../features/APIS/BookingsApi";
@@ -24,10 +24,10 @@ import usePageTitle from "../../hooks/usePageTitle";
 
 /* ------------------------------ config ------------------------------ */
 const CURRENCY = "KES";
-const BOOKINGS_PATH = "/dashboard/my-bookings"; // ⚠️ change to your My Bookings route
+const BOOKINGS_PATH = "/dashboard/my-bookings";
 const EXPLORE_PATH = "/";
 const HEATMAP_WEEKS = 26;
-const BIG_SPEND = 20000; // spend needed for the "High roller" badge
+const BIG_SPEND = 20000;
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const RANGES = [
   { key: "all", label: "All time", days: 0 },
@@ -72,7 +72,6 @@ const countdown = (d: Date) => {
 };
 const shortMoney = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k` : String(Math.round(n)));
 
-// Event field names differ between backends, so we check the common ones.
 const eventIdOf = (e: any) => Number(e?.eventId ?? e?.id ?? 0);
 const eventTitleOf = (e: any): string => e?.title ?? e?.eventName ?? e?.name ?? "";
 const eventCategoryOf = (e: any): string => e?.category ?? e?.eventCategory ?? e?.categoryName ?? "";
@@ -105,7 +104,6 @@ const downloadCsv = (filename: string, rows: (string | number)[][]) => {
   URL.revokeObjectURL(a.href);
 };
 
-/** Totals for a set of bookings and payments. Spend uses completed payments, or confirmed bookings if there are none. */
 const summarize = (bk: any[], pay: any[]) => {
   const confirmed = bk.filter((b) => b.bookingStatus === "Confirmed");
   const confirmedSum = sum(confirmed.map((b) => num(b.totalAmount)));
@@ -118,7 +116,6 @@ const summarize = (bk: any[], pay: any[]) => {
   };
 };
 
-/** Groups items by a key and returns the groups sorted by a number, largest first. */
 const groupSum = <T,>(items: T[], key: (i: T) => string | number, val: (i: T) => number) => {
   const m = new Map<string | number, { value: number; count: number }>();
   items.forEach((i) => {
@@ -130,7 +127,6 @@ const groupSum = <T,>(items: T[], key: (i: T) => string | number, val: (i: T) =>
   return [...m.entries()].sort((a, b) => b[1].value - a[1].value);
 };
 
-/** Longest run of consecutive numbers, and the run that ends at the latest number. */
 const runs = (sorted: number[]) => {
   let longest = 0, run = 0, prev = NaN;
   sorted.forEach((n) => {
@@ -141,7 +137,6 @@ const runs = (sorted: number[]) => {
   return { longest, last: run, lastValue: sorted[sorted.length - 1] };
 };
 
-/** Ticket type name: cached list first, then fetch that one type by ID. */
 const TypeName = ({ id, names }: { id: number; names: Map<number, string> }) => {
   const known = names.get(id);
   const q = useGetTicketTypeByIdQuery(id, { skip: !!known || !id });
@@ -168,7 +163,7 @@ const Delta = ({ cur, prev }: { cur: number; prev: number | null }) => {
   const d = Math.round(((cur - prev) / prev) * 100);
   if (d === 0) return <span>Same as last period</span>;
   return (
-    <span className="inline-flex items-center gap-0.5">
+    <span className={`inline-flex items-center gap-0.5 ${d > 0 ? "text-success" : "text-error"}`}>
       {d > 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
       {Math.abs(d)}% vs last period
     </span>
@@ -180,7 +175,8 @@ const Kpi = ({ label, value, hint, icon, tone, i }: { label: string; value: Reac
     initial={{ opacity: 0, y: 8 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ duration: 0.25, delay: Math.min(i * 0.04, 0.3) }}
-    className="bg-base-100 border border-base-200 p-4 rounded-2xl shadow-sm flex items-center justify-between gap-2 min-w-0"
+    whileHover={{ y: -2 }}
+    className="bg-base-100 border border-base-200 p-4 rounded-2xl shadow-sm hover:shadow-md transition-shadow flex items-center justify-between gap-2 min-w-0"
   >
     <div className="flex flex-col gap-0.5 min-w-0">
       <span className="text-[11px] text-base-content/60 font-semibold">{label}</span>
@@ -191,14 +187,36 @@ const Kpi = ({ label, value, hint, icon, tone, i }: { label: string; value: Reac
   </motion.div>
 );
 
-const Section = ({ title, subtitle, icon, children, className = "" }: { title: string; subtitle?: string; icon: ReactNode; children: ReactNode; className?: string }) => (
+/**
+ * Section with an optional "expand" button that opens a larger modal.
+ * When `expandable` is true, an inline button appears in the top-right that
+ * calls `onExpand`. Used by every chart to give it a full-screen view.
+ */
+const Section = ({
+  title, subtitle, icon, children, className = "", action, expandable, onExpand,
+}: {
+  title: string; subtitle?: string; icon: ReactNode; children: ReactNode; className?: string;
+  action?: ReactNode; expandable?: boolean; onExpand?: () => void;
+}) => (
   <section className={`bg-base-100 border border-base-200 rounded-2xl shadow-sm p-4 sm:p-5 flex flex-col gap-4 ${className}`}>
     <div className="flex items-center gap-2.5">
       <div className="p-2 bg-primary/10 text-primary rounded-xl shrink-0">{icon}</div>
-      <div className="flex flex-col">
+      <div className="flex flex-col min-w-0 flex-1">
         <h2 className="text-sm font-black text-base-content leading-tight">{title}</h2>
         {subtitle && <p className="text-[11px] text-base-content/60">{subtitle}</p>}
       </div>
+      {action}
+      {expandable && onExpand && (
+        <button
+          type="button"
+          onClick={onExpand}
+          className="btn btn-ghost btn-xs btn-square rounded-lg text-base-content/50 hover:text-primary hover:bg-primary/10 shrink-0"
+          title="Open full screen"
+          aria-label={`Open ${title} full screen`}
+        >
+          <Maximize2 size={13} />
+        </button>
+      )}
     </div>
     {children}
   </section>
@@ -212,7 +230,7 @@ const BarRow = ({ label, value, max, display, sub, bar = "bg-primary", to }: { l
         <span className="font-black text-base-content shrink-0">{display}</span>
       </div>
       <div className="h-2 rounded-full bg-base-200 overflow-hidden">
-        <div className={`h-full rounded-full ${bar}`} style={{ width: `${max ? Math.max(value ? 4 : 0, (value / max) * 100) : 0}%` }} />
+        <div className={`h-full rounded-full ${bar} transition-all duration-500`} style={{ width: `${max ? Math.max(value ? 4 : 0, (value / max) * 100) : 0}%` }} />
       </div>
       {sub && <span className="text-[10px] text-base-content/50">{sub}</span>}
     </>
@@ -224,7 +242,6 @@ const BarRow = ({ label, value, max, display, sub, bar = "bg-primary", to }: { l
   );
 };
 
-/** Vertical bar chart. */
 const Columns = ({ data, format, height = "h-44", minW = "min-w-[20rem]", highlightMax = false }: {
   data: { key?: string; label: string; value: number; title?: string }[];
   format?: (n: number) => string; height?: string; minW?: string; highlightMax?: boolean;
@@ -234,47 +251,58 @@ const Columns = ({ data, format, height = "h-44", minW = "min-w-[20rem]", highli
   return (
     <div className="overflow-x-auto">
       <div className={`flex items-end gap-2 ${height} ${minW}`}>
-        {data.map((d) => (
-          <div key={d.key ?? d.label} className="flex-1 min-w-[1.5rem] min-h-0 h-full flex flex-col items-center gap-1" title={d.title ?? `${d.label}: ${show(d.value)}`}>
-            <span className="text-[9px] font-bold text-base-content/60 h-3">{d.value ? show(d.value) : ""}</span>
-            <div className="w-full flex-1 min-h-0 flex items-end">
-              <div
-                className={`w-full rounded-t-lg ${highlightMax && !(d.value === max && max > 0) ? "bg-primary/40" : "bg-primary"}`}
-                style={{ height: `${max ? (d.value / max) * 100 : 0}%`, minHeight: d.value ? 4 : 0 }}
-              />
+        {data.map((d) => {
+          const isMax = highlightMax && d.value === max && max > 0;
+          return (
+            <div key={d.key ?? d.label} className="flex-1 min-w-[1.5rem] min-h-0 h-full flex flex-col items-center gap-1 group" title={d.title ?? `${d.label}: ${show(d.value)}`}>
+              <span className="text-[9px] font-bold text-base-content/60 h-3">{d.value ? show(d.value) : ""}</span>
+              <div className="w-full flex-1 min-h-0 flex items-end">
+                <div
+                  className={`w-full rounded-t-lg transition-all duration-300 group-hover:opacity-80 ${isMax ? "bg-primary" : "bg-primary/40"}`}
+                  style={{ height: `${max ? (d.value / max) * 100 : 0}%`, minHeight: d.value ? 4 : 0 }}
+                />
+              </div>
+              <span className="text-[10px] text-base-content/60 font-semibold">{d.label}</span>
             </div>
-            <span className="text-[10px] text-base-content/60 font-semibold">{d.label}</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 };
 
-/** Running-total line chart that follows the theme colour. */
-const LineChart = ({ values }: { values: number[] }) => {
+const LineChart = ({ values, height = "h-40" }: { values: number[]; height?: string }) => {
   const max = Math.max(...values, 1);
   const pts = values.map((v, i) => `${(i / Math.max(1, values.length - 1)) * 300},${100 - (v / max) * 90 - 5}`);
   return (
-    <svg viewBox="0 0 300 100" preserveAspectRatio="none" className="w-full h-40 text-primary" role="img" aria-label="Running total of your spending">
-      <polygon points={`0,100 ${pts.join(" ")} 300,100`} fill="currentColor" opacity="0.12" />
+    <svg viewBox="0 0 300 100" preserveAspectRatio="none" className={`w-full ${height} text-primary`} role="img" aria-label="Running total of your spending">
+      <defs>
+        <linearGradient id="ua-line-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.25" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points={`0,100 ${pts.join(" ")} 300,100`} fill="url(#ua-line-fill)" />
       <polyline points={pts.join(" ")} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
     </svg>
   );
 };
 
-const Ring = ({ value, stroke }: { value: number; stroke: string }) => {
+const Ring = ({ value, stroke, size = "w-28 h-28" }: { value: number; stroke: string; size?: string }) => {
   const r = 42, c = 2 * Math.PI * r;
   return (
-    <svg viewBox="0 0 100 100" className="w-28 h-28 -rotate-90 shrink-0" aria-hidden="true">
+    <svg viewBox="0 0 100 100" className={`${size} -rotate-90 shrink-0`} aria-hidden="true">
       <circle cx="50" cy="50" r={r} fill="none" strokeWidth="9" className="stroke-base-200" />
       <circle cx="50" cy="50" r={r} fill="none" strokeWidth="9" strokeLinecap="round" className={stroke} strokeDasharray={c} strokeDashoffset={c - (value / 100) * c} />
     </svg>
   );
 };
 
-const NoData = ({ text }: { text: string }) => (
-  <p className="text-[11px] text-base-content/60 text-center py-8 bg-base-200/30 rounded-xl border border-dashed border-base-300">{text}</p>
+const NoData = ({ text, icon }: { text: string; icon?: ReactNode }) => (
+  <div className="flex flex-col items-center justify-center gap-2 py-8 bg-base-200/30 rounded-xl border border-dashed border-base-300">
+    {icon && <div className="text-base-content/30">{icon}</div>}
+    <p className="text-[11px] text-base-content/60 text-center max-w-xs">{text}</p>
+  </div>
 );
 
 const Fact = ({ k, v }: { k: string; v: ReactNode }) => (
@@ -284,8 +312,8 @@ const Fact = ({ k, v }: { k: string; v: ReactNode }) => (
   </li>
 );
 
-const Tile = ({ k, v, sub }: { k: string; v: ReactNode; sub?: ReactNode }) => (
-  <div className="rounded-xl bg-base-200/50 p-3 flex flex-col min-w-0">
+const Tile = ({ k, v, sub, tone }: { k: string; v: ReactNode; sub?: ReactNode; tone?: string }) => (
+  <div className={`rounded-xl p-3 flex flex-col min-w-0 ${tone ?? "bg-base-200/50"}`}>
     <span className="text-[10px] text-base-content/50 font-semibold">{k}</span>
     <span className="text-sm font-black text-base-content truncate">{v}</span>
     {sub && <span className="text-[10px] text-base-content/50">{sub}</span>}
@@ -298,6 +326,81 @@ const Shell = ({ header, children, className = "" }: { header: ReactNode; childr
     {children}
   </div>
 );
+
+/* ====================== EXPANDED CHART MODAL ====================== */
+/**
+ * Full-screen modal shell for one chart or table.
+ * Shows a title, a plain-language explanation, the chart itself at a
+ * larger size, and an optional data table beneath it.
+ */
+const ChartModal = ({
+  open, onClose, title, subtitle, explanation, children, table, tableHead, tableRows,
+}: {
+  open: boolean; onClose: () => void; title: string; subtitle?: string;
+  explanation?: ReactNode; children: ReactNode;
+  table?: ReactNode; tableHead?: ReactNode; tableRows?: ReactNode;
+}) => {
+  if (!open) return null;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="bg-base-100 w-full sm:max-w-4xl max-h-[92dvh] sm:max-h-[90dvh] overflow-y-auto overscroll-contain rounded-t-3xl sm:rounded-3xl shadow-2xl pb-[env(safe-area-inset-bottom)] animate-in slide-in-from-bottom-8 sm:zoom-in-95 fade-in duration-300"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 z-10 bg-base-100/95 backdrop-blur border-b border-base-200 px-4 sm:px-6 py-3 flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-2 bg-primary/10 text-primary rounded-xl shrink-0">
+              <BarChart3 size={16} />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <h2 className="text-sm sm:text-base font-black text-base-content leading-tight truncate">{title}</h2>
+              {subtitle && <p className="text-[11px] text-base-content/60 truncate">{subtitle}</p>}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="btn btn-ghost btn-sm btn-square rounded-xl text-base-content/50 hover:text-base-content shrink-0"
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-4 sm:p-6 flex flex-col gap-5">
+          {explanation && (
+            <div className="rounded-2xl bg-primary/5 border border-primary/20 p-4 flex items-start gap-2.5">
+              <Info size={16} className="text-primary shrink-0 mt-0.5" />
+              <div className="text-sm text-base-content/80 leading-relaxed">{explanation}</div>
+            </div>
+          )}
+
+          <div>{children}</div>
+
+          {table && (
+            <div className="flex flex-col gap-2">
+              <h3 className="text-xs font-black uppercase tracking-wider text-base-content/60">Breakdown</h3>
+              {table}
+            </div>
+          )}
+          {tableHead && tableRows && (
+            <div className="overflow-x-auto rounded-2xl border border-base-200">
+              <table className="table table-sm w-full text-xs">
+                {tableHead}
+                <tbody>{tableRows}</tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 /* -------------------------------- page -------------------------------- */
 export const UserAnalytics = () => {
@@ -320,7 +423,6 @@ export const UserAnalytics = () => {
   const days = RANGES.find((r) => r.key === rangeKey)?.days ?? 0;
   const rangeLabel = RANGES.find((r) => r.key === rangeKey)?.label ?? "All time";
 
-  // Monthly budget (saved on this device)
   const budgetKey = `ticketstream:budget:${digitalId}`;
   const [budget, setBudget] = useState<number>(() => {
     try { return Number(localStorage.getItem(budgetKey)) || 0; } catch { return 0; }
@@ -337,6 +439,14 @@ export const UserAnalytics = () => {
     setBudget(0);
     try { localStorage.removeItem(budgetKey); } catch { /* storage unavailable */ }
   };
+
+  /* ------- expanded-chart modal state ------- */
+  type ChartId =
+    | "monthly-spend" | "avg-price" | "running" | "top-events" | "by-category" | "by-place"
+    | "event-days" | "event-times" | "funnel" | "wallet" | "group-size" | "ticket-types"
+    | "methods" | "hours" | "weekday" | "lead" | "heatmap" | "score" | "badges";
+  const [openChart, setOpenChart] = useState<ChartId | null>(null);
+  const closeChart = () => setOpenChart(null);
 
   const allBookings = useMemo(() => toArray(bookingsQ.data), [bookingsQ.data]);
   const allPayments = useMemo(() => toArray(paymentsQ.data), [paymentsQ.data]);
@@ -383,7 +493,6 @@ export const UserAnalytics = () => {
     const attended = tickets.filter((x) => x.isScanned).length;
     const eventCount = new Set(confirmed.map((b) => num(b.eventId))).size;
 
-    /* ---- spending over time ---- */
     const spendRows = paid.length
       ? paid.map((p) => ({ date: p.createdAt as string, amount: num(p.amount) }))
       : confirmed.map((b) => ({ date: b.createdAt as string, amount: num(b.totalAmount) }));
@@ -421,7 +530,6 @@ export const UserAnalytics = () => {
       return { key: m.key, label: m.label, value: c && c.qty ? Math.round(c.amt / c.qty) : 0 };
     });
 
-    // This month vs last month, and the end-of-month forecast (ignores the time-period filter)
     const allConfirmed = allBookings.filter((b) => b.bookingStatus === "Confirmed");
     const allPaid = allPayments.filter((p) => p.paymentStatus === "Completed");
     const allSpendRows = (allPaid.length
@@ -436,7 +544,6 @@ export const UserAnalytics = () => {
     const projected = (monthSpent / Math.max(1, nowD.getDate())) * daysInMonth;
     const allTimeSpent = sum(allSpendRows.map((r) => r.amount));
 
-    /* ---- per event / type / category / place ---- */
     const topEvents = groupSum(confirmed, (b) => num(b.eventId), (b) => num(b.totalAmount)).slice(0, 5)
       .map(([id, v]) => ({ id: id as number, spent: v.value, bookings: v.count, tickets: sum(confirmed.filter((b) => num(b.eventId) === id).map((b) => num(b.quantity))) }));
     const typeList = groupSum(confirmed, (b) => num(b.ticketTypeId), (b) => num(b.quantity)).slice(0, 5).map(([id, v]) => {
@@ -449,7 +556,6 @@ export const UserAnalytics = () => {
     const byPlace = groupSum(confirmed, (b) => eventPlaceOf(eventsById.get(num(b.eventId))), (b) => num(b.totalAmount)).slice(0, 5);
     const repeatEvents = groupSum(allConfirmed, (b) => num(b.eventId), () => 1).filter(([, v]) => v.count >= 2).slice(0, 5);
 
-    /* ---- group sizes ---- */
     const sizeBuckets = [
       { label: "Just 1", n: active.filter((b) => num(b.quantity) === 1).length },
       { label: "2 tickets", n: active.filter((b) => num(b.quantity) === 2).length },
@@ -458,7 +564,6 @@ export const UserAnalytics = () => {
     ];
     const avgGroup = active.length ? cur.tickets / active.length : 0;
 
-    /* ---- payments ---- */
     const methodMap = new Map<string, { total: number; ok: number; amount: number }>();
     payments.forEach((p) => {
       const k = p.paymentMethod || "Other";
@@ -482,7 +587,6 @@ export const UserAnalytics = () => {
     const avgPayMinutes = gaps.length ? sum(gaps) / gaps.length : null;
     const recentPayments = [...payments].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 
-    /* ---- events ---- */
     const evIds = [...new Set(allConfirmed.map((b) => num(b.eventId)))];
     const dated = evIds.map((id) => ({ id, date: eventDateOf(eventsById.get(id)) })).filter((x): x is { id: number; date: Date } => !!x.date);
     const upcoming = dated.filter((x) => x.date.getTime() >= now).sort((a, b) => +a.date - +b.date);
@@ -502,7 +606,6 @@ export const UserAnalytics = () => {
     const partOf = (h: number) => (h >= 5 && h < 12 ? "Morning" : h >= 12 && h < 17 ? "Afternoon" : h >= 17 && h < 22 ? "Evening" : "Night");
     const eventParts = ["Morning", "Afternoon", "Evening", "Night"].map((label) => ({ label, value: dated.filter((x) => partOf(x.date.getHours()) === label).length }));
 
-    /* ---- tickets ---- */
     const forOthers = purchased.filter((x) => x.holderId && Number(x.holderId) !== Number(digitalId)).length;
     const bundleMap = groupSum(purchased.filter((x) => x.groupBundleId), (x) => x.groupBundleId, () => 1);
     const bundleTickets = sum(bundleMap.map(([, v]) => v.count));
@@ -515,7 +618,6 @@ export const UserAnalytics = () => {
       { label: "Scanned at the gate", n: attended },
     ];
 
-    /* ---- habits ---- */
     const weekday = WEEKDAYS.map((label, i) => ({ label, value: bookings.filter((b) => b.createdAt && new Date(b.createdAt).getDay() === i).length }));
     const busiest = [...weekday].sort((a, b) => b.value - a.value)[0];
     const hours = Array.from({ length: 24 }, (_, h) => ({ label: h % 3 === 0 ? String(h) : "", key: String(h), value: bookings.filter((b) => b.createdAt && new Date(b.createdAt).getHours() === h).length }));
@@ -559,7 +661,6 @@ export const UserAnalytics = () => {
     ];
     const leadPersona = avgLead === null ? "" : avgLead >= 30 ? "Planner" : avgLead <= 7 ? "Last-minute" : "Steady booker";
 
-    /* ---- reliability score ---- */
     const comps = [
       { label: "Attendance", hint: "Past tickets you actually used", v: pastTickets.length ? attended / pastTickets.length : null, w: 35 },
       { label: "Payment success", hint: "Payments that went through", v: payments.length ? paid.length / payments.length : null, w: 25 },
@@ -569,7 +670,6 @@ export const UserAnalytics = () => {
     const usable = comps.filter((c) => c.v !== null);
     const score = usable.length ? Math.round((sum(usable.map((c) => (c.v as number) * c.w)) / sum(usable.map((c) => c.w))) * 100) : null;
 
-    /* ---- badges (all time) ---- */
     const allTicketsBooked = sum(allBookings.filter((b) => b.bookingStatus !== "Cancelled").map((b) => num(b.quantity)));
     const allOk = allPayments.filter((p) => p.paymentStatus === "Completed").length;
     const badges = [
@@ -602,7 +702,6 @@ export const UserAnalytics = () => {
     };
   }, [allBookings, allPayments, allTickets, allPurchased, unassignedQ.data, eventsById, days, digitalId]);
 
-  /* ------------------------------ actions ------------------------------ */
   const fetching = bookingsQ.isFetching || paymentsQ.isFetching || ticketsQ.isFetching;
   const refreshAll = () => {
     bookingsQ.refetch(); paymentsQ.refetch(); ticketsQ.refetch(); purchasedQ.refetch(); unassignedQ.refetch();
@@ -618,7 +717,6 @@ export const UserAnalytics = () => {
       ["Payment ID", "Booking ID", "Method", "Amount (" + CURRENCY + ")", "Status", "Reference", "Date"],
       ...s.payments.map((p) => [p.paymentId ?? p.id ?? "", p.bookingId, p.paymentMethod ?? "", num(p.amount), p.paymentStatus, p.transactionId ?? "", fmtDate(p.createdAt)]),
     ]);
-  /** Opens the print dialog. Choose "Save as PDF" as the destination. */
   const printPdf = () => {
     const previous = document.title;
     document.title = `ticketstream-statement-${ymd(new Date())}`;
@@ -626,7 +724,6 @@ export const UserAnalytics = () => {
     window.print();
   };
 
-  /* ------------------------------ states ------------------------------ */
   const loading = bookingsQ.isLoading || paymentsQ.isLoading || ticketsQ.isLoading;
   const allFailed = bookingsQ.isError && paymentsQ.isError && ticketsQ.isError;
   const total = s.bookings.length;
@@ -705,7 +802,6 @@ export const UserAnalytics = () => {
       </Shell>
     );
 
-  /* ------------------------------ derived ------------------------------ */
   const maxOf = (a: number[]) => Math.max(0, ...a);
   const statusSegments = (["Confirmed", "Pending", "Cancelled"] as const).map((k) => ({
     k, n: k === "Confirmed" ? s.confirmed.length : k === "Pending" ? s.pending.length : s.cancelled.length,
@@ -728,6 +824,259 @@ export const UserAnalytics = () => {
   ].filter(Boolean).join(" ").replace("as an early bird", "as an early bird").replace(/as an (midday|evening|night)/, "as a $1");
   const accountName = (user as any)?.fullName ?? (user as any)?.name ?? ((user as any)?.firstName ? `${(user as any).firstName} ${(user as any).lastName ?? ""}` : "");
 
+  /* ============ expanded-chart modal content ============ */
+  const modalMonthlySpend = (
+    <ChartModal open={openChart === "monthly-spend"} onClose={closeChart} title="Spending by month" subtitle="Money you paid each month"
+      explanation={<>Each bar is one calendar month. The taller the bar, the more you paid in that month. The tallest bar in the period is highlighted so you can see your biggest spending month at a glance.</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Month</th><th className="text-right">Payments</th><th className="text-right">Spent</th></tr></thead>}
+      tableRows={s.months.map((m) => <tr key={m.key}><td>{m.label}</td><td className="text-right">{m.count}</td><td className="text-right font-bold">{fmtMoney(m.spent)}</td></tr>)}
+    >
+      <Columns data={s.months.map((m) => ({ key: m.key, label: m.label, value: m.spent, title: `${m.label}: ${fmtMoney(m.spent)} across ${m.count} payments` }))} format={(n) => fmtMoney(n)} height="h-64" highlightMax />
+    </ChartModal>
+  );
+
+  const modalAvgPrice = (
+    <ChartModal open={openChart === "avg-price"} onClose={closeChart} title="Average ticket price" subtitle="What you paid per ticket each month"
+      explanation={<>For each month, this is the average price of a single ticket. It is calculated by dividing the total amount you were charged in that month by the number of tickets you bought. A high bar means an expensive month; a low bar means cheaper tickets.</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Month</th><th className="text-right">Average price</th></tr></thead>}
+      tableRows={s.avgPriceMonths.map((m) => <tr key={m.key}><td>{m.label}</td><td className="text-right font-bold">{fmtMoney(m.value)}</td></tr>)}
+    >
+      <Columns data={s.avgPriceMonths} format={(n) => fmtMoney(n)} height="h-64" />
+    </ChartModal>
+  );
+
+  const modalRunning = (
+    <ChartModal open={openChart === "running"} onClose={closeChart} title="Running total" subtitle="How your spending adds up"
+      explanation={<>This line starts at zero and goes up every time you pay for a booking. The final value on the right is your all-time spend. If the line is steep, you have been spending a lot in a short time; if it is flat, you have not been spending much.</>}
+    >
+      {s.running.length > 1 ? (
+        <div className="flex flex-col gap-3">
+          <LineChart values={s.running} height="h-72" />
+          <div className="flex justify-between text-xs text-base-content/60"><span>First payment</span><span className="font-black text-base-content">{fmtMoney(s.running[s.running.length - 1])} in total</span></div>
+        </div>
+      ) : <NoData text="Make a few payments to see your running total." />}
+    </ChartModal>
+  );
+
+  const modalTopEvents = (
+    <ChartModal open={openChart === "top-events"} onClose={closeChart} title="Where your money goes" subtitle="Events you spent the most on"
+      explanation={<>The bar length shows how much you paid in total for each event. The numbers underneath show how many tickets you bought and how many bookings make up that total.</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Event</th><th className="text-right">Tickets</th><th className="text-right">Bookings</th><th className="text-right">Spent</th></tr></thead>}
+      tableRows={s.topEvents.map((e) => <tr key={e.id}><td>{eventName(e.id)}</td><td className="text-right">{e.tickets}</td><td className="text-right">{e.bookings}</td><td className="text-right font-bold">{fmtMoney(e.spent)}</td></tr>)}
+    >
+      <div className="flex flex-col gap-3.5">
+        {s.topEvents.map((e) => <BarRow key={e.id} label={eventName(e.id)} value={e.spent} max={s.topEvents[0].spent} display={fmtMoney(e.spent)} sub={`${e.tickets} tickets in ${e.bookings} bookings`} />)}
+      </div>
+    </ChartModal>
+  );
+
+  const modalByCategory = (
+    <ChartModal open={openChart === "by-category"} onClose={closeChart} title="Spending by category" subtitle="What kind of events you pay for"
+      explanation={<>Events are grouped by their category (music, conference, sports, and so on). The numbers show how much of your total spend went into each category.</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Category</th><th className="text-right">Bookings</th><th className="text-right">Spent</th><th className="text-right">Share</th></tr></thead>}
+      tableRows={s.byCategory.map(([name, v]) => <tr key={String(name)}><td>{String(name)}</td><td className="text-right">{v.count}</td><td className="text-right font-bold">{fmtMoney(v.value)}</td><td className="text-right">{pct(v.value, s.cur.spent)}%</td></tr>)}
+    >
+      <div className="flex flex-col gap-3.5">
+        {s.byCategory.map(([name, v]) => <BarRow key={String(name)} label={String(name)} value={v.value} max={s.byCategory[0][1].value} display={fmtMoney(v.value)} sub={`${v.count} bookings · ${pct(v.value, s.cur.spent)}% of spend`} />)}
+      </div>
+    </ChartModal>
+  );
+
+  const modalByPlace = (
+    <ChartModal open={openChart === "by-place"} onClose={closeChart} title="Spending by location" subtitle="Where your events happen"
+      explanation={<>Events are grouped by their city or venue. This shows which places take most of your ticket budget.</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Location</th><th className="text-right">Bookings</th><th className="text-right">Spent</th></tr></thead>}
+      tableRows={s.byPlace.map(([name, v]) => <tr key={String(name)}><td>{String(name)}</td><td className="text-right">{v.count}</td><td className="text-right font-bold">{fmtMoney(v.value)}</td></tr>)}
+    >
+      <div className="flex flex-col gap-3.5">
+        {s.byPlace.map(([name, v]) => <BarRow key={String(name)} bar="bg-success" label={String(name)} value={v.value} max={s.byPlace[0][1].value} display={fmtMoney(v.value)} sub={`${v.count} bookings`} />)}
+      </div>
+    </ChartModal>
+  );
+
+  const modalEventDays = (
+    <ChartModal open={openChart === "event-days"} onClose={closeChart} title="Event days" subtitle={`Which days your events fall on · ${s.weekendShare}% on weekends`}
+      explanation={<>Each bar counts how many of your events fall on that weekday. Weekend events (Saturday, Sunday) are grouped separately in the subtitle so you can see how much of your activity is on weekends.</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Day</th><th className="text-right">Events</th></tr></thead>}
+      tableRows={s.eventWeekday.map((d) => <tr key={d.label}><td>{d.label}</td><td className="text-right font-bold">{d.value}</td></tr>)}
+    >
+      <Columns data={s.eventWeekday} height="h-56" highlightMax format={(n) => String(n)} />
+    </ChartModal>
+  );
+
+  const modalEventTimes = (
+    <ChartModal open={openChart === "event-times"} onClose={closeChart} title="Event times" subtitle="When your events start"
+      explanation={<>Each bar counts the number of events starting in that part of the day: Morning (5am-12pm), Afternoon (12pm-5pm), Evening (5pm-10pm) and Night (after 10pm).</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Time of day</th><th className="text-right">Events</th></tr></thead>}
+      tableRows={s.eventParts.map((p) => <tr key={p.label}><td>{p.label}</td><td className="text-right font-bold">{p.value}</td></tr>)}
+    >
+      <Columns data={s.eventParts} height="h-56" highlightMax format={(n) => String(n)} />
+    </ChartModal>
+  );
+
+  const modalFunnel = (
+    <ChartModal open={openChart === "funnel"} onClose={closeChart} title="Ticket journey" subtitle="From booking to the gate"
+      explanation={<>Every ticket starts as a booking and ends up somewhere. This funnel shows how many tickets you booked, how many were paid for, how many landed in your wallet, how many have an attendee, and how many were scanned at the gate. Any drop between two steps is a ticket that did not progress.</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Stage</th><th className="text-right">Tickets</th><th className="text-right">Of booked</th></tr></thead>}
+      tableRows={s.funnel.map((f, i) => <tr key={f.label}><td>{f.label}</td><td className="text-right font-bold">{f.n}</td><td className="text-right">{i === 0 ? "100%" : `${pct(f.n, s.funnel[0].n)}%`}</td></tr>)}
+    >
+      <div className="flex flex-col gap-3.5">
+        {s.funnel.map((f, i) => (
+          <BarRow key={f.label} bar={i === s.funnel.length - 1 ? "bg-success" : "bg-primary"} label={f.label} value={f.n} max={funnelMax} display={String(f.n)} sub={i === 0 ? undefined : `${pct(f.n, s.funnel[0].n)}% of booked${s.funnel[i - 1].n > f.n ? ` · ${s.funnel[i - 1].n - f.n} dropped off` : ""}`} />
+        ))}
+      </div>
+    </ChartModal>
+  );
+
+  const modalWallet = (
+    <ChartModal open={openChart === "wallet"} onClose={closeChart} title="Your ticket wallet" subtitle="Tickets you hold right now"
+      explanation={<>Scanned tickets are ones you already used at the gate. Still-to-use are tickets you can still attend. Waiting-for-attendee means a ticket has not been given to someone yet and needs a name before it can be scanned.</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Status</th><th className="text-right">Tickets</th></tr></thead>}
+      tableRows={[
+        <tr key="scanned"><td>Scanned at the gate</td><td className="text-right font-bold">{s.attended}</td></tr>,
+        <tr key="to-use"><td>Still to use</td><td className="text-right font-bold">{s.tickets.length - s.attended}</td></tr>,
+        <tr key="unassigned"><td>Waiting for an attendee</td><td className="text-right font-bold">{s.unassigned}</td></tr>,
+      ]}
+    >
+      <div className="flex flex-col gap-3.5">
+        <BarRow bar="bg-success" label="Scanned at the gate" value={s.attended} max={s.tickets.length} display={`${s.attended} of ${s.tickets.length}`} sub={`${pct(s.attended, s.tickets.length)}% used`} />
+        <BarRow label="Still to use" value={s.tickets.length - s.attended} max={s.tickets.length} display={String(s.tickets.length - s.attended)} />
+        <BarRow bar="bg-warning" label="Waiting for an attendee" value={s.unassigned} max={s.tickets.length} display={String(s.unassigned)} sub={s.unassigned ? "Assign these so they can be scanned" : "Nothing to do here"} />
+      </div>
+    </ChartModal>
+  );
+
+  const modalGroupSize = (
+    <ChartModal open={openChart === "group-size"} onClose={closeChart} title="Group size" subtitle={`You book ${s.avgGroup.toFixed(1)} tickets at a time on average`}
+      explanation={<>Each bar counts your bookings by how many tickets you bought at once. For example, "5 or more" means bookings where you bought five or more tickets in one order. The average at the top of the modal is your typical booking size.</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Group size</th><th className="text-right">Bookings</th></tr></thead>}
+      tableRows={s.sizeBuckets.map((b) => <tr key={b.label}><td>{b.label}</td><td className="text-right font-bold">{b.n}</td></tr>)}
+    >
+      <div className="flex flex-col gap-3.5">
+        {s.sizeBuckets.map((b) => <BarRow key={b.label} label={b.label} value={b.n} max={maxOf(s.sizeBuckets.map((x) => x.n))} display={`${b.n} ${b.n === 1 ? "booking" : "bookings"}`} />)}
+      </div>
+    </ChartModal>
+  );
+
+  const modalTicketTypes = (
+    <ChartModal open={openChart === "ticket-types"} onClose={closeChart} title="Ticket types you buy" subtitle="Your most booked types and what they cost"
+      explanation={<>Each bar counts the number of tickets of a specific type (for example Comrade, Regular, VIP). The sub-line shows the average price you paid per ticket for that type, and the range if it changed.</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Type</th><th className="text-right">Tickets</th><th className="text-right">Spent</th><th className="text-right">Average</th></tr></thead>}
+      tableRows={s.typeList.map((e) => <tr key={e.id}><td><TypeName id={e.id} names={typeNames} /></td><td className="text-right">{e.tickets}</td><td className="text-right font-bold">{fmtMoney(e.spent)}</td><td className="text-right">{fmtMoney(e.avg)}</td></tr>)}
+    >
+      <div className="flex flex-col gap-3.5">
+        {s.typeList.map((e) => (
+          <BarRow key={e.id} bar="bg-success" label={<TypeName id={e.id} names={typeNames} />} value={e.tickets} max={s.typeList[0].tickets} display={`${e.tickets} tickets`}
+            sub={e.min === e.max ? `${fmtMoney(e.avg)} each` : `${fmtMoney(e.avg)} each on average (${fmtMoney(e.min)} to ${fmtMoney(e.max)})`} />
+        ))}
+      </div>
+    </ChartModal>
+  );
+
+  const modalMethods = (
+    <ChartModal open={openChart === "methods"} onClose={closeChart} title="How you pay" subtitle="Completed payments and how often each method works"
+      explanation={<>Each bar is a payment method (M-Pesa, card, and so on). Its length is how much you have paid through that method. The sub-line shows how many of those payments went through, so you can see if a method fails more often than the others.</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Method</th><th className="text-right">Payments</th><th className="text-right">Succeeded</th><th className="text-right">Amount</th></tr></thead>}
+      tableRows={s.methods.map(([name, v]) => <tr key={name}><td>{name}</td><td className="text-right">{v.total}</td><td className="text-right">{v.ok} ({pct(v.ok, v.total)}%)</td><td className="text-right font-bold">{fmtMoney(v.amount)}</td></tr>)}
+    >
+      <div className="flex flex-col gap-3.5">
+        {s.methods.map(([name, v]) => <BarRow key={name} label={name} value={v.amount} max={maxOf(s.methods.map(([, x]) => x.amount))} display={fmtMoney(v.amount)} sub={`${v.ok} of ${v.total} succeeded (${pct(v.ok, v.total)}%)`} />)}
+      </div>
+    </ChartModal>
+  );
+
+  const modalHours = (
+    <ChartModal open={openChart === "hours"} onClose={closeChart} title="Time of day" subtitle="The hour you usually book"
+      explanation={<>Each bar is an hour of the day (00 is midnight, 12 is noon). The tallest bar is the hour you most often start a booking. This is how we work out your booking style (Early bird, Midday browser, Evening booker, Night owl).</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Hour</th><th className="text-right">Bookings</th></tr></thead>}
+      tableRows={s.hours.filter((h) => h.value > 0).map((h) => <tr key={h.key}><td>{h.key.padStart(2, "0")}:00</td><td className="text-right font-bold">{h.value}</td></tr>)}
+    >
+      <Columns data={s.hours} height="h-64" minW="min-w-[24rem]" highlightMax format={(n) => String(n)} />
+    </ChartModal>
+  );
+
+  const modalWeekday = (
+    <ChartModal open={openChart === "weekday"} onClose={closeChart} title="Day of the week" subtitle="Bookings by day"
+      explanation={<>Each bar is a weekday. The tallest bar shows the day you most often book on. It counts the bookings you made, not the day of the event itself.</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Day</th><th className="text-right">Bookings</th></tr></thead>}
+      tableRows={s.weekday.map((d) => <tr key={d.label}><td>{d.label}</td><td className="text-right font-bold">{d.value}</td></tr>)}
+    >
+      <Columns data={s.weekday} height="h-56" highlightMax format={(n) => String(n)} />
+    </ChartModal>
+  );
+
+  const modalLead = (
+    <ChartModal open={openChart === "lead"} onClose={closeChart} title="How early you book" subtitle="Time between booking and the event"
+      explanation={<>Each bar counts your bookings by how many days before the event you made them. "Within a week" means you booked less than 7 days before the event; "Over 3 months" means you booked more than 90 days in advance.</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Lead time</th><th className="text-right">Bookings</th></tr></thead>}
+      tableRows={s.leadBuckets.map((b) => <tr key={b.label}><td>{b.label}</td><td className="text-right font-bold">{b.n}</td></tr>)}
+    >
+      <div className="flex flex-col gap-3.5">
+        {s.leadBuckets.map((b) => <BarRow key={b.label} bar="bg-success" label={b.label} value={b.n} max={maxOf(s.leadBuckets.map((x) => x.n))} display={`${b.n} ${b.n === 1 ? "booking" : "bookings"}`} />)}
+      </div>
+    </ChartModal>
+  );
+
+  const modalHeatmap = (
+    <ChartModal open={openChart === "heatmap"} onClose={closeChart} title="Booking activity" subtitle={`Your bookings over the last ${HEATMAP_WEEKS} weeks`}
+      explanation={<>Each square is one day. Darker squares mean more bookings that day; light squares mean fewer or none. Hover or tap a square to see the exact count for that day.</>}
+    >
+      <div className="overflow-x-auto">
+        <div className="grid grid-rows-7 grid-flow-col gap-1.5 w-max">
+          {s.cells.map((c) => (
+            <div key={c.key} title={c.future ? "" : `${fmtDate(c.key)}: ${c.count} ${c.count === 1 ? "booking" : "bookings"}`}
+              className={`w-4 h-4 sm:w-5 sm:h-5 rounded-sm ${heat(c.count, c.future)}`} />
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 text-[10px] text-base-content/60 mt-3">
+        Less {["bg-base-200", "bg-primary/30", "bg-primary/60", "bg-primary"].map((c) => <span key={c} className={`w-3 h-3 rounded-sm ${c}`} />)} More
+      </div>
+    </ChartModal>
+  );
+
+  const modalScore = (
+    <ChartModal open={openChart === "score"} onClose={closeChart} title="Reliability score" subtitle={tier}
+      explanation={<>Your score mixes four things: how many past tickets you actually used, how many payments went through, how many of your tickets have a named attendee, and how many bookings you kept (vs cancelled). Each part is weighted and combined into one number out of 100.</>}
+      tableHead={<thead><tr className="text-base-content/60"><th>Factor</th><th className="text-right">Weight</th><th className="text-right">Your value</th></tr></thead>}
+      tableRows={s.comps.map((c) => <tr key={c.label}><td>{c.label}<span className="block text-[10px] text-base-content/50">{c.hint}</span></td><td className="text-right">{c.w}%</td><td className="text-right font-bold">{c.v === null ? "—" : `${Math.round(c.v * 100)}%`}</td></tr>)}
+    >
+      <div className="flex flex-col sm:flex-row items-center gap-6 justify-center">
+        <div className="relative">
+          <Ring value={s.score ?? 0} stroke={scoreStroke} size="w-40 h-40" />
+          <span className="absolute inset-0 flex items-center justify-center text-4xl font-black text-base-content">{s.score ?? "—"}</span>
+        </div>
+        <ul className="flex flex-col gap-2 text-sm flex-1 min-w-0 w-full">
+          {s.comps.map((c) => (
+            <li key={c.label} className="flex items-center justify-between gap-2">
+              <span className="text-base-content/70">{c.label}</span>
+              <span className="font-black text-base-content">{c.v === null ? "—" : `${Math.round(c.v * 100)}%`}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </ChartModal>
+  );
+
+  const modalBadges = (
+    <ChartModal open={openChart === "badges"} onClose={closeChart} title="Achievements" subtitle={`${unlocked} of ${s.badges.length} unlocked`}
+      explanation={<>Every badge tracks a milestone. Unlocked means you have already reached it. Locked badges show how far you are, so you know what to aim for next.</>}
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {s.badges.map((b) => (
+          <div key={b.name} className={`flex items-start gap-3 rounded-2xl border p-3.5 ${b.have ? "bg-primary/5 border-primary/30" : "bg-base-200/30 border-base-200 opacity-70"}`}>
+            <div className={`p-2.5 rounded-xl shrink-0 ${b.have ? "bg-primary text-primary-content" : "bg-base-200 text-base-content/50"}`}>{b.icon}</div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs font-black text-base-content">{b.name}</span>
+              <span className="text-[11px] text-base-content/60">{b.desc}</span>
+              <span className={`text-[10px] font-bold mt-1 ${b.have ? "text-success" : "text-base-content/50"}`}>{b.have ? "Unlocked" : b.progress}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </ChartModal>
+  );
+
   /* ------------------------------- tabs ------------------------------- */
   const overview = (
     <>
@@ -735,14 +1084,14 @@ export const UserAnalytics = () => {
         <Section title="Your story" subtitle={rangeLabel} icon={<Sparkles size={16} />} className="lg:col-span-2">
           <p className="text-sm text-base-content/80 leading-relaxed">{story}</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <Tile k="Booking streak" v={`${s.streak.current} ${s.streak.current === 1 ? "month" : "months"}`} sub={`Best: ${s.streak.longest}`} />
-            <Tile k="Badges" v={`${unlocked} of ${s.badges.length}`} sub="Unlocked" />
+            <Tile k="Booking streak" v={`${s.streak.current} ${s.streak.current === 1 ? "month" : "months"}`} sub={`Best: ${s.streak.longest}`} tone="bg-primary/5" />
+            <Tile k="Badges" v={`${unlocked} of ${s.badges.length}`} sub="Unlocked" tone="bg-success/5" />
             <Tile k="Upcoming events" v={s.upcomingCount} sub={`${s.pastCount} past`} />
-            <Tile k="All-time spend" v={fmtMoney(s.allTimeSpent)} />
+            <Tile k="All-time spend" v={fmtMoney(s.allTimeSpent)} tone="bg-warning/5" />
           </div>
         </Section>
 
-        <Section title="Reliability score" subtitle={tier} icon={<Gauge size={16} />}>
+        <Section title="Reliability score" subtitle={tier} icon={<Gauge size={16} />} expandable onExpand={() => setOpenChart("score")}>
           <div className="flex items-center gap-4">
             <div className="relative">
               <Ring value={s.score ?? 0} stroke={scoreStroke} />
@@ -772,7 +1121,7 @@ export const UserAnalytics = () => {
               </div>
               <span className="badge badge-primary font-bold shrink-0 self-start sm:self-center">{countdown(s.next.date)}</span>
             </div>
-          ) : <NoData text="No upcoming events. Confirmed bookings for future events will show here." />}
+          ) : <NoData icon={<CalendarClock size={24} />} text="No upcoming events. Confirmed bookings for future events will show here." />}
         </Section>
 
         <Section title="Monthly budget" subtitle="Set a limit and track this month" icon={<Target size={16} />}>
@@ -782,7 +1131,7 @@ export const UserAnalytics = () => {
                 <span className="font-black text-base-content">{fmtMoney(s.monthSpent)}</span>
                 <span className="text-base-content/60">of {fmtMoney(budget)}</span>
               </div>
-              <div className="h-2.5 rounded-full bg-base-200 overflow-hidden"><div className={`h-full rounded-full ${budgetBar}`} style={{ width: `${Math.min(100, budgetPct)}%` }} /></div>
+              <div className="h-2.5 rounded-full bg-base-200 overflow-hidden"><div className={`h-full rounded-full ${budgetBar} transition-all`} style={{ width: `${Math.min(100, budgetPct)}%` }} /></div>
               <p className="text-[11px] text-base-content/60">
                 {budgetPct > 100 ? `You are ${fmtMoney(s.monthSpent - budget)} over budget this month.` : `${fmtMoney(budget - s.monthSpent)} left this month (${budgetPct}% used).`}
                 {s.projected > budget && budgetPct <= 100 && " At this pace you will go over."}
@@ -802,7 +1151,7 @@ export const UserAnalytics = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Section title="Ticket journey" subtitle="From booking to the gate" icon={<Filter size={16} />}>
+        <Section title="Ticket journey" subtitle="From booking to the gate" icon={<Filter size={16} />} expandable onExpand={() => setOpenChart("funnel")}>
           <div className="flex flex-col gap-3.5">
             {s.funnel.map((f, i) => (
               <BarRow key={f.label} bar={i === s.funnel.length - 1 ? "bg-success" : "bg-primary"} label={f.label} value={f.n} max={funnelMax} display={String(f.n)} sub={i === 0 ? undefined : `${pct(f.n, s.funnel[0].n)}% of booked${s.funnel[i - 1].n > f.n ? ` · ${s.funnel[i - 1].n - f.n} dropped off` : ""}`} />
@@ -839,29 +1188,29 @@ export const UserAnalytics = () => {
         <Section title="Month forecast" subtitle="Where this month is heading" icon={<Coins size={16} />}>
           <div className="grid grid-cols-2 gap-2">
             <Tile k="Spent so far" v={fmtMoney(s.monthSpent)} />
-            <Tile k="Projected" v={fmtMoney(s.projected)} sub={monthDiff === null ? undefined : `${monthDiff >= 0 ? "+" : ""}${monthDiff}% vs last month`} />
+            <Tile k="Projected" v={fmtMoney(s.projected)} sub={monthDiff === null ? undefined : `${monthDiff >= 0 ? "+" : ""}${monthDiff}% vs last month`} tone={s.projected > budget && budget > 0 ? "bg-error/10" : "bg-success/10"} />
             <Tile k="Last month" v={fmtMoney(s.lastMonthSpent)} />
             <Tile k="Per day so far" v={fmtMoney(s.monthSpent / Math.max(1, new Date().getDate()))} />
           </div>
           {budget > 0 && <p className="text-[11px] text-base-content/60">{s.projected > budget ? `At this pace you will pass your ${fmtMoney(budget)} budget by ${fmtMoney(s.projected - budget)}.` : `You are on track to stay within your ${fmtMoney(budget)} budget.`}</p>}
         </Section>
 
-        <Section title="Running total" subtitle="How your spending adds up" icon={<TrendingUp size={16} />} className="lg:col-span-2">
+        <Section title="Running total" subtitle="How your spending adds up" icon={<TrendingUp size={16} />} className="lg:col-span-2" expandable onExpand={() => setOpenChart("running")}>
           {s.running.length > 1 ? (
             <>
               <LineChart values={s.running} />
               <div className="flex justify-between text-[10px] text-base-content/60"><span>First payment</span><span className="font-black text-base-content">{fmtMoney(s.running[s.running.length - 1])} in total</span></div>
             </>
-          ) : <NoData text="Make a few payments to see your running total." />}
+          ) : <NoData icon={<TrendingUp size={24} />} text="Make a few payments to see your running total." />}
         </Section>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Section title="Spending by month" subtitle="Money you paid each month" icon={<BarChart3 size={16} />}>
+        <Section title="Spending by month" subtitle="Money you paid each month" icon={<BarChart3 size={16} />} expandable onExpand={() => setOpenChart("monthly-spend")}>
           {s.months.length ? <Columns data={s.months.map((m) => ({ key: m.key, label: m.label, value: m.spent, title: `${m.label}: ${fmtMoney(m.spent)} across ${m.count} payments` }))} format={shortMoney} /> : <NoData text="No completed payments yet." />}
         </Section>
 
-        <Section title="Average ticket price" subtitle="What you paid per ticket each month" icon={<Tag size={16} />}>
+        <Section title="Average ticket price" subtitle="What you paid per ticket each month" icon={<Tag size={16} />} expandable onExpand={() => setOpenChart("avg-price")}>
           {s.avgPriceMonths.some((m) => m.value) ? <Columns data={s.avgPriceMonths} format={shortMoney} /> : <NoData text="Confirmed bookings will show prices here." />}
         </Section>
 
@@ -873,7 +1222,7 @@ export const UserAnalytics = () => {
                   <span className="text-base-content/60 font-semibold">{m.label}</span>
                   <span className="font-black text-base-content">{fmtMoney(m.spent)}</span>
                   <span className="w-20 text-right text-[11px] font-bold text-base-content/60">
-                    {m.change === null ? "—" : <span className="inline-flex items-center gap-0.5">{m.change >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}{Math.abs(Math.round(m.change))}%</span>}
+                    {m.change === null ? "—" : <span className={`inline-flex items-center gap-0.5 ${m.change >= 0 ? "text-success" : "text-error"}`}>{m.change >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}{Math.abs(Math.round(m.change))}%</span>}
                   </span>
                 </li>
               ))}
@@ -881,7 +1230,7 @@ export const UserAnalytics = () => {
           ) : <NoData text="No monthly data yet." />}
         </Section>
 
-        <Section title="Where your money goes" subtitle="Events you spent the most on" icon={<Trophy size={16} />}>
+        <Section title="Where your money goes" subtitle="Events you spent the most on" icon={<Trophy size={16} />} expandable onExpand={() => setOpenChart("top-events")}>
           {s.topEvents.length ? (
             <div className="flex flex-col gap-3.5">
               {s.topEvents.map((e) => (
@@ -892,17 +1241,17 @@ export const UserAnalytics = () => {
         </Section>
 
         {s.byCategory.length > 0 && (
-          <Section title="Spending by category" subtitle="What kind of events you pay for" icon={<Layers size={16} />}>
+          <Section title="Spending by category" subtitle="What kind of events you pay for" icon={<Layers size={16} />} expandable onExpand={() => setOpenChart("by-category")}>
             <div className="flex flex-col gap-3.5">
-              {s.byCategory.map(([name, v]) => <BarRow key={name} label={String(name)} value={v.value} max={s.byCategory[0][1].value} display={fmtMoney(v.value)} sub={`${v.count} ${v.count === 1 ? "booking" : "bookings"} · ${pct(v.value, s.cur.spent)}% of spend`} />)}
+              {s.byCategory.map(([name, v]) => <BarRow key={String(name)} label={String(name)} value={v.value} max={s.byCategory[0][1].value} display={fmtMoney(v.value)} sub={`${v.count} ${v.count === 1 ? "booking" : "bookings"} · ${pct(v.value, s.cur.spent)}% of spend`} />)}
             </div>
           </Section>
         )}
 
         {s.byPlace.length > 0 && (
-          <Section title="Spending by location" subtitle="Where your events happen" icon={<MapPin size={16} />}>
+          <Section title="Spending by location" subtitle="Where your events happen" icon={<MapPin size={16} />} expandable onExpand={() => setOpenChart("by-place")}>
             <div className="flex flex-col gap-3.5">
-              {s.byPlace.map(([name, v]) => <BarRow key={name} bar="bg-success" label={String(name)} value={v.value} max={s.byPlace[0][1].value} display={fmtMoney(v.value)} sub={`${v.count} ${v.count === 1 ? "booking" : "bookings"}`} />)}
+              {s.byPlace.map(([name, v]) => <BarRow key={String(name)} bar="bg-success" label={String(name)} value={v.value} max={s.byPlace[0][1].value} display={fmtMoney(v.value)} sub={`${v.count} ${v.count === 1 ? "booking" : "bookings"}`} />)}
             </div>
           </Section>
         )}
@@ -914,9 +1263,9 @@ export const UserAnalytics = () => {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <Section title="Events at a glance" subtitle="Upcoming and past" icon={<CalendarClock size={16} />}>
         <div className="grid grid-cols-3 gap-2">
-          <Tile k="Upcoming" v={s.upcomingCount} />
+          <Tile k="Upcoming" v={s.upcomingCount} tone="bg-primary/5" />
           <Tile k="Past" v={s.pastCount} />
-          <Tile k="Attended" v={s.attendedEvents.length} />
+          <Tile k="Attended" v={s.attendedEvents.length} tone="bg-success/5" />
         </div>
         {s.next ? <p className="text-[11px] text-base-content/60">Next: <b className="text-base-content">{eventName(s.next.id)}</b> · {countdown(s.next.date)}</p> : <p className="text-[11px] text-base-content/60">No upcoming events yet.</p>}
       </Section>
@@ -931,7 +1280,7 @@ export const UserAnalytics = () => {
               </li>
             ))}
           </ul>
-        ) : <NoData text="Events you attend will be listed here." />}
+        ) : <NoData icon={<ScanLine size={24} />} text="Events you attend will be listed here." />}
       </Section>
 
       <Section title="Missed events" subtitle="Tickets for past events that were never scanned" icon={<XCircle size={16} />}>
@@ -947,7 +1296,7 @@ export const UserAnalytics = () => {
               ))}
             </ul>
           </>
-        ) : <NoData text="No unused tickets for past events. Nice." />}
+        ) : <NoData icon={<CheckCircle2 size={24} />} text="No unused tickets for past events. Nice." />}
       </Section>
 
       <Section title="Events you keep coming back to" subtitle="Events you booked more than once" icon={<Repeat size={16} />}>
@@ -955,15 +1304,15 @@ export const UserAnalytics = () => {
           <div className="flex flex-col gap-3.5">
             {s.repeatEvents.map(([id, v]) => <BarRow key={id} label={eventName(Number(id))} value={v.count} max={s.repeatEvents[0][1].count} display={`${v.count} bookings`} />)}
           </div>
-        ) : <NoData text="You have not booked the same event twice yet." />}
+        ) : <NoData icon={<Repeat size={24} />} text="You have not booked the same event twice yet." />}
       </Section>
 
-      <Section title="Event days" subtitle={`Which days your events fall on · ${s.weekendShare}% on weekends`} icon={<CalendarDays size={16} />}>
+      <Section title="Event days" subtitle={`Which days your events fall on · ${s.weekendShare}% on weekends`} icon={<CalendarDays size={16} />} expandable onExpand={() => setOpenChart("event-days")}>
         {s.eventWeekday.some((d) => d.value) ? <Columns data={s.eventWeekday} height="h-32" minW="min-w-[16rem]" highlightMax /> : <NoData text="Event dates are needed for this chart." />}
       </Section>
 
       {s.hasEventTimes && (
-        <Section title="Event times" subtitle="When your events start" icon={<Sunrise size={16} />}>
+        <Section title="Event times" subtitle="When your events start" icon={<Sunrise size={16} />} expandable onExpand={() => setOpenChart("event-times")}>
           <Columns data={s.eventParts} height="h-32" minW="min-w-[16rem]" highlightMax />
         </Section>
       )}
@@ -972,7 +1321,7 @@ export const UserAnalytics = () => {
 
   const ticketsTab = (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <Section title="Your ticket wallet" subtitle="Tickets you hold right now" icon={<Ticket size={16} />}>
+      <Section title="Your ticket wallet" subtitle="Tickets you hold right now" icon={<Ticket size={16} />} expandable onExpand={() => setOpenChart("wallet")}>
         {s.tickets.length ? (
           <div className="flex flex-col gap-3.5">
             <BarRow bar="bg-success" label="Scanned at the gate" value={s.attended} max={s.tickets.length} display={`${s.attended} of ${s.tickets.length}`} sub={`${pct(s.attended, s.tickets.length)}% used`} />
@@ -997,7 +1346,7 @@ export const UserAnalytics = () => {
         ) : <NoData text="Tickets you purchase will be counted here." />}
       </Section>
 
-      <Section title="Ticket types you buy" subtitle="Your most booked types and what they cost" icon={<Tag size={16} />}>
+      <Section title="Ticket types you buy" subtitle="Your most booked types and what they cost" icon={<Tag size={16} />} expandable onExpand={() => setOpenChart("ticket-types")}>
         {s.typeList.length ? (
           <div className="flex flex-col gap-3.5">
             {s.typeList.map((e) => (
@@ -1008,7 +1357,7 @@ export const UserAnalytics = () => {
         ) : <NoData text="Confirmed bookings will show up here." />}
       </Section>
 
-      <Section title="Group size" subtitle={`You book ${s.avgGroup.toFixed(1)} tickets at a time on average`} icon={<Users size={16} />}>
+      <Section title="Group size" subtitle={`You book ${s.avgGroup.toFixed(1)} tickets at a time on average`} icon={<Users size={16} />} expandable onExpand={() => setOpenChart("group-size")}>
         <div className="flex flex-col gap-3.5">
           {s.sizeBuckets.map((b) => <BarRow key={b.label} label={b.label} value={b.n} max={maxOf(s.sizeBuckets.map((x) => x.n))} display={`${b.n} ${b.n === 1 ? "booking" : "bookings"}`} />)}
         </div>
@@ -1019,7 +1368,7 @@ export const UserAnalytics = () => {
   const paymentsTab = (
     <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Section title="How you pay" subtitle="Completed payments and how often each method works" icon={<CreditCard size={16} />}>
+        <Section title="How you pay" subtitle="Completed payments and how often each method works" icon={<CreditCard size={16} />} expandable onExpand={() => setOpenChart("methods")}>
           {s.methods.length ? (
             <div className="flex flex-col gap-3.5">
               {s.methods.map(([name, v]) => <BarRow key={name} label={name} value={v.amount} max={maxOf(s.methods.map(([, x]) => x.amount))} display={fmtMoney(v.amount)} sub={`${v.ok} of ${v.total} succeeded (${pct(v.ok, v.total)}%)`} />)}
@@ -1081,16 +1430,16 @@ export const UserAnalytics = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Section title="Time of day" subtitle="The hour you usually book" icon={<Sunrise size={16} />}>
+        <Section title="Time of day" subtitle="The hour you usually book" icon={<Sunrise size={16} />} expandable onExpand={() => setOpenChart("hours")}>
           <Columns data={s.hours} height="h-32" minW="min-w-[22rem]" highlightMax />
           <div className="grid grid-cols-4 gap-2">{s.parts.map((p) => <Tile key={p.label} k={p.label} v={p.n} />)}</div>
         </Section>
 
-        <Section title="Day of the week" subtitle="Bookings by day" icon={<CalendarDays size={16} />}>
+        <Section title="Day of the week" subtitle="Bookings by day" icon={<CalendarDays size={16} />} expandable onExpand={() => setOpenChart("weekday")}>
           <Columns data={s.weekday} height="h-32" minW="min-w-[16rem]" highlightMax />
         </Section>
 
-        <Section title="How early you book" subtitle="Time between booking and the event" icon={<Hourglass size={16} />}>
+        <Section title="How early you book" subtitle="Time between booking and the event" icon={<Hourglass size={16} />} expandable onExpand={() => setOpenChart("lead")}>
           {s.avgLead !== null ? (
             <div className="flex flex-col gap-3.5">
               {s.leadBuckets.map((b) => <BarRow key={b.label} bar="bg-success" label={b.label} value={b.n} max={maxOf(s.leadBuckets.map((x) => x.n))} display={`${b.n} ${b.n === 1 ? "booking" : "bookings"}`} />)}
@@ -1098,7 +1447,7 @@ export const UserAnalytics = () => {
           ) : <NoData text="Event dates are needed for this chart." />}
         </Section>
 
-        <Section title="Booking activity" subtitle={`Your bookings over the last ${HEATMAP_WEEKS} weeks`} icon={<Grid3X3 size={16} />}>
+        <Section title="Booking activity" subtitle={`Your bookings over the last ${HEATMAP_WEEKS} weeks`} icon={<Grid3X3 size={16} />} expandable onExpand={() => setOpenChart("heatmap")}>
           <div className="overflow-x-auto">
             <div className="grid grid-rows-7 grid-flow-col gap-1 w-max">
               {s.cells.map((c) => <div key={c.key} title={c.future ? "" : `${fmtDate(c.key)}: ${c.count} ${c.count === 1 ? "booking" : "bookings"}`} className={`w-3.5 h-3.5 rounded-sm ${heat(c.count, c.future)}`} />)}
@@ -1113,11 +1462,11 @@ export const UserAnalytics = () => {
   );
 
   const achievements = (
-    <Section title="Badges" subtitle={`${unlocked} of ${s.badges.length} unlocked`} icon={<Award size={16} />}>
-      <div className="h-2 rounded-full bg-base-200 overflow-hidden"><div className="h-full rounded-full bg-primary" style={{ width: `${pct(unlocked, s.badges.length)}%` }} /></div>
+    <Section title="Badges" subtitle={`${unlocked} of ${s.badges.length} unlocked`} icon={<Award size={16} />} expandable onExpand={() => setOpenChart("badges")}>
+      <div className="h-2 rounded-full bg-base-200 overflow-hidden"><div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${pct(unlocked, s.badges.length)}%` }} /></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {s.badges.map((b) => (
-          <div key={b.name} className={`flex items-start gap-3 rounded-2xl border p-3.5 ${b.have ? "bg-primary/5 border-primary/30" : "bg-base-200/30 border-base-200 opacity-60"}`}>
+          <div key={b.name} className={`flex items-start gap-3 rounded-2xl border p-3.5 transition-all ${b.have ? "bg-primary/5 border-primary/30 shadow-sm" : "bg-base-200/30 border-base-200 opacity-60"}`}>
             <div className={`p-2.5 rounded-xl shrink-0 ${b.have ? "bg-primary text-primary-content" : "bg-base-200 text-base-content/50"}`}>{b.icon}</div>
             <div className="flex flex-col min-w-0">
               <span className="text-xs font-black text-base-content">{b.name}</span>
@@ -1135,7 +1484,6 @@ export const UserAnalytics = () => {
   return (
     <>
       <Shell header={header} className="print:hidden">
-        {/* ATTENTION */}
         {(s.pending.length > 0 || s.unassigned > 0 || s.payCounts.Failed > 0 || (s.daysSinceLast ?? 0) > 60) && (
           <div className="flex flex-col gap-2">
             {s.pending.length > 0 && (
@@ -1170,7 +1518,6 @@ export const UserAnalytics = () => {
           </div>
         )}
 
-        {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             { label: "Total Spent", value: fmtMoney(s.cur.spent), hint: s.prev ? <Delta cur={s.cur.spent} prev={s.prev.spent} /> : "Completed payments", icon: <Wallet size={18} />, tone: "bg-primary/10 text-primary" },
@@ -1184,7 +1531,6 @@ export const UserAnalytics = () => {
           ].map((c, i) => <Kpi key={c.label} {...c} i={i} />)}
         </div>
 
-        {/* GROUPS */}
         <div role="tablist" aria-label="Analytics groups" className="flex gap-1 overflow-x-auto rounded-2xl bg-base-200/60 p-1">
           {TABS.map((x) => (
             <button
@@ -1202,7 +1548,27 @@ export const UserAnalytics = () => {
         <div role="tabpanel" className="flex flex-col gap-4">{tabContent[tab]}</div>
       </Shell>
 
-      {/* PRINTABLE STATEMENT: only visible when saving as PDF or printing */}
+      {/* =============== EXPANDED CHART MODALS =============== */}
+      {modalMonthlySpend}
+      {modalAvgPrice}
+      {modalRunning}
+      {modalTopEvents}
+      {modalByCategory}
+      {modalByPlace}
+      {modalEventDays}
+      {modalEventTimes}
+      {modalFunnel}
+      {modalWallet}
+      {modalGroupSize}
+      {modalTicketTypes}
+      {modalMethods}
+      {modalHours}
+      {modalWeekday}
+      {modalLead}
+      {modalHeatmap}
+      {modalScore}
+      {modalBadges}
+
       <div className="hidden print:block bg-white text-black p-6 text-[11px] leading-relaxed">
         <div className="flex items-start justify-between border-b-2 border-black pb-3 mb-4">
           <div>

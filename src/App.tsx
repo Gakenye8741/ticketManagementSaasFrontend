@@ -58,6 +58,8 @@ import PaymentVerify from './pages/PaymentVerify';
 import MyPayments from './DashBoards/dashboard/Payments';
 import UserAnalytics from './DashBoards/dashboard/UserAnalytics';
 import EventSalesReport from './DashBoards/OrganizerDashboard/EventSalesReport';
+import AdminRefunds from './DashBoards/adminDashboard/AdminRefunds';
+import OrganizerRefunds from './DashBoards/OrganizerDashboard/OrganizerRefunds';
 
 function App() {
   const Router = createBrowserRouter([
@@ -126,6 +128,7 @@ function App() {
         { path: 'AllPayments', element: <AllPayments /> },
         { path: 'profile', element: <AdminProfileManager /> },
         { path: 'SalesReports', element: <SalesReport /> },
+        { path:"refunds", element: <AdminRefunds/>}
       ],
     },
     {
@@ -149,6 +152,7 @@ function App() {
         { path: 'profile', element: <OrganizerProfileManager /> },
         { path: 'my-venues', element: <VenueManager /> },
         { path: 'sales-report', element: <EventSalesReport /> },
+        { path: 'REFUNDS', element: <OrganizerRefunds /> },
      
       ],
     },

@@ -10,13 +10,17 @@ import {
   ReceiptText,
   Home,
   LayoutDashboard,
+  Ticket,
+  Sparkles,
+  Users,
+  CalendarDays,
+  ShoppingBag,
 } from "lucide-react";
 import { Navbar } from "../components/Navbar";
 import { Footer } from "../components/Footer";
-import type { RootState } from "../App/store"; // adjust path
-import { useVerifyPaystackPaymentQuery } from "../features/APIS/MpesaApi"; // adjust path
+import type { RootState } from "../App/store";
+import { useVerifyPaystackPaymentQuery } from "../features/APIS/MpesaApi";
 
-// 👇 How long the success page stays before redirecting logged-in users
 const REDIRECT_DELAY_SECONDS = 20;
 
 const keyframes = `
@@ -36,35 +40,95 @@ const keyframes = `
 @keyframes pvBar{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
 @keyframes pvShine{0%{left:-80%}60%,100%{left:150%}}
 @keyframes pvCountdown{from{width:100%}to{width:0%}}
+@keyframes pvSlide{0%{opacity:0;transform:translateY(8px)}100%{opacity:1;transform:none}}
 `;
 
-const CONFETTI_COLORS = ["bg-primary", "bg-secondary", "bg-accent", "bg-success", "bg-warning", "bg-info"];
+const CONFETTI_COLORS = [
+  "bg-primary",
+  "bg-secondary",
+  "bg-accent",
+  "bg-success",
+  "bg-warning",
+  "bg-info",
+];
+
+/* ============================================================
+ * Small presentational helpers
+ * ============================================================ */
+
+const formatKES = (n: number) =>
+  n.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+
+const asNumber = (v: unknown): number => {
+  const n = typeof v === "string" ? Number(v) : (v as number);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/** Read the booking/money summary from the verify response if the backend returns it. */
+const extractSummary = (data: any) => {
+  const root = data?.data ?? data;
+  const booking = root?.booking ?? root?.payment?.booking ?? null;
+  const payment = root?.payment ?? null;
+
+  const totalCharged = asNumber(
+    booking?.totalCharged ?? payment?.totalCharged ?? root?.totalCharged ?? 0
+  );
+  const serviceFee = asNumber(
+    booking?.serviceFee ?? payment?.serviceFee ?? root?.serviceFee ?? 0
+  );
+  const ticketAmount = asNumber(
+    booking?.totalAmount ?? payment?.amount ?? root?.amount ?? 0
+  );
+  const itemCount =
+    booking?.items?.length ??
+    (Array.isArray(booking?.items) ? booking.items.length : 0);
+
+  return {
+    totalCharged,
+    serviceFee,
+    ticketAmount,
+    items: Array.isArray(booking?.items) ? booking.items : [],
+    itemCount,
+    quantity: Number(booking?.quantity ?? 0),
+    eventTitle: booking?.event?.title ?? null,
+  };
+};
+
+/* ============================================================
+ * PAGE
+ * ============================================================ */
 
 const PaymentVerify: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const reference = searchParams.get("reference") || searchParams.get("trxref");
 
-  // ---- AUTH CHECK ----
   const user = useSelector((state: RootState) => state.auth.user) as any;
-  const isAuthFlag = useSelector((state: RootState) => (state.auth as any).isAuthenticated);
-  const isAuthenticated = !!user || isAuthFlag === true || (isAuthFlag as any) === "true";
+  const isAuthFlag = useSelector(
+    (state: RootState) => (state.auth as any).isAuthenticated
+  );
+  const isAuthenticated =
+    !!user || isAuthFlag === true || (isAuthFlag as any) === "true";
 
-  const { data, isLoading, isError } = useVerifyPaystackPaymentQuery(reference as string, {
-    skip: !reference,
-  });
+  const { data, isLoading, isError } = useVerifyPaystackPaymentQuery(
+    reference as string,
+    { skip: !reference }
+  );
 
-  // adjust if your backend normalizes the response
   const status = data?.data?.status ?? data?.status;
   const success = status === "success";
   const failed = !!reference && !isLoading && (isError || !success);
+
+  const summary = useMemo(() => extractSummary(data), [data]);
 
   const [countdown, setCountdown] = useState(REDIRECT_DELAY_SECONDS);
   const [stayHere, setStayHere] = useState(false);
   const [copied, setCopied] = useState(false);
   const toasted = useRef(false);
 
-  // one-time toast when the result arrives
   useEffect(() => {
     if (toasted.current || isLoading || !reference) return;
     if (success) {
@@ -76,10 +140,12 @@ const PaymentVerify: React.FC = () => {
     }
   }, [success, isError, isLoading, reference, status]);
 
-  // auto-redirect ONLY for logged-in users after a successful payment
   useEffect(() => {
     if (!success || !isAuthenticated || stayHere) return;
-    const tick = setInterval(() => setCountdown((c) => (c > 0 ? c - 1 : 0)), 1000);
+    const tick = setInterval(
+      () => setCountdown((c) => (c > 0 ? c - 1 : 0)),
+      1000
+    );
     const t = setTimeout(
       () => navigate("/user-dashboard/my-bookings", { replace: true }),
       REDIRECT_DELAY_SECONDS * 1000
@@ -92,7 +158,7 @@ const PaymentVerify: React.FC = () => {
 
   const confetti = useMemo(
     () =>
-      Array.from({ length: 50 }).map((_, i) => ({
+      Array.from({ length: 60 }).map((_, i) => ({
         id: i,
         left: Math.random() * 100,
         delay: Math.random() * 1.5,
@@ -105,7 +171,8 @@ const PaymentVerify: React.FC = () => {
   );
 
   const goHome = () => navigate("/", { replace: true });
-  const goBookings = () => navigate("/user-dashboard/my-bookings", { replace: true });
+  const goBookings = () =>
+    navigate("/user-dashboard/my-bookings", { replace: true });
 
   const copyRef = async () => {
     try {
@@ -120,6 +187,10 @@ const PaymentVerify: React.FC = () => {
 
   const up = (delay: string) => ({ animation: `pvUp .6s ${delay} both` });
 
+  /* ============================================================
+   * SUB-COMPONENTS
+   * ============================================================ */
+
   const ReferenceBox = ({ tone }: { tone: "success" | "error" }) => (
     <div
       className="mb-6 flex items-center justify-between gap-3 rounded-2xl border border-base-300 bg-base-100 p-4 text-left"
@@ -128,7 +199,9 @@ const PaymentVerify: React.FC = () => {
       <div className="flex min-w-0 items-center gap-3">
         <div
           className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-            tone === "success" ? "bg-success/10 text-success" : "bg-error/10 text-error"
+            tone === "success"
+              ? "bg-success/10 text-success"
+              : "bg-error/10 text-error"
           }`}
         >
           <ReceiptText size={18} />
@@ -137,16 +210,30 @@ const PaymentVerify: React.FC = () => {
           <span className="block text-[9px] font-black uppercase tracking-wider text-base-content/60">
             Payment Reference
           </span>
-          <strong className="block break-all text-xs font-extrabold sm:text-sm">{reference}</strong>
+          <strong className="block break-all text-xs font-extrabold sm:text-sm">
+            {reference}
+          </strong>
         </div>
       </div>
-      <button onClick={copyRef} className="btn btn-ghost btn-sm btn-circle shrink-0" aria-label="Copy reference">
+      <button
+        onClick={copyRef}
+        className="btn btn-ghost btn-sm btn-circle shrink-0"
+        aria-label="Copy reference"
+      >
         {copied ? <Check size={16} className="text-success" /> : <Copy size={16} />}
       </button>
     </div>
   );
 
-  const PrimaryBtn = ({ onClick, label, icon }: { onClick: () => void; label: string; icon: React.ReactNode }) => (
+  const PrimaryBtn = ({
+    onClick,
+    label,
+    icon,
+  }: {
+    onClick: () => void;
+    label: string;
+    icon: React.ReactNode;
+  }) => (
     <button
       onClick={onClick}
       className="btn btn-primary relative h-14 w-full gap-2 overflow-hidden rounded-2xl border-none text-xs font-black uppercase tracking-widest shadow-xl shadow-primary/25 hover:shadow-primary/40 active:scale-95"
@@ -162,13 +249,102 @@ const PaymentVerify: React.FC = () => {
     </button>
   );
 
+  /** NEW — the receipt-style booking summary shown on the success screen. */
+  const BookingSummary = () => {
+    if (summary.totalCharged <= 0 && summary.items.length === 0) return null;
+
+    return (
+      <div
+        className="mb-6 overflow-hidden rounded-2xl border-2 border-dashed border-base-300 bg-base-100"
+        style={{ animation: "pvSlide .5s .7s both" }}
+      >
+        <div className="flex items-center gap-2 bg-success/10 px-4 py-2.5">
+          <Sparkles size={14} className="text-success" />
+          <span className="text-[10px] font-black uppercase tracking-wider text-success">
+            {summary.itemCount > 1
+              ? `${summary.itemCount} ticket types in this order`
+              : "Your ticket"}
+          </span>
+        </div>
+
+        {summary.eventTitle && (
+          <div className="flex items-start gap-3 border-b border-base-300 px-4 py-3">
+            <CalendarDays size={16} className="mt-0.5 shrink-0 text-primary" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-wider text-base-content/60">
+                Event
+              </p>
+              <p className="truncate text-sm font-extrabold">
+                {summary.eventTitle}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {summary.items.length > 0 && (
+          <ul className="divide-y divide-base-300">
+            {summary.items.map((item: any, i: number) => (
+              <li
+                key={i}
+                className="flex items-center justify-between gap-3 px-4 py-2.5"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-[10px] font-black text-primary">
+                    ×{item.quantity}
+                  </span>
+                  <span className="truncate text-xs font-bold">
+                    {item.ticketTypeName || "Ticket"}
+                  </span>
+                </div>
+                <span className="shrink-0 text-xs font-extrabold">
+                  KES {formatKES(asNumber(item.lineTotal))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {summary.totalCharged > 0 && (
+          <div className="space-y-1.5 border-t border-dashed border-base-300 bg-base-200/40 px-4 py-3 text-xs">
+            {summary.ticketAmount > 0 && (
+              <div className="flex justify-between text-base-content/70">
+                <span>Tickets</span>
+                <span className="font-bold text-base-content">
+                  KES {formatKES(summary.ticketAmount)}
+                </span>
+              </div>
+            )}
+            {summary.serviceFee > 0 && (
+              <div className="flex justify-between text-base-content/70">
+                <span>Service fee</span>
+                <span className="font-bold text-base-content">
+                  KES {formatKES(summary.serviceFee)}
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between border-t border-base-300 pt-2 text-sm">
+              <span className="font-extrabold">Total paid</span>
+              <span className="font-black text-success">
+                KES {formatKES(summary.totalCharged)}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /* ============================================================
+   * RENDER
+   * ============================================================ */
+
   return (
     <div className="relative flex min-h-screen flex-col justify-between overflow-hidden bg-base-100 font-sans text-base-content selection:bg-primary selection:text-primary-content">
       <style>{keyframes}</style>
       <Navbar />
       <Toaster richColors position="top-right" />
 
-      {/* Background glow accents */}
+      {/* Ambient glow */}
       <div
         className="pointer-events-none absolute left-1/4 top-0 h-96 w-96 rounded-full bg-primary/10 blur-3xl"
         style={{ animation: "pvFloat1 10s ease-in-out infinite" }}
@@ -179,7 +355,6 @@ const PaymentVerify: React.FC = () => {
       />
       <div className="pointer-events-none absolute bottom-10 left-10 h-72 w-72 rounded-full bg-secondary/10 blur-3xl" />
 
-      {/* Confetti */}
       {success &&
         confetti.map((c) => (
           <span
@@ -204,17 +379,30 @@ const PaymentVerify: React.FC = () => {
           {!reference && (
             <>
               <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-warning/10">
-                <span className="text-5xl font-black text-warning" style={{ animation: "pvBounce 1.2s ease infinite" }}>
+                <span
+                  className="text-5xl font-black text-warning"
+                  style={{ animation: "pvBounce 1.2s ease infinite" }}
+                >
                   ?
                 </span>
               </div>
-              <h1 className="mb-2 mt-5 text-2xl font-black tracking-tight sm:text-3xl" style={up(".3s")}>
+              <h1
+                className="mb-2 mt-5 text-2xl font-black tracking-tight sm:text-3xl"
+                style={up(".3s")}
+              >
                 No Payment Reference
               </h1>
-              <p className="mb-6 text-xs font-medium text-base-content/70 sm:text-sm" style={up(".45s")}>
+              <p
+                className="mb-6 text-xs font-medium text-base-content/70 sm:text-sm"
+                style={up(".45s")}
+              >
                 We couldn't find a payment to verify.
               </p>
-              <PrimaryBtn onClick={goHome} label="Back to Home" icon={<Home size={16} />} />
+              <PrimaryBtn
+                onClick={goHome}
+                label="Back to Home"
+                icon={<Home size={16} />}
+              />
             </>
           )}
 
@@ -238,11 +426,17 @@ const PaymentVerify: React.FC = () => {
               </div>
               <h1
                 className="mb-2 mt-6 text-2xl font-black tracking-tight sm:text-3xl"
-                style={{ animation: "pvUp .6s .3s both, pvPulse 1.6s 1s ease-in-out infinite" }}
+                style={{
+                  animation:
+                    "pvUp .6s .3s both, pvPulse 1.6s 1s ease-in-out infinite",
+                }}
               >
                 Verifying Payment...
               </h1>
-              <p className="mb-5 text-xs font-medium text-base-content/70 sm:text-sm" style={up(".45s")}>
+              <p
+                className="mb-5 text-xs font-medium text-base-content/70 sm:text-sm"
+                style={up(".45s")}
+              >
                 Please don't close this page.
               </p>
               <div className="h-1.5 overflow-hidden rounded-full bg-base-300">
@@ -276,17 +470,32 @@ const PaymentVerify: React.FC = () => {
                   />
                 </svg>
               </div>
-              <h1 className="mb-2 mt-5 text-2xl font-black tracking-tight sm:text-3xl" style={up(".3s")}>
+              <h1
+                className="mb-2 mt-5 text-2xl font-black tracking-tight sm:text-3xl"
+                style={up(".3s")}
+              >
                 Payment Not Confirmed
               </h1>
-              <p className="mb-6 text-xs font-medium text-base-content/70 sm:text-sm" style={up(".45s")}>
-                We couldn't confirm this payment. If money was deducted, contact support with your reference.
+              <p
+                className="mb-6 text-xs font-medium text-base-content/70 sm:text-sm"
+                style={up(".45s")}
+              >
+                We couldn't confirm this payment. If money was deducted, contact
+                support with your reference.
               </p>
               <ReferenceBox tone="error" />
               <PrimaryBtn
                 onClick={isAuthenticated ? goBookings : goHome}
-                label={isAuthenticated ? "Back to My Bookings" : "Back to Home"}
-                icon={isAuthenticated ? <LayoutDashboard size={16} /> : <Home size={16} />}
+                label={
+                  isAuthenticated ? "Back to My Bookings" : "Back to Home"
+                }
+                icon={
+                  isAuthenticated ? (
+                    <LayoutDashboard size={16} />
+                  ) : (
+                    <Home size={16} />
+                  )
+                }
               />
             </>
           )}
@@ -296,7 +505,9 @@ const PaymentVerify: React.FC = () => {
             <>
               <div
                 className="relative mx-auto flex h-28 w-28 items-center justify-center text-success"
-                style={{ animation: "pvPop .9s .1s cubic-bezier(.2,1.6,.4,1) both" }}
+                style={{
+                  animation: "pvPop .9s .1s cubic-bezier(.2,1.6,.4,1) both",
+                }}
               >
                 {[0, 0.8, 1.6].map((d) => (
                   <span
@@ -323,25 +534,37 @@ const PaymentVerify: React.FC = () => {
 
               <h1
                 className="mb-2 mt-5 bg-gradient-to-r from-primary via-secondary to-accent bg-[length:300%_100%] bg-clip-text text-3xl font-black tracking-tight text-transparent sm:text-4xl"
-                style={{ animation: "pvUp .6s .3s both, pvText 4s linear infinite" }}
+                style={{
+                  animation: "pvUp .6s .3s both, pvText 4s linear infinite",
+                }}
               >
                 Payment Successful!
               </h1>
-              <p className="mb-6 text-xs font-medium text-base-content/70 sm:text-sm" style={up(".45s")}>
+              <p
+                className="mb-5 text-xs font-medium text-base-content/70 sm:text-sm"
+                style={up(".45s")}
+              >
                 Your booking is confirmed. Get ready for the event! 🎉
               </p>
+
+              {/* NEW — receipt-style summary */}
+              <BookingSummary />
 
               <ReferenceBox tone="success" />
 
               {isAuthenticated ? (
                 <>
-                  <p className="mb-2 text-xs font-medium text-base-content/70" style={up(".8s")}>
+                  <p
+                    className="mb-2 text-xs font-medium text-base-content/70"
+                    style={up(".8s")}
+                  >
                     Hi {user?.firstName ? <b>{user.firstName}</b> : "there"},{" "}
                     {stayHere ? (
                       "take your time. Head to your bookings when you're ready."
                     ) : (
                       <>
-                        redirecting to your bookings in <b className="text-primary">{countdown}s</b>...
+                        redirecting to your bookings in{" "}
+                        <b className="text-primary">{countdown}s</b>...
                       </>
                     )}
                   </p>
@@ -350,7 +573,9 @@ const PaymentVerify: React.FC = () => {
                     <div className="mb-4 h-1 overflow-hidden rounded-full bg-base-300">
                       <div
                         className="h-full rounded-full bg-primary"
-                        style={{ animation: `pvCountdown ${REDIRECT_DELAY_SECONDS}s linear forwards` }}
+                        style={{
+                          animation: `pvCountdown ${REDIRECT_DELAY_SECONDS}s linear forwards`,
+                        }}
                       />
                     </div>
                   )}
@@ -373,16 +598,23 @@ const PaymentVerify: React.FC = () => {
                 </>
               ) : (
                 <>
-                  <p className="mb-4 text-xs font-medium text-base-content/70" style={up(".8s")}>
+                  <p
+                    className="mb-4 text-xs font-medium text-base-content/70"
+                    style={up(".8s")}
+                  >
                     Please keep this reference for your records.
                   </p>
-                  <PrimaryBtn onClick={goHome} label="Back to Home" icon={<Home size={16} />} />
+                  <PrimaryBtn
+                    onClick={goHome}
+                    label="Back to Home"
+                    icon={<Home size={16} />}
+                  />
                 </>
               )}
             </>
           )}
 
-          {/* trust footer */}
+          {/* Trust footer */}
           <div className="mt-6 flex items-center justify-center gap-2 border-t border-base-300 pt-4 text-[10px] font-medium text-base-content/60">
             <ShieldCheck size={14} className="shrink-0 text-primary" />
             <span>Secured by Paystack. Your payment details are never stored.</span>

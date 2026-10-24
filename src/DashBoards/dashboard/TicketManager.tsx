@@ -34,19 +34,22 @@ import {
   ArrowRightLeft,
   Gift,
   Link2,
+  RotateCcw,
+  ArrowUpDown,
 } from "lucide-react";
 import { type RootState } from "../../App/store";
 import {
   useGetTicketsByPurchaserIdQuery,
-  useGetTicketsByHolderIdQuery, // claimed tickets are held by me, not purchased by me
+  useGetTicketsByHolderIdQuery,
   useAssignTicketMutation,
   useUnassignTicketMutation,
   useInitiateTicketTransferMutation,
   useClaimTransferredTicketMutation,
+  getTicketTypeLabel,
+  getTicketTypeTone,
   type Ticket as TicketType,
 } from "../../features/APIS/ticketsApi";
 import { useGetAllEventsQuery } from "../../features/APIS/EventsApi";
-import { useGetAllTicketTypesQuery } from "../../features/APIS/ticketsType.Api";
 import { useGetPrimaryMediaByEventIdQuery } from "../../features/APIS/mediaApi";
 import usePageTitle from "../../hooks/usePageTitle";
 import ModalShell from "../../components/ModalShell";
@@ -57,17 +60,16 @@ import ModalShell from "../../components/ModalShell";
 
 type TicketRow = TicketType & {
   eventTitle?: string;
-  ticketTypeName?: string;
   _event?: any;
-  _typeName?: string;
-  _received?: boolean; // bought by someone else and claimed/transferred to me
-  _gone?: boolean; // the ticket now belongs to someone else
+  _received?: boolean;
+  _gone?: boolean;
   [key: string]: any;
 };
 
-type TicketState = "unassigned" | "assigned" | "scanned" | "transferred";
+type TicketState = "unassigned" | "assigned" | "scanned" | "transferred" | "refunded";
 type Filter = "all" | TicketState | "received";
 type ViewMode = "cards" | "table";
+type SortKey = "newest" | "oldest" | "event" | "type";
 
 const VIEW_KEY = "mytickets_view_mode";
 const CARD_SIZES = [6, 12, 24];
@@ -75,7 +77,8 @@ const TABLE_SIZES = [10, 20, 50];
 
 const getId = (t: TicketRow) => (t.ticketId ?? t.id) as number;
 
-/** Your endpoints return `any`, so accept an array or a { data } / { tickets } wrapper */
+const isTicketRefunded = (t?: { lifecycleStatus?: string | null } | null) => t?.lifecycleStatus === "Refunded";
+
 const toList = (res: any): any[] => {
   if (Array.isArray(res)) return res;
   if (Array.isArray(res?.data)) return res.data;
@@ -85,7 +88,8 @@ const toList = (res: any): any[] => {
 };
 
 const getState = (t: TicketRow): TicketState => {
-  if (t.transferStatus === "transferred" && t._gone) return "transferred"; // receivers keep full control
+  if (isTicketRefunded(t)) return "refunded";
+  if (t.transferStatus === "transferred" && t._gone) return "transferred";
   if (t.isScanned) return "scanned";
   const assigned = t.isAssigned ?? Boolean(t.attendeeEmail || t.attendeeName);
   return assigned ? "assigned" : "unassigned";
@@ -96,12 +100,13 @@ const stateMeta: Record<TicketState, { label: string; badge: string; strip: stri
   assigned: { label: "Assigned", badge: "badge-success text-success-content", strip: "bg-primary" },
   scanned: { label: "Checked in", badge: "badge-neutral", strip: "bg-success" },
   transferred: { label: "Transferred", badge: "badge-info text-info-content", strip: "bg-info" },
+  refunded: { label: "Refunded", badge: "badge-error text-error-content", strip: "bg-error" },
 };
 
 const errMsg = (err: any): string =>
   err?.data?.message || err?.data?.error || err?.error || "Something went wrong. Please try again.";
 
-const fmtDate = (d?: string) => {
+const fmtDate = (d?: string | null) => {
   if (!d) return "";
   const date = new Date(d);
   if (Number.isNaN(date.getTime())) return d;
@@ -134,7 +139,6 @@ const initials = (s: string) => s.trim().charAt(0).toUpperCase();
    SMALL PIECES
    ========================================== */
 
-/** Event photo (primary media), falls back to a ticket icon */
 const EventThumb = ({ eventId, title }: { eventId: number | string; title: string }) => {
   const numericId = Number(eventId);
   const { data } = useGetPrimaryMediaByEventIdQuery(numericId, { skip: !numericId || isNaN(numericId) }) as {
@@ -161,7 +165,12 @@ const EventThumb = ({ eventId, title }: { eventId: number | string; title: strin
   );
 };
 
-/** One-line description of the ticket, used at the top of each modal */
+const TicketTypeBadge = ({ ticket }: { ticket: TicketRow }) => {
+  const label = getTicketTypeLabel(ticket);
+  const tone = getTicketTypeTone(ticket.ticketTypeName);
+  return <span className={`badge badge-sm font-bold ${tone}`}>{label}</span>;
+};
+
 const TicketSummary = ({ ticket }: { ticket: TicketRow }) => (
   <div className="flex items-center gap-3 bg-base-200/50 border border-base-200 rounded-xl p-3">
     <div className="w-10 h-10 rounded-xl overflow-hidden bg-primary/10 text-primary flex items-center justify-center shrink-0">
@@ -170,7 +179,7 @@ const TicketSummary = ({ ticket }: { ticket: TicketRow }) => (
     <div className="min-w-0">
       <p className="text-xs font-bold truncate">{ticket.eventTitle || `Event #${ticket.eventId}`}</p>
       <p className="text-[11px] text-base-content/50 truncate">
-        {ticket.ticketTypeName ? `${ticket.ticketTypeName} · ` : ""}Ticket #{getId(ticket)}
+        {getTicketTypeLabel(ticket)} · Ticket #{getId(ticket)}
       </p>
     </div>
   </div>
@@ -187,6 +196,7 @@ const filterTabs: { key: Filter; label: string }[] = [
   { key: "received", label: "Received" },
   { key: "scanned", label: "Checked in" },
   { key: "transferred", label: "Transferred" },
+  { key: "refunded", label: "Refunded" },
 ];
 
 export default function MyTickets() {
@@ -194,10 +204,8 @@ export default function MyTickets() {
 
   const user = useSelector((state: RootState) => state.auth.user);
   const digitalId = Number((user as { digitalId?: number } | null)?.digitalId);
-  // Used to prefill the claim form
   const me = user as { firstName?: string; lastName?: string; email?: string; phone?: string } | null;
 
-  // Lets a shared link like /my-tickets?claim=CODE open the claim form
   const [searchParams, setSearchParams] = useSearchParams();
   const claimParam = searchParams.get("claim");
 
@@ -210,8 +218,8 @@ export default function MyTickets() {
     isError: purchasedError,
     refetch: refetchPurchased,
   } = useGetTicketsByPurchaserIdQuery(digitalId, { skip: !digitalId });
-  // Tickets I hold (claimed or transferred to me)
   const heldQ = useGetTicketsByHolderIdQuery(digitalId, { skip: !digitalId });
+
   const isLoading = purchasedLoading || heldQ.isLoading;
   const isError = purchasedError && heldQ.isError;
   const refetch = () => {
@@ -220,7 +228,6 @@ export default function MyTickets() {
   };
 
   const eventsQ = useGetAllEventsQuery(undefined);
-  const typesQ = useGetAllTicketTypesQuery(undefined);
 
   const eventById = useMemo(() => {
     const map = new Map<string, any>();
@@ -228,14 +235,7 @@ export default function MyTickets() {
     return map;
   }, [eventsQ.data]);
 
-  const typeNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    toList((typesQ.data as any)?.data ?? typesQ.data).forEach((t: any) => map.set(String(t.ticketTypeId ?? t.id), t.name));
-    return map;
-  }, [typesQ.data]);
-
   const tickets: TicketRow[] = useMemo(() => {
-    // Merge purchased + held tickets, each ticket once
     const byId = new Map<number, any>();
     [...toList(data), ...toList(heldQ.data)].forEach((t: any) => {
       const id = t.ticketId ?? t.id;
@@ -246,16 +246,35 @@ export default function MyTickets() {
       return {
         ...t,
         eventTitle: t.eventTitle ?? ev?.title,
-        ticketTypeName: t.ticketTypeName ?? typeNameById.get(String(t.ticketTypeId)),
         _event: ev,
-        // The backend columns are purchaserDigitalId (buyer) and digitalId (current holder)
         _received:
           Boolean(t.purchaserDigitalId ?? t.purchaserId) &&
           Number(t.purchaserDigitalId ?? t.purchaserId) !== digitalId,
         _gone: (t.digitalId ?? t.holderId) != null && Number(t.digitalId ?? t.holderId) !== digitalId,
       } as TicketRow;
     });
-  }, [data, heldQ.data, eventById, typeNameById, digitalId]);
+  }, [data, heldQ.data, eventById, digitalId]);
+
+  // 🆕 distinct events present in the user's tickets
+  const eventOptions = useMemo(() => {
+    const map = new Map<number, string>();
+    tickets.forEach((t) => {
+      const id = Number(t.eventId);
+      if (!id) return;
+      map.set(id, t.eventTitle || `Event #${id}`);
+    });
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [tickets]);
+
+  // 🆕 distinct ticket types present in the user's tickets
+  const typeOptions = useMemo(() => {
+    const set = new Set<string>();
+    tickets.forEach((t) => {
+      const label = getTicketTypeLabel(t);
+      if (label && label !== "General") set.add(label);
+    });
+    return Array.from(set).sort();
+  }, [tickets]);
 
   // ---------------------------------------------------------------------------
   // MUTATIONS
@@ -287,6 +306,11 @@ export default function MyTickets() {
   });
   const [showInfoBanner, setShowInfoBanner] = useState(true);
 
+  // 🆕 new filters + sort
+  const [eventFilter, setEventFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("newest");
+
   const [assignFor, setAssignFor] = useState<TicketRow | null>(null);
   const [form, setForm] = useState({ name: "", email: "", phone: "" });
   const [formError, setFormError] = useState("");
@@ -298,7 +322,6 @@ export default function MyTickets() {
   const [transferError, setTransferError] = useState("");
   const [copied, setCopied] = useState("");
 
-  // Claim form state
   const [claimOpen, setClaimOpen] = useState(false);
   const [claimForm, setClaimForm] = useState({ token: "", name: "", email: "", phone: "" });
   const [claimError, setClaimError] = useState("");
@@ -337,7 +360,6 @@ export default function MyTickets() {
     }
   };
 
-  // A shared claim link opens the claim form with the code already filled in
   useEffect(() => {
     if (claimParam && digitalId) openClaim(claimParam);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -373,7 +395,15 @@ export default function MyTickets() {
   // FILTER + PAGINATION
   // ---------------------------------------------------------------------------
   const counts = useMemo(() => {
-    const c: Record<Filter, number> = { all: tickets.length, unassigned: 0, assigned: 0, scanned: 0, transferred: 0, received: 0 };
+    const c: Record<Filter, number> = {
+      all: tickets.length,
+      unassigned: 0,
+      assigned: 0,
+      scanned: 0,
+      transferred: 0,
+      refunded: 0,
+      received: 0,
+    };
     tickets.forEach((t) => {
       c[getState(t)] += 1;
       if (t._received) c.received += 1;
@@ -383,22 +413,48 @@ export default function MyTickets() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return tickets.filter((t) => {
+    const list = tickets.filter((t) => {
       if (filter === "received") {
         if (!t._received) return false;
       } else if (filter !== "all" && getState(t) !== filter) {
         return false;
       }
+
+      // 🆕 event filter
+      if (eventFilter !== "all" && String(t.eventId) !== eventFilter) return false;
+
+      // 🆕 ticket type filter
+      if (typeFilter !== "all" && getTicketTypeLabel(t) !== typeFilter) return false;
+
       if (!q) return true;
       return (
         String(getId(t)).includes(q) ||
         (t.eventTitle || "").toLowerCase().includes(q) ||
-        (t.ticketTypeName || "").toLowerCase().includes(q) ||
+        getTicketTypeLabel(t).toLowerCase().includes(q) ||
         (t.attendeeName || "").toLowerCase().includes(q) ||
         (t.attendeeEmail || "").toLowerCase().includes(q)
       );
     });
-  }, [tickets, filter, search]);
+
+    // 🆕 sort (default = newest first)
+    return list.sort((a, b) => {
+      if (sortKey === "oldest") {
+        const ta = new Date(a.createdAt || 0).getTime();
+        const tb = new Date(b.createdAt || 0).getTime();
+        return ta - tb || getId(a) - getId(b);
+      }
+      if (sortKey === "event") {
+        return (a.eventTitle || "").localeCompare(b.eventTitle || "");
+      }
+      if (sortKey === "type") {
+        return getTicketTypeLabel(a).localeCompare(getTicketTypeLabel(b));
+      }
+      // newest first
+      const ta = new Date(a.createdAt || 0).getTime();
+      const tb = new Date(b.createdAt || 0).getTime();
+      return tb - ta || getId(b) - getId(a);
+    });
+  }, [tickets, filter, search, sortKey, eventFilter, typeFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -416,6 +472,16 @@ export default function MyTickets() {
     } catch {
       /* storage unavailable, ignore */
     }
+  };
+
+  // 🆕 reset every filter
+  const clearFilters = () => {
+    setSearch("");
+    setFilter("all");
+    setEventFilter("all");
+    setTypeFilter("all");
+    setSortKey("newest");
+    setPage(1);
   };
 
   const openAssign = (t: TicketRow) => {
@@ -469,7 +535,7 @@ export default function MyTickets() {
       const res: any = await initiateTransfer({ ticketId: getId(transferFor), holderId: digitalId }).unwrap();
       const token = res?.data?.claimToken ?? res?.claimToken ?? res?.data?.token ?? res?.token;
       setClaimToken(token ?? "Transfer started. Share the claim link you received.");
-      refetchPurchased(); // show the "transfer pending" state right away
+      refetchPurchased();
     } catch (err) {
       setTransferError(errMsg(err));
     }
@@ -485,10 +551,9 @@ export default function MyTickets() {
     }
   };
 
-  /** Ticket actions shared by the card and table views */
   const Actions = ({ t }: { t: TicketRow }) => {
     const state = getState(t);
-    const locked = state === "scanned" || state === "transferred";
+    const locked = state === "scanned" || state === "transferred" || state === "refunded";
     return (
       <div className="flex items-center justify-end gap-1 flex-wrap" onClick={(e) => e.stopPropagation()}>
         <button onClick={() => setDetailFor(t)} className="btn btn-ghost btn-xs text-primary hover:bg-primary/10 rounded-lg" title="View ticket">
@@ -518,13 +583,25 @@ export default function MyTickets() {
     );
   };
 
-  // Detail modal helpers
   const detailState = detailFor ? getState(detailFor) : null;
-  const detailEditable = detailState !== null && detailState !== "scanned" && detailState !== "transferred";
+  const detailEditable =
+    detailState !== null && detailState !== "scanned" && detailState !== "transferred" && detailState !== "refunded";
 
-  // ---------------------------------------------------------------------------
-  // RENDER
-  // ---------------------------------------------------------------------------
+  const summaryCards = [
+    { label: "Total tickets", value: counts.all, icon: <TicketIcon size={18} />, tone: "bg-primary/10 text-primary" },
+    { label: "Not assigned", value: counts.unassigned, icon: <Hourglass size={18} />, tone: "bg-warning/10 text-warning" },
+    { label: "Assigned", value: counts.assigned, icon: <UserPlus size={18} />, tone: "bg-success/10 text-success" },
+    { label: "Received", value: counts.received, icon: <Gift size={18} />, tone: "bg-secondary/10 text-secondary" },
+    { label: "Transferred", value: counts.transferred, icon: <ArrowRightLeft size={18} />, tone: "bg-info/10 text-info" },
+    { label: "Checked in", value: counts.scanned, icon: <QrCode size={18} />, tone: "bg-base-200 text-base-content/60" },
+    ...(counts.refunded > 0
+      ? [{ label: "Refunded", value: counts.refunded, icon: <RotateCcw size={18} />, tone: "bg-error/10 text-error" }]
+      : []),
+  ];
+
+  const hasActiveFilters =
+    !!search || filter !== "all" || eventFilter !== "all" || typeFilter !== "all" || sortKey !== "newest";
+
   return (
     <div className="flex flex-col gap-5 pb-16 max-w-7xl mx-auto w-full font-sans px-3 sm:px-6">
       {/* HEADER */}
@@ -567,7 +644,7 @@ export default function MyTickets() {
                 name and email. Tickets you don't assign stay with you, so you can use them yourself. To give a ticket to
                 someone who has their own account, choose <b>Transfer</b> and send them the claim link. Got a claim code or
                 link from someone? Choose <b>Claim a ticket</b>. Tickets that have been
-                scanned at the gate can't be changed.
+                scanned at the gate can't be changed, and refunded tickets can no longer be used.
               </p>
             </div>
           </div>
@@ -610,15 +687,12 @@ export default function MyTickets() {
       ) : (
         <>
           {/* SUMMARY CARDS */}
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-            {[
-              { label: "Total tickets", value: counts.all, icon: <TicketIcon size={18} />, tone: "bg-primary/10 text-primary" },
-              { label: "Not assigned", value: counts.unassigned, icon: <Hourglass size={18} />, tone: "bg-warning/10 text-warning" },
-              { label: "Assigned", value: counts.assigned, icon: <UserPlus size={18} />, tone: "bg-success/10 text-success" },
-              { label: "Received", value: counts.received, icon: <Gift size={18} />, tone: "bg-secondary/10 text-secondary" },
-              { label: "Transferred", value: counts.transferred, icon: <ArrowRightLeft size={18} />, tone: "bg-info/10 text-info" },
-              { label: "Checked in", value: counts.scanned, icon: <QrCode size={18} />, tone: "bg-base-200 text-base-content/60" },
-            ].map((c) => (
+          <div
+            className={`grid grid-cols-2 md:grid-cols-3 gap-3 ${
+              summaryCards.length > 6 ? "xl:grid-cols-7" : "xl:grid-cols-6"
+            }`}
+          >
+            {summaryCards.map((c) => (
               <div key={c.label} className="bg-base-100 border border-base-200 p-4 rounded-2xl shadow-sm flex items-center justify-between gap-2">
                 <div className="flex flex-col gap-0.5">
                   <span className="text-[11px] text-base-content/60 font-semibold">{c.label}</span>
@@ -630,41 +704,112 @@ export default function MyTickets() {
           </div>
 
           {/* FILTERS */}
-          <div className="flex flex-col lg:flex-row gap-3 lg:items-center justify-between">
-            <div className="flex flex-wrap gap-1">
-              {filterTabs
-                .filter((f) => f.key === "all" || counts[f.key] > 0)
-                .map((f) => (
-                  <button
-                    key={f.key}
-                    onClick={() => {
-                      setFilter(f.key);
-                      setPage(1);
-                    }}
-                    className={`px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
-                      filter === f.key
-                        ? "bg-primary text-primary-content shadow-sm font-bold"
-                        : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
-                    }`}
-                  >
-                    {f.label} <span className="opacity-60">({counts[f.key]})</span>
-                  </button>
-                ))}
+          <div className="flex flex-col gap-3">
+            {/* state tabs + search */}
+            <div className="flex flex-col lg:flex-row gap-3 lg:items-center justify-between">
+              <div className="flex flex-wrap gap-1">
+                {filterTabs
+                  .filter((f) => f.key === "all" || counts[f.key] > 0)
+                  .map((f) => (
+                    <button
+                      key={f.key}
+                      onClick={() => {
+                        setFilter(f.key);
+                        setPage(1);
+                      }}
+                      className={`px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
+                        filter === f.key
+                          ? "bg-primary text-primary-content shadow-sm font-bold"
+                          : "text-base-content/70 hover:bg-base-200 hover:text-base-content"
+                      }`}
+                    >
+                      {f.label} <span className="opacity-60">({counts[f.key]})</span>
+                    </button>
+                  ))}
+              </div>
+
+              <label className="input input-bordered input-xs sm:input-sm rounded-xl flex items-center gap-2 text-xs w-full lg:w-80">
+                <Search size={14} className="text-base-content/40" />
+                <input
+                  type="text"
+                  placeholder="Search event, ticket type, attendee or #"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
+                  className="grow"
+                />
+              </label>
             </div>
 
-            <label className="input input-bordered input-xs sm:input-sm rounded-xl flex items-center gap-2 text-xs w-full lg:w-80">
-              <Search size={14} className="text-base-content/40" />
-              <input
-                type="text"
-                placeholder="Search event, attendee or ticket #"
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
-                className="grow"
-              />
-            </label>
+            {/* 🆕 event + type + sort */}
+            <div className="flex flex-col sm:flex-row flex-wrap gap-2 items-stretch sm:items-center">
+              <label className="flex items-center gap-2 text-xs">
+                <span className="text-base-content/50 font-semibold whitespace-nowrap">Event:</span>
+                <select
+                  value={eventFilter}
+                  onChange={(e) => {
+                    setEventFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  className="select select-bordered select-xs sm:select-sm rounded-xl text-xs font-semibold w-full sm:w-auto min-w-[10rem] max-w-[16rem]"
+                >
+                  <option value="all">All events</option>
+                  {eventOptions.map(([id, title]) => (
+                    <option key={id} value={String(id)}>
+                      {title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex items-center gap-2 text-xs">
+                <span className="text-base-content/50 font-semibold whitespace-nowrap">Type:</span>
+                <select
+                  value={typeFilter}
+                  onChange={(e) => {
+                    setTypeFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  className="select select-bordered select-xs sm:select-sm rounded-xl text-xs font-semibold w-full sm:w-auto min-w-[8rem] max-w-[12rem]"
+                >
+                  <option value="all">All types</option>
+                  {typeOptions.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex items-center gap-2 text-xs">
+                <ArrowUpDown size={13} className="text-base-content/40 shrink-0" />
+                <span className="text-base-content/50 font-semibold whitespace-nowrap">Sort:</span>
+                <select
+                  value={sortKey}
+                  onChange={(e) => {
+                    setSortKey(e.target.value as SortKey);
+                    setPage(1);
+                  }}
+                  className="select select-bordered select-xs sm:select-sm rounded-xl text-xs font-semibold w-full sm:w-auto"
+                >
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="event">Event name</option>
+                  <option value="type">Ticket type</option>
+                </select>
+              </label>
+
+              {hasActiveFilters && (
+                <button
+                  onClick={clearFilters}
+                  className="btn btn-ghost btn-xs rounded-xl gap-1 text-error hover:bg-error/10 self-start sm:self-auto"
+                >
+                  <X size={12} /> Clear filters
+                </button>
+              )}
+            </div>
           </div>
 
           {/* LIST */}
@@ -724,6 +869,7 @@ export default function MyTickets() {
                     const state = getState(t);
                     const meta = stateMeta[state];
                     const hasAttendee = Boolean(t.attendeeName || t.attendeeEmail);
+                    const refunded = state === "refunded";
                     const ev = t._event;
                     return (
                       <motion.div
@@ -740,7 +886,9 @@ export default function MyTickets() {
                             setDetailFor(t);
                           }
                         }}
-                        className="group relative bg-base-100 border border-base-200 rounded-2xl shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 cursor-pointer overflow-hidden flex flex-col focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        className={`group relative bg-base-100 border border-base-200 rounded-2xl shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 cursor-pointer overflow-hidden flex flex-col focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                          refunded ? "opacity-80" : ""
+                        }`}
                       >
                         <div className={`h-1.5 w-full ${meta.strip}`} />
 
@@ -753,7 +901,7 @@ export default function MyTickets() {
                               <div className="flex flex-col min-w-0">
                                 <span className="text-sm font-black text-base-content truncate">{t.eventTitle || `Event #${t.eventId}`}</span>
                                 <span className="text-[11px] text-base-content/50 truncate">
-                                  {t.ticketTypeName ? `${t.ticketTypeName} · ` : ""}Ticket #{getId(t)}
+                                  Ticket #{getId(t)}
                                 </span>
                               </div>
                             </div>
@@ -765,6 +913,10 @@ export default function MyTickets() {
                                 </span>
                               )}
                             </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <TicketTypeBadge ticket={t} />
                           </div>
 
                           {ev?.date && (
@@ -779,6 +931,15 @@ export default function MyTickets() {
                                   {fmtTime(ev.time)}
                                 </span>
                               )}
+                            </div>
+                          )}
+
+                          {refunded && (
+                            <div className="flex items-start gap-2 rounded-xl bg-error/10 text-error px-3 py-2 text-[11px] font-semibold">
+                              <RotateCcw size={13} className="shrink-0 mt-0.5" />
+                              <span>
+                                Refunded{t.refundedAt ? ` on ${fmtDate(t.refundedAt)}` : ""}. This ticket can no longer be used.
+                              </span>
                             </div>
                           )}
 
@@ -799,7 +960,9 @@ export default function MyTickets() {
                               ) : (
                                 <>
                                   <span className="text-xs font-bold text-base-content/60">No attendee yet</span>
-                                  <span className="text-[11px] text-base-content/40">Kept with you until you assign it</span>
+                                  <span className="text-[11px] text-base-content/40">
+                                    {refunded ? "This ticket was refunded" : "Kept with you until you assign it"}
+                                  </span>
                                 </>
                               )}
                             </div>
@@ -836,11 +999,16 @@ export default function MyTickets() {
                           const state = getState(t);
                           const hasAttendee = Boolean(t.attendeeName || t.attendeeEmail);
                           return (
-                            <tr key={getId(t)} className="hover:bg-base-200/30 border-b border-base-100 transition-colors">
+                            <tr
+                              key={getId(t)}
+                              className={`hover:bg-base-200/30 border-b border-base-100 transition-colors ${
+                                state === "refunded" ? "opacity-70" : ""
+                              }`}
+                            >
                               <td className="py-3 px-4">
-                                <div className="flex flex-col">
+                                <div className="flex flex-col gap-1">
                                   <span className="font-bold">#{getId(t)}</span>
-                                  <span className="text-[10px] text-base-content/50">{t.ticketTypeName || "—"}</span>
+                                  <TicketTypeBadge ticket={t} />
                                 </div>
                               </td>
                               <td className="py-3 px-4">
@@ -951,8 +1119,6 @@ export default function MyTickets() {
         </>
       )}
 
-      {/* ====================== MODALS (shared ModalShell) ====================== */}
-
       {/* MODAL: TICKET DETAILS */}
       <ModalShell
         open={!!detailFor}
@@ -987,12 +1153,32 @@ export default function MyTickets() {
                   <Gift size={10} /> Received
                 </span>
               )}
-              {detailFor.transferStatus === "pending_claim" && (
+              {detailFor.transferStatus === "pending_claim" && detailState !== "refunded" && (
                 <span className="badge badge-sm badge-outline gap-1 font-bold">
                   <ArrowRightLeft size={10} /> Transfer pending
                 </span>
               )}
             </div>
+
+            <div className="rounded-xl bg-base-200/40 p-3 flex items-center justify-between gap-3">
+              <div className="flex flex-col min-w-0">
+                <span className="text-[10px] uppercase tracking-widest text-base-content/40 font-bold">Ticket type</span>
+                <span className="text-sm font-black text-base-content break-words">
+                  {getTicketTypeLabel(detailFor)}
+                </span>
+              </div>
+              <TicketTypeBadge ticket={detailFor} />
+            </div>
+
+            {detailState === "refunded" && (
+              <div className="flex items-start gap-2 rounded-xl bg-error/10 text-error p-3 text-xs font-semibold">
+                <RotateCcw size={14} className="shrink-0 mt-0.5" />
+                <span>
+                  This ticket was refunded{detailFor.refundedAt ? ` on ${fmtDate(detailFor.refundedAt)}` : ""}. It can no longer be
+                  used to enter the event, assigned or transferred.
+                </span>
+              </div>
+            )}
 
             {detailFor._event?.date && (
               <div className="grid grid-cols-2 gap-3 text-xs">
@@ -1030,12 +1216,13 @@ export default function MyTickets() {
                 </>
               ) : (
                 <span className="flex items-center gap-1.5 text-base-content/60 font-semibold">
-                  <UserX size={13} /> No attendee yet. This ticket stays with you.
+                  <UserX size={13} />{" "}
+                  {detailState === "refunded" ? "No attendee. This ticket was refunded." : "No attendee yet. This ticket stays with you."}
                 </span>
               )}
             </div>
 
-            {detailFor.ticketToken && (
+            {detailFor.ticketToken && detailState !== "refunded" && (
               <div className="flex flex-col gap-1">
                 <span className="text-[11px] text-base-content/60 font-semibold">Ticket code</span>
                 <div className="flex items-center gap-2 bg-base-200/60 border border-base-200 rounded-xl p-2">
@@ -1207,7 +1394,6 @@ export default function MyTickets() {
               </>
             ) : (
               <>
-                {/* Shareable link that opens the claim form with the code filled in */}
                 <p className="text-xs text-base-content/60">Share this link with the new ticket holder:</p>
                 <div className="flex items-center gap-2 bg-base-200/60 border border-base-200 rounded-xl p-2">
                   <code className="text-[11px] font-mono flex-1 truncate px-1">{claimLink(claimToken)}</code>

@@ -22,6 +22,7 @@ import {
   FileBarChart,
 } from "lucide-react";
 import { type RootState } from "../../App/store";
+import { FaMoneyBill } from "react-icons/fa6";
 
 interface OrganizerSidebarProps {
   isCollapsed?: boolean;
@@ -37,6 +38,7 @@ export const OrganizerSidebar = ({ isCollapsed = false }: OrganizerSidebarProps)
     items: [
       { path: "/organizer-dashboard/analytics", label: "Analytics & Sales", icon: BarChart3 },
       { path: "/organizer-dashboard/wallet", label: "My Wallet", icon: Wallet2 },
+      { path: "/organizer-dashboard/refunds", label: "Refunds", icon: FaMoneyBill },
     ]
   },
   {

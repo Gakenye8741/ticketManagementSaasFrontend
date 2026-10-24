@@ -22,6 +22,7 @@ import { organizationsApi } from "../features/APIS/organizationApi";
 import { tikitiApi } from "../features/APIS/ticketsApi";
 import { walletApi } from "../features/APIS/WalletApi";
 import { verificationsApi } from "../features/APIS/VerificationsApi";
+import { refundApi } from "../features/APIS/RefundApi";
 
 
 // Create Persist Configuration for auth Slice
@@ -51,6 +52,7 @@ export const store = configureStore({
     [organizationsApi.reducerPath]: organizationsApi.reducer,
     [tikitiApi.reducerPath]:tikitiApi.reducer,
     [walletApi.reducerPath]:walletApi.reducer,
+    [refundApi.reducerPath]:refundApi.reducer,
     [verificationsApi.reducerPath]:verificationsApi.reducer,
     auth: persistedAuthReducer,
   },
@@ -73,8 +75,8 @@ export const store = configureStore({
       organizationsApi.middleware,
       tikitiApi.middleware,
       walletApi.middleware,
-      verificationsApi.middleware
-      
+      verificationsApi.middleware,
+      refundApi.middleware
     ),
 });
 

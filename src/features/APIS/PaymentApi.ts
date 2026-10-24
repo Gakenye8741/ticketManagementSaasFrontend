@@ -12,7 +12,12 @@ export interface Payment {
   eventId?: number;
   orgId?: number;
   digitalId?: number;
-  amount?: string | number;
+  amount?: string | number;            // ticket total
+  platformFee?: string | number;       // 🆕 organizer commission
+  netAmount?: string | number;         // 🆕 amount - platformFee (credited to organizer)
+  serviceFee?: string | number;        // 🆕 buyer service fee, paid on top of the tickets
+  serviceFeePercent?: string | number; // 🆕 rate used at purchase time
+  totalCharged?: string | number;      // 🆕 amount + serviceFee (what the buyer paid)
   paymentMethod?: string;
   paymentStatus: PaymentStatus;
   transactionId?: string;
@@ -46,6 +51,50 @@ export type UpdatePaymentStatusRequest = {
   resultDesc?: string;
 };
 
+/* ======================= 🆕 SERVICE FEE TYPES ======================= */
+
+/** Standard backend envelope: { success, message, data } */
+interface ApiEnvelope<T> {
+  success: boolean;
+  message?: string;
+  data: T;
+}
+
+/** What the buyer sees before paying (all money values are strings like "1025.00") */
+export interface CheckoutTotals {
+  bookingId: number;
+  ticketAmount: string;
+  serviceFee: string;
+  totalCharged: string;
+  serviceFeePercent: number;
+}
+
+export interface CheckoutTotalsRequest {
+  bookingId: number | string;
+  /** e.g. "mpesa" or "card". M-Pesa totals are rounded up to whole shillings. */
+  method?: string;
+}
+
+/** 🆕 Fee preview for the event page (no booking needed yet). Money values are strings like "1025.00". */
+export interface ServiceFeePreview {
+  ticketAmount: string;
+  serviceFee: string;
+  totalCharged: string;
+  serviceFeePercent: number;
+}
+
+export interface ServiceFeePreviewRequest {
+  amount: number;
+  /** "mpesa" or "card". M-Pesa totals are rounded up to whole shillings. */
+  method?: string;
+}
+
+/** Admin-configurable buyer service fee */
+export interface ServiceFeeSettings {
+  percent: number; // e.g. 2.5
+  flat: number;    // fixed amount per order, 0 = none
+}
+
 export const paymentApi = createApi({
   reducerPath: "paymentApi",
   baseQuery: fetchBaseQuery({
@@ -55,7 +104,7 @@ export const paymentApi = createApi({
   refetchOnReconnect: true,
   refetchOnMountOrArgChange: true,
 
-  tagTypes: ["payments", "payment"],
+  tagTypes: ["payments", "payment", "serviceFee"], // 🆕 serviceFee
   endpoints: (builder) => ({
     /* ======================= GATEWAY & HEALTH ======================= */
 
@@ -69,11 +118,73 @@ export const paymentApi = createApi({
       query: (bookingId) => `payments/booking-status/${bookingId}`,
     }),
 
+    /* ================= 🆕 BUYER CHECKOUT TOTALS ===================== */
+
+    // 🆕 Ticket + service fee + total for a booking. Show this BEFORE the buyer pays.
+    //    The server reads the ticket price from the booking, so it can't be tampered with.
+    getCheckoutTotals: builder.query<CheckoutTotals, CheckoutTotalsRequest>({
+      query: ({ bookingId, method }) => ({
+        url: "payments/checkout-totals",
+        params: { bookingId, ...(method ? { method } : {}) },
+      }),
+      transformResponse: (response: ApiEnvelope<CheckoutTotals>) => response.data,
+      providesTags: ["serviceFee"], // refetches automatically when the admin changes the fee
+    }),
+
+    // 🆕 Fee preview from a ticket amount. Used on the event page BEFORE a booking exists.
+    //    Display only: the real charge is recalculated on the server from the booking.
+    getServiceFeePreview: builder.query<ServiceFeePreview, ServiceFeePreviewRequest>({
+      query: ({ amount, method }) => ({
+        url: "payments/service-fee-preview",
+        params: { amount, ...(method ? { method } : {}) },
+      }),
+      transformResponse: (response: ApiEnvelope<ServiceFeePreview>) => response.data,
+      providesTags: ["serviceFee"],
+    }),
+
+    /* ============= 🆕 ADMIN: SERVICE FEE SETTINGS =================== */
+
+    // 🆕 Read the current service fee (admin)
+    getServiceFeeSettings: builder.query<ServiceFeeSettings, void>({
+      query: () => "payments/settings/service-fee",
+      transformResponse: (response: ApiEnvelope<ServiceFeeSettings>) => response.data,
+      providesTags: ["serviceFee"],
+    }),
+
+    // 🆕 Change the service fee (admin). Applies to new payments straight away.
+    updateServiceFeeSettings: builder.mutation<ServiceFeeSettings, ServiceFeeSettings>({
+      query: (body) => ({
+        url: "payments/settings/service-fee",
+        method: "PUT",
+        body,
+      }),
+      transformResponse: (response: ApiEnvelope<ServiceFeeSettings>) => response.data,
+      invalidatesTags: ["serviceFee"],
+    }),
+
     /* ========================= ANALYTICS ============================ */
 
-    // 5. Platform total earnings
+    // 5. Platform total earnings (organizer commission only)
     getPlatformEarnings: builder.query<any, void>({
       query: () => "payments/analytics/platform-earnings",
+      providesTags: ["payments"],
+    }),
+
+    // 🆕 Platform earnings from buyer service fees only (admin)
+    getPlatformServiceFeeEarnings: builder.query<
+      { success: boolean; message?: string; totalServiceFeeEarnings: number },
+      void
+    >({
+      query: () => "payments/analytics/service-fee-earnings",
+      providesTags: ["payments"],
+    }),
+
+    // 🆕 Total platform revenue = commission + service fees (admin)
+    getPlatformTotalRevenue: builder.query<
+      { success: boolean; message?: string; totalPlatformRevenue: number },
+      void
+    >({
+      query: () => "payments/analytics/total-revenue",
       providesTags: ["payments"],
     }),
 
@@ -193,6 +304,15 @@ export const paymentApi = createApi({
 export const {
   useGetPaymentsHealthQuery,
   useGetBookingPaymentStatusQuery,
+  // 🆕 service fee
+  useGetCheckoutTotalsQuery,
+  useLazyGetCheckoutTotalsQuery,
+  useGetServiceFeePreviewQuery,
+  useGetServiceFeeSettingsQuery,
+  useUpdateServiceFeeSettingsMutation,
+  useGetPlatformServiceFeeEarningsQuery,
+  useGetPlatformTotalRevenueQuery,
+  // existing
   useGetPlatformEarningsQuery,
   useGetEventRevenueQuery,
   useGetSuccessfulPaymentsCountQuery,

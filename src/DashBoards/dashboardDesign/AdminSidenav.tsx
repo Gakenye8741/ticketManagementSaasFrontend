@@ -20,6 +20,7 @@ import {
 import { clearCredentials } from "../../features/Auth/AuthSlice";
 import { type RootState } from "../../App/store";
 import { MdOutlineDomainVerification } from "react-icons/md";
+import { FaMoneyBill } from "react-icons/fa6";
 
 interface AdminSideNavProps {
   isCollapsed?: boolean;
@@ -32,7 +33,8 @@ const navSections = [
     title: "Overview",
     items: [
       { name: "Analytics", path: "analytics", icon: TrendingUp },
-      { name: "wallet", path: "wallets", icon: Wallet }
+      { name: "wallet", path: "wallets", icon: Wallet },
+      { name: "refunds", path: "refunds", icon: FaMoneyBill }
     ],
     
   },

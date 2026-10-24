@@ -24,6 +24,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Home,
+  Trash2,
+  ShoppingBag,
+  Sparkles,
+  Store,
+  BadgeCheck,
+  ZoomIn,
+  X,
+  Maximize2,
 } from "lucide-react";
 
 import { Navbar } from "../components/Navbar";
@@ -31,28 +39,31 @@ import { Footer } from "../components/Footer";
 
 import { useGetEventBySlugQuery } from "../features/APIS/EventsApi";
 import { useGetTicketTypesByEventIdQuery } from "../features/APIS/ticketsType.Api";
-
-// NOTE: adjust this import path/filename if your media API file lives elsewhere
 import { useGetMediaByEventIdQuery } from "../features/APIS/mediaApi";
-
-// NOTE: adjust this import path/filename if your venue API file lives elsewhere
 import { useGetVenueByIdQuery } from "../features/APIS/VenueApi";
-
 import { useCreateBookingMutation } from "../features/APIS/BookingsApi";
-
 import {
   useInitiatePaystackMpesaMutation,
   useInitializePaystackCheckoutMutation,
   useCheckPaymentStatusQuery,
   useLazyVerifyPaystackPaymentQuery,
 } from "../features/APIS/MpesaApi";
+import { useGetServiceFeePreviewQuery } from "../features/APIS/PaymentApi";
+
 import { Link, useParams } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-// M-Pesa logo badge (inline SVG approximation).
-// If you have the official logo, put it in /public/mpesa-logo.png and
-// replace the body with: <img src="/mpesa-logo.png" alt="M-PESA" className={className} />
+/* ============================================================
+ * HELPERS
+ * ============================================================ */
+
+const formatKES = (n: number) =>
+  n.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+
 const MpesaLogo = ({ className = "h-6" }: { className?: string }) => (
   <svg viewBox="0 0 120 32" className={className} role="img" aria-label="M-PESA">
     <rect width="120" height="32" rx="8" fill="#43B02A" />
@@ -71,18 +82,15 @@ const MpesaLogo = ({ className = "h-6" }: { className?: string }) => (
   </svg>
 );
 
-// Custom loader: a little ticket that pulses while the event loads
 const PageLoader = () => {
   const mask =
     "radial-gradient(circle 7px at calc(100% - 3.5rem) 0, #0000 98%, #000), radial-gradient(circle 7px at calc(100% - 3.5rem) 100%, #0000 98%, #000)";
-
   const maskStyle: any = {
     WebkitMask: mask,
     WebkitMaskComposite: "source-in",
     mask,
     maskComposite: "intersect",
   };
-
   return (
     <div
       className="flex flex-col items-center justify-center gap-6 py-24 sm:py-32"
@@ -91,7 +99,6 @@ const PageLoader = () => {
     >
       <div className="relative">
         <span className="absolute inset-0 rounded-2xl bg-primary/20 animate-ping"></span>
-
         <div
           style={maskStyle}
           className="relative flex w-44 h-24 rounded-2xl bg-base-200 overflow-hidden shadow-xl"
@@ -101,18 +108,14 @@ const PageLoader = () => {
             <span className="h-2 w-full rounded-full bg-base-300 animate-pulse"></span>
             <span className="h-2 w-1/2 rounded-full bg-base-300 animate-pulse"></span>
           </div>
-
           <span className="absolute top-3 bottom-3 right-14 border-l-2 border-dashed border-base-content/20"></span>
-
           <div className="w-14 shrink-0 bg-primary text-primary-content flex items-center justify-center">
             <Ticket size={26} className="animate-pulse" />
           </div>
         </div>
       </div>
-
       <div className="flex flex-col items-center gap-2">
         <p className="text-base font-bold">Getting your event ready</p>
-
         <div className="flex items-center gap-1.5">
           {[0, 150, 300].map((d) => (
             <span
@@ -122,14 +125,12 @@ const PageLoader = () => {
             ></span>
           ))}
         </div>
-
         <span className="sr-only">Loading</span>
       </div>
     </div>
   );
 };
 
-// Statuses that mean the event is over (same list the events page uses)
 const ENDED_STATUSES = new Set([
   "ended",
   "completed",
@@ -139,30 +140,21 @@ const ENDED_STATUSES = new Set([
   "expired",
 ]);
 
-// True when the event is over: by its status, or by its date
-// when the event has no status.
 const checkEventEnded = (event: any): boolean => {
   if (!event) return false;
-
   const status = String(event?.status ?? event?.eventStatus ?? "")
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
-
   if (status) return ENDED_STATUSES.has(status);
-
   const rawDate = event?.endDate ?? event?.date;
   if (!rawDate) return false;
-
   const end = new Date(rawDate);
   if (isNaN(end.getTime())) return false;
-
   end.setHours(23, 59, 59, 999);
   return end.getTime() < Date.now();
 };
 
-// Height of your fixed bottom navbar on phones.
-// Change this if your navbar is taller or shorter.
 const BOTTOM_NAV_HEIGHT = "4rem";
 
 type Attendee = { name: string; email: string; phone: string };
@@ -170,14 +162,71 @@ type Attendee = { name: string; email: string; phone: string };
 const isBlankAttendee = (a: Attendee) =>
   !a.name.trim() && !a.email.trim() && !a.phone.trim();
 
+/* ============================================================
+ * CART TYPES
+ * ============================================================ */
+
+type CartLine = {
+  ticketTypeId: number;
+  ticketTypeName: string;
+  unitPrice: number;
+  quantity: number;
+  maxAvailable: number;
+};
+
+/* ============================================================
+ * ORGANIZER CHIP
+ * Shows the organization / organizer name and logo from
+ * `event.organization` in the API payload. Renders nothing
+ * if the payload has no organization.
+ * ============================================================ */
+
+const OrganizerChip = ({ organization }: { organization: any }) => {
+  if (!organization) return null;
+
+  const name =
+    organization?.name || organization?.organizationName || "Organizer";
+  const logoUrl = organization?.logoUrl || organization?.logo;
+  const verified = !!organization?.isVerified;
+
+  return (
+    <div className="inline-flex items-center gap-2.5 rounded-2xl bg-base-200/70 border border-base-300 pl-1.5 pr-3 py-1.5 max-w-full">
+      <span className="w-8 h-8 rounded-xl overflow-hidden bg-primary/10 text-primary flex items-center justify-center shrink-0">
+        {logoUrl ? (
+          <img src={logoUrl} alt={name} className="w-full h-full object-cover" />
+        ) : (
+          <Store size={14} />
+        )}
+      </span>
+      <div className="flex flex-col min-w-0">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-base-content/50 leading-none">
+          Organized by
+        </span>
+        <div className="flex items-center gap-1 min-w-0">
+          <span
+            className="text-xs font-black text-base-content truncate"
+            title={name}
+          >
+            {name}
+          </span>
+          {verified && <BadgeCheck size={12} className="text-primary shrink-0" />}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================
+ * PAGE
+ * ============================================================ */
+
 export const EventSlugPage = () => {
-  // Read the signed-in user's saved details from the existing Redux auth slice.
   const { user: loggedInUser, isAuthenticated } = useSelector(
     (state: any) => state.auth ?? {}
   );
 
   const loggedInName = [loggedInUser?.firstName, loggedInUser?.lastName]
-    .filter((part: unknown) => typeof part === "string" && part.trim())
+    .filter((p: unknown) => typeof p === "string" && p.trim())
     .join(" ")
     .trim();
 
@@ -193,23 +242,16 @@ export const EventSlugPage = () => {
   } = useGetEventBySlugQuery(slug || "");
 
   const event = eventResponse?.data;
-
   const eventId = event?.id || event?.eventId;
-
-  // Ended events can be viewed but not booked
   const eventEnded = checkEventEnded(event);
 
   const { data: ticketTypesResponse, isLoading: isTicketsLoading } =
-    useGetTicketTypesByEventIdQuery(eventId, {
-      skip: !eventId,
-    });
+    useGetTicketTypesByEventIdQuery(eventId, { skip: !eventId });
 
-  const ticketTypes = Array.isArray(ticketTypesResponse)
+  const ticketTypes: any[] = Array.isArray(ticketTypesResponse)
     ? ticketTypesResponse
     : ticketTypesResponse?.data || ticketTypesResponse?.ticketTypes || [];
 
-  // All uploaded media (images/videos) for this event,
-  // straight from the media API
   const { data: mediaApiResponse } = useGetMediaByEventIdQuery(eventId, {
     skip: !eventId,
   });
@@ -218,9 +260,6 @@ export const EventSlugPage = () => {
     ? mediaApiResponse
     : mediaApiResponse?.data || [];
 
-  // Fetch this event's venue directly by its venueId through the public
-  // get-venue-by-id endpoint (works for attendees, not just organizers).
-  // If the event response already embeds a `venue` object, that is used first.
   const { data: venueResponse } = useGetVenueByIdQuery(Number(event?.venueId), {
     skip: !event?.venueId,
   });
@@ -230,55 +269,76 @@ export const EventSlugPage = () => {
   const [createBooking, { isLoading: isBookingLoading }] =
     useCreateBookingMutation();
 
-  // Paystack: direct M-Pesa prompt (replaces STK push)
   const [initiatePaystackMpesa, { isLoading: isStkLoading }] =
     useInitiatePaystackMpesaMutation();
 
-  // Paystack: hosted checkout page for card payments
   const [initializePaystackCheckout, { isLoading: isCardLoading }] =
     useInitializePaystackCheckoutMutation();
 
-  // Paystack: manual verify, used as a backup if the webhook is late
   const [triggerVerifyPayment] = useLazyVerifyPaystackPaymentQuery();
 
-  const [selectedTicketType, setSelectedTicketType] = useState<any | null>(
+  /* ---------------- CART STATE ---------------- */
+
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [highlightedTierId, setHighlightedTierId] = useState<number | null>(
     null
   );
+  const [pickerQuantity, setPickerQuantity] = useState(1);
 
-  const [ticketQuantity, setTicketQuantity] = useState<number>(1);
-
-  /**
-   * One attendee object is created for every ticket.
-   * Only the first one (the buyer / main contact) is required.
-   */
   const [attendeeDetails, setAttendeeDetails] = useState<Attendee[]>([
     { name: "", email: "", phone: "" },
   ]);
 
-  /**
-   * When buying 2+ tickets we ask the buyer whether they want to name each
-   * ticket holder now. Default is "no": the buyer receives all the tickets
-   * and shares them later, so only their own details are needed.
-   */
   const [assignNow, setAssignNow] = useState(false);
 
-  const shouldAssign = assignNow && ticketQuantity > 1;
+  const [paymentMethod, setPaymentMethod] = useState<"mpesa" | "card">(
+    "mpesa"
+  );
 
-  // Pre-fill only the main contact's name and email for authenticated users.
-  // The phone number remains editable because it is not stored in authSlice.
+  const [activeTab, setActiveTab] = useState<"overview" | "location">(
+    "overview"
+  );
+
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [checkoutSuccessMessage, setCheckoutSuccessMessage] = useState<
+    string | null
+  >(null);
+  const [activeBookingId, setActiveBookingId] = useState<number | null>(null);
+  const [paymentReference, setPaymentReference] = useState<string | null>(null);
+  const [isWaitingForMpesa, setIsWaitingForMpesa] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showPickedModal, setShowPickedModal] = useState(false);
+
+  // 🆕 Image zoom lightbox state
+  const [zoomOpen, setZoomOpen] = useState(false);
+  const [zoomIndex, setZoomIndex] = useState(0);
+
+  const totalQuantity = useMemo(
+    () => cart.reduce((sum, l) => sum + l.quantity, 0),
+    [cart]
+  );
+
+  const cartSubtotal = useMemo(
+    () => cart.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0),
+    [cart]
+  );
+
+  const shouldAssign = assignNow && totalQuantity > 1;
+
+  /* ---------------- AUTH PREFILL ---------------- */
+
   useEffect(() => {
     if (!isAuthenticated || !loggedInUser) return;
-
     setAttendeeDetails((prev) => {
       const updated = [...prev];
-      const mainAttendee = updated[0] ?? { name: "", email: "", phone: "" };
-
+      const main = updated[0] ?? { name: "", email: "", phone: "" };
       updated[0] = {
-        ...mainAttendee,
-        name: loggedInName || mainAttendee.name,
-        email: loggedInEmail || mainAttendee.email,
+        ...main,
+        name: loggedInName || main.name,
+        email: loggedInEmail || main.email,
       };
-
       return updated;
     });
   }, [
@@ -290,68 +350,44 @@ export const EventSlugPage = () => {
     loggedInEmail,
   ]);
 
-  const [paymentMethod, setPaymentMethod] = useState<"mpesa" | "card">(
-    "mpesa"
-  );
-
-  const [activeTab, setActiveTab] = useState<"overview" | "location">(
-    "overview"
-  );
-
-  const [isBookmarked, setIsBookmarked] = useState(false);
-
-  const [copiedLink, setCopiedLink] = useState(false);
-
-  const [checkoutError, setCheckoutError] = useState<string | null>(null);
-
-  const [checkoutSuccessMessage, setCheckoutSuccessMessage] = useState<
-    string | null
-  >(null);
-
-  const [activeBookingId, setActiveBookingId] = useState<number | null>(null);
-
-  // Paystack reference of the M-Pesa payment that is currently pending
-  const [paymentReference, setPaymentReference] = useState<string | null>(null);
-
-  const [isWaitingForMpesa, setIsWaitingForMpesa] = useState(false);
-
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-
-  const [showPickedModal, setShowPickedModal] = useState(false);
-
-  const [quantityText, setQuantityText] = useState("1");
-
-  // Photo carousel state
-  const galleryRef = useRef<HTMLDivElement>(null);
-
-  const [galleryIndex, setGalleryIndex] = useState(0);
+  /* ---------------- ATTENDEE SLOTS ---------------- */
 
   useEffect(() => {
-    setGalleryIndex(0);
-  }, [activeTab]);
+    setAttendeeDetails((prev) => {
+      const updated = [...prev];
+      if (totalQuantity > updated.length) {
+        for (let i = updated.length; i < totalQuantity; i++) {
+          updated.push({ name: "", email: "", phone: "" });
+        }
+      } else if (totalQuantity < updated.length) {
+        updated.splice(Math.max(totalQuantity, 1));
+      }
+      return updated;
+    });
 
-  useEffect(() => {
-    setQuantityText(String(ticketQuantity));
-  }, [ticketQuantity]);
+    if (totalQuantity <= 1) setAssignNow(false);
+  }, [totalQuantity]);
 
-  // Stop the page behind from scrolling while a popup is open
+  /* ---------------- MODAL SCROLL LOCK ---------------- */
+
   const anyModalOpen =
     isWaitingForMpesa ||
     showSuccessModal ||
     showPickedModal ||
-    !!checkoutError;
+    !!checkoutError ||
+    zoomOpen;
 
   useEffect(() => {
     if (!anyModalOpen) return;
-
     const previousOverflow = document.body.style.overflow;
-
     document.body.style.overflow = "hidden";
-
     return () => {
       document.body.style.overflow = previousOverflow;
     };
   }, [anyModalOpen]);
+
+ 
+  /* ---------------- PAYMENT POLLING ---------------- */
 
   const { data: statusResponse } = useCheckPaymentStatusQuery(
     activeBookingId ?? 0,
@@ -363,7 +399,6 @@ export const EventSlugPage = () => {
 
   useEffect(() => {
     const bookingData = statusResponse?.data || statusResponse;
-
     const currentStatus = bookingData?.bookingStatus || bookingData?.status;
 
     if (
@@ -372,40 +407,29 @@ export const EventSlugPage = () => {
       currentStatus === "paid"
     ) {
       setIsWaitingForMpesa(false);
-
       setCheckoutSuccessMessage(
         "🎉 Payment confirmed successfully! Your digital gate tickets have been emailed."
       );
-
       setShowSuccessModal(true);
-
       setActiveBookingId(null);
-
       setPaymentReference(null);
     }
   }, [statusResponse]);
 
-  // Backup for a late webhook: while waiting for M-Pesa, ask the server to
-  // verify the payment with Paystack every few seconds. The server records the
-  // result, and the booking-status polling above then picks it up.
   useEffect(() => {
     if (!isWaitingForMpesa || !paymentReference) return;
-
     const interval = window.setInterval(() => {
       triggerVerifyPayment(paymentReference);
     }, 8000);
-
     return () => window.clearInterval(interval);
   }, [isWaitingForMpesa, paymentReference, triggerVerifyPayment]);
 
-  // Show the event name in the browser tab
+  /* ---------------- DOC TITLE ---------------- */
+
   useEffect(() => {
     if (!event?.title) return;
-
     const previousTitle = document.title;
-
     document.title = `${event.title} | Tickets`;
-
     return () => {
       document.title = previousTitle;
     };
@@ -413,101 +437,117 @@ export const EventSlugPage = () => {
 
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
-
     setCopiedLink(true);
-
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  /**
-   * Changes ticket quantity and keeps attendeeDetails in sync
-   * (one attendee slot per ticket).
-   */
-  const handleQuantityChange = (newQty: number) => {
-    if (!selectedTicketType) return;
+  /* ============================================================
+   * CART OPERATIONS
+   * ============================================================ */
 
-    const maxLimit = Math.max(
-      1,
-      (selectedTicketType.quantity || 15) - (selectedTicketType.sold || 0)
-    );
+  const getTierById = (id: number | null) =>
+    ticketTypes.find((t) => (t.id || t.ticketTypeId) === id);
 
-    const clampedQty = Math.max(1, Math.min(newQty, maxLimit));
+  const getMaxForTier = (tier: any) =>
+    Math.max(0, (tier?.quantity || 0) - (tier?.sold || 0));
 
-    setTicketQuantity(clampedQty);
+  const getCartQtyFor = (tierId: number) =>
+    cart.find((l) => l.ticketTypeId === tierId)?.quantity ?? 0;
 
-    // A single ticket never needs the "assign now" choice
-    if (clampedQty <= 1) setAssignNow(false);
+  const addToCart = (tier: any, qty: number) => {
+    const tierId = Number(tier.id || tier.ticketTypeId);
+    const max = getMaxForTier(tier);
+    const clamped = Math.max(1, Math.min(qty, max));
 
-    setAttendeeDetails((prev) => {
-      const updated = [...prev];
-
-      if (clampedQty > updated.length) {
-        for (let i = updated.length; i < clampedQty; i++) {
-          updated.push({ name: "", email: "", phone: "" });
-        }
-      } else {
-        updated.splice(clampedQty);
+    setCart((prev) => {
+      const existing = prev.find((l) => l.ticketTypeId === tierId);
+      if (existing) {
+        return prev.map((l) =>
+          l.ticketTypeId === tierId
+            ? { ...l, quantity: Math.min(l.quantity + clamped, l.maxAvailable) }
+            : l
+        );
       }
-
-      return updated;
+      return [
+        ...prev,
+        {
+          ticketTypeId: tierId,
+          ticketTypeName: tier.name,
+          unitPrice: Number(tier.price || 0),
+          quantity: clamped,
+          maxAvailable: max,
+        },
+      ];
     });
+
+    setHighlightedTierId(null);
+    setPickerQuantity(1);
   };
 
-  const incrementQuantity = () => handleQuantityChange(ticketQuantity + 1);
-
-  const decrementQuantity = () => handleQuantityChange(ticketQuantity - 1);
-
-  const handleAttendeeChange = (
-    index: number,
-    field: "name" | "email" | "phone",
-    value: string
-  ) => {
-    setAttendeeDetails((prev) => {
-      const updated = [...prev];
-
-      updated[index] = {
-        ...updated[index],
-        [field]: value,
-      };
-
-      return updated;
-    });
+  const updateCartLine = (tierId: number, newQty: number) => {
+    setCart((prev) =>
+      prev
+        .map((l) =>
+          l.ticketTypeId === tierId
+            ? {
+                ...l,
+                quantity: Math.max(1, Math.min(newQty, l.maxAvailable)),
+              }
+            : l
+        )
+        .filter((l) => l.quantity > 0)
+    );
   };
 
-  /**
-   * Only the buyer / main contact (ticket 1) is required.
-   * Other tickets are only checked when the buyer chose to assign them now.
-   * If they start filling another ticket, we ask for at least a name.
-   */
+  const removeCartLine = (tierId: number) => {
+    setCart((prev) => prev.filter((l) => l.ticketTypeId !== tierId));
+  };
+
+  /* ============================================================
+   * FEE PREVIEW
+   * ============================================================ */
+
+  const feeQuery = useGetServiceFeePreviewQuery(
+    { amount: cartSubtotal, method: paymentMethod },
+    { skip: cartSubtotal <= 0 || eventEnded }
+  );
+
+  const feePreview = feeQuery.currentData;
+  const feeFailed = feeQuery.isError;
+
+  const serviceFee = feePreview ? Number(feePreview.serviceFee) : 0;
+  const serviceFeePercent = feePreview
+    ? Number(feePreview.serviceFeePercent)
+    : 0;
+  const grandTotal = feePreview ? Number(feePreview.totalCharged) : cartSubtotal;
+  const feeReady = cartSubtotal <= 0 || !!feePreview;
+
+  /* ============================================================
+   * ATTENDEE VALIDATION + PAYLOAD
+   * ============================================================ */
+
   const validateAttendees = () => {
-    if (attendeeDetails.length !== ticketQuantity) {
+    if (attendeeDetails.length !== totalQuantity) {
       setCheckoutError("Please make sure every ticket has an attendee.");
       return false;
     }
-
     const main = attendeeDetails[0];
-
     if (!main?.name?.trim()) {
       setCheckoutError("Please enter your full name.");
       return false;
     }
-
     if (!main?.email?.trim()) {
       setCheckoutError("Please enter your email address.");
       return false;
     }
-
     if (!main?.phone?.trim()) {
       setCheckoutError("Please enter your phone number.");
       return false;
     }
-
     if (shouldAssign) {
       for (let i = 1; i < attendeeDetails.length; i++) {
         const a = attendeeDetails[i];
-
         if (isBlankAttendee(a)) continue;
-
         if (!a.name.trim()) {
           setCheckoutError(
             `You started adding details for ticket ${
@@ -518,31 +558,20 @@ export const EventSlugPage = () => {
         }
       }
     }
-
     return true;
   };
 
-  /**
-   * Always returns one attendee per ticket, so the backend still gets
-   * quantity === attendees.length.
-   * - Not assigning now: every ticket goes to the buyer.
-   * - Assigning now: blank tickets (or missing email/phone) fall back to the
-   *   main contact.
-   */
   const getBookingAttendees = () => {
     const main = {
       name: attendeeDetails[0].name.trim(),
       email: attendeeDetails[0].email.trim(),
       phone: attendeeDetails[0].phone.trim(),
     };
-
     if (!shouldAssign) {
       return attendeeDetails.map(() => ({ ...main }));
     }
-
     return attendeeDetails.map((a, i) => {
       if (i === 0 || isBlankAttendee(a)) return { ...main };
-
       return {
         name: a.name.trim(),
         email: a.email.trim() || main.email,
@@ -551,95 +580,71 @@ export const EventSlugPage = () => {
     });
   };
 
+  /* ============================================================
+   * CHECKOUT
+   * ============================================================ */
+
+  const buildBookingPayload = (idempotencyKey: string) => {
+    const main = attendeeDetails[0];
+    return {
+      eventId: Number(eventId),
+      lines: cart.map((l) => ({
+        ticketTypeId: Number(l.ticketTypeId),
+        quantity: l.quantity,
+      })),
+      guestName: main.name.trim(),
+      guestEmail: main.email.trim(),
+      guestPhone: main.phone.trim(),
+      attendees: getBookingAttendees(),
+      idempotencyKey,
+    };
+  };
+
   const handleMpesaCheckout = async () => {
     setCheckoutError(null);
     setCheckoutSuccessMessage(null);
 
-    // Never allow booking for an event that has ended
     if (eventEnded) {
-      setCheckoutError(
-        "This event has ended, so tickets can no longer be booked."
-      );
-
+      setCheckoutError("This event has ended, so tickets can no longer be booked.");
       return;
     }
-
-    if (!selectedTicketType) {
-      setCheckoutError("Please select a ticket tier before proceeding.");
-
+    if (cart.length === 0) {
+      setCheckoutError("Add at least one ticket to your cart before paying.");
       return;
     }
+    if (!validateAttendees()) return;
 
-    if (!validateAttendees()) {
-      return;
-    }
-
-    // The first attendee is the primary payer/contact:
-    // M-Pesa is sent to their phone number.
-    const primaryAttendee = attendeeDetails[0];
+    const main = attendeeDetails[0];
 
     try {
       const idempotencyKey = `checkout-mpesa-${Date.now()}-${Math.random()
         .toString(36)
         .substring(2, 9)}`;
 
-      const bookingPayload = {
-        eventId: Number(eventId),
-
-        ticketTypeId: Number(
-          selectedTicketType.id || selectedTicketType.ticketTypeId
-        ),
-
-        quantity: Number(ticketQuantity),
-
-        // Payer / primary customer
-        guestName: primaryAttendee.name.trim(),
-        guestEmail: primaryAttendee.email.trim(),
-        guestPhone: primaryAttendee.phone.trim(),
-
-        // One attendee per ticket (unassigned tickets use the main contact)
-        attendees: getBookingAttendees(),
-
-        idempotencyKey,
-      };
-
       const bookingResponse: any = await createBooking(
-        bookingPayload
+        buildBookingPayload(idempotencyKey) as any
       ).unwrap();
 
       const responseData = bookingResponse?.data || bookingResponse;
-
       const createdBookingId = responseData?.bookingId || responseData?.id;
 
       if (!createdBookingId) {
-        throw new Error(
-          "Booking record created, but failed to retrieve booking ID."
-        );
+        throw new Error("Booking record created, but failed to retrieve booking ID.");
       }
 
       setActiveBookingId(Number(createdBookingId));
 
-      // Paystack sends the "Enter PIN" prompt to this phone.
-      // The amount comes from the booking in the database.
-      const mpesaPayload = {
-        phoneNumber: primaryAttendee.phone.trim(),
+      const mpesaResponse: any = await initiatePaystackMpesa({
+        phoneNumber: main.phone.trim(),
         bookingId: Number(createdBookingId),
-        email: primaryAttendee.email.trim(),
-      };
+        email: main.email.trim(),
+      }).unwrap();
 
-      const mpesaResponse: any = await initiatePaystackMpesa(
-        mpesaPayload
-      ).unwrap();
-
-      // Keep the reference so we can verify the payment if the webhook is late
       const mpesaData = mpesaResponse?.data || mpesaResponse;
-
       setPaymentReference(mpesaData?.reference || null);
-
       setIsWaitingForMpesa(true);
     } catch (err: any) {
       console.error("M-Pesa Checkout Error:", err);
-
       setCheckoutError(
         err?.data?.message ||
           err?.data?.error ||
@@ -653,82 +658,45 @@ export const EventSlugPage = () => {
     setCheckoutError(null);
     setCheckoutSuccessMessage(null);
 
-    // Never allow booking for an event that has ended
     if (eventEnded) {
-      setCheckoutError(
-        "This event has ended, so tickets can no longer be booked."
-      );
-
+      setCheckoutError("This event has ended, so tickets can no longer be booked.");
       return;
     }
-
-    if (!selectedTicketType) {
-      setCheckoutError("Please select a ticket tier before proceeding.");
-
+    if (cart.length === 0) {
+      setCheckoutError("Add at least one ticket to your cart before paying.");
       return;
     }
+    if (!validateAttendees()) return;
 
-    if (!validateAttendees()) {
-      return;
-    }
-
-    const primaryAttendee = attendeeDetails[0];
+    const main = attendeeDetails[0];
 
     try {
       const idempotencyKey = `checkout-card-${Date.now()}-${Math.random()
         .toString(36)
         .substring(2, 9)}`;
 
-      const bookingPayload = {
-        eventId: Number(eventId),
-        ticketTypeId: Number(
-          selectedTicketType.id || selectedTicketType.ticketTypeId
-        ),
-        quantity: Number(ticketQuantity),
-
-        // Person paying for the booking
-        guestName: primaryAttendee.name.trim(),
-        guestEmail: primaryAttendee.email.trim(),
-        guestPhone: primaryAttendee.phone.trim(),
-
-        // One attendee per ticket (unassigned tickets use the main contact)
-        attendees: getBookingAttendees(),
-
-        idempotencyKey,
-      };
-
       const bookingResponse: any = await createBooking(
-        bookingPayload
+        buildBookingPayload(idempotencyKey) as any
       ).unwrap();
 
       const responseData = bookingResponse?.data || bookingResponse;
-
       const createdBookingId = responseData?.bookingId || responseData?.id;
 
       if (!createdBookingId) {
-        throw new Error(
-          "Booking created, but failed to retrieve booking ID for card checkout."
-        );
+        throw new Error("Booking created, but failed to retrieve booking ID.");
       }
 
-      // The amount comes from the booking in the database
-      const checkoutPayload = {
+      const checkoutResponse: any = await initializePaystackCheckout({
         bookingId: Number(createdBookingId),
-        email: primaryAttendee.email.trim(),
-      };
-
-      const checkoutResponse: any = await initializePaystackCheckout(
-        checkoutPayload
-      ).unwrap();
+        email: main.email.trim(),
+      }).unwrap();
 
       const checkoutData = checkoutResponse?.data || checkoutResponse;
-
       const authorizationUrl =
         checkoutData?.authorizationUrl || checkoutData?.authorization_url;
 
       if (authorizationUrl) {
         setCheckoutSuccessMessage("Redirecting to secure Paystack checkout...");
-
         window.location.href = authorizationUrl;
       } else {
         throw new Error(
@@ -737,7 +705,6 @@ export const EventSlugPage = () => {
       }
     } catch (err: any) {
       console.error("Card Checkout Error:", err);
-
       setCheckoutError(
         err?.data?.message ||
           err?.data?.error ||
@@ -749,21 +716,16 @@ export const EventSlugPage = () => {
 
   const isProcessing = isBookingLoading || isStkLoading || isCardLoading;
 
-  const total = Number(selectedTicketType?.price || 0) * ticketQuantity;
+  /* ============================================================
+   * MEDIA
+   * ============================================================ */
 
-  const maxAvailable = Math.max(
-    1,
-    (selectedTicketType?.quantity || 15) - (selectedTicketType?.sold || 0)
-  );
+  const galleryRef = useRef<HTMLDivElement>(null);
+  const [galleryIndex, setGalleryIndex] = useState(0);
 
-  const atMax = ticketQuantity >= maxAvailable;
+  useEffect(() => setGalleryIndex(0), [activeTab]);
 
-  // Media for the carousel
-  type GalleryItem = {
-    url: string;
-    type: "image" | "video";
-    altText?: string;
-  };
+  type GalleryItem = { url: string; type: "image" | "video"; altText?: string };
 
   const apiMediaItems: GalleryItem[] = rawEventMedia
     .slice()
@@ -778,7 +740,6 @@ export const EventSlugPage = () => {
     .filter((m: GalleryItem) => Boolean(m.url));
 
   const embeddedRawMedia = event?.media || event?.images || event?.gallery || [];
-
   const embeddedMediaItems: GalleryItem[] = (
     Array.isArray(embeddedRawMedia) ? embeddedRawMedia : []
   )
@@ -786,84 +747,82 @@ export const EventSlugPage = () => {
       typeof m === "string" ? m : m?.url || m?.imageUrl || m?.mediaUrl
     )
     .filter(Boolean)
-    .map((url: string) => ({
-      url,
-      type: "image" as const,
-    }));
+    .map((url: string) => ({ url, type: "image" as const }));
 
   const mediaItems: GalleryItem[] =
     apiMediaItems.length > 0 ? apiMediaItems : embeddedMediaItems;
 
   if (mediaItems.length === 0 && event?.bannerUrl) {
-    mediaItems.push({
-      url: event.bannerUrl,
-      type: "image",
-    });
+    mediaItems.push({ url: event.bannerUrl, type: "image" });
   }
 
-  useEffect(() => {
-    if (rawEventMedia.length > 0 && apiMediaItems.length === 0) {
-      console.warn(
-        "[EventSlugPage] Media API returned records for this event, but none had a usable 'url' field. " +
-          "Check the actual field name on a media record (sample below) and update the mapping in mediaItems.",
-        rawEventMedia[0]
+  /* ---------------- ZOOM KEYBOARD NAV ---------------- */
+
+useEffect(() => {
+  if (!zoomOpen) return;
+
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") setZoomOpen(false);
+
+    if (e.key === "ArrowLeft") {
+      setZoomIndex((i) => Math.max(0, i - 1));
+    }
+
+    if (e.key === "ArrowRight") {
+      setZoomIndex((i) =>
+        Math.min(mediaItems.length - 1, i + 1)
       );
     }
-  }, [rawEventMedia, apiMediaItems.length]);
+  };
+
+  window.addEventListener("keydown", onKey);
+
+  return () => window.removeEventListener("keydown", onKey);
+}, [zoomOpen, mediaItems.length]);
 
   const goToMedia = (i: number) => {
     const el = galleryRef.current;
-
     if (!el || mediaItems.length === 0) return;
-
     const next = (i + mediaItems.length) % mediaItems.length;
-
-    el.scrollTo({
-      left: el.clientWidth * next,
-      behavior: "smooth",
-    });
+    el.scrollTo({ left: el.clientWidth * next, behavior: "smooth" });
   };
 
   const handleGalleryScroll = () => {
     const el = galleryRef.current;
-
     if (!el || !el.clientWidth) return;
-
     setGalleryIndex(Math.round(el.scrollLeft / el.clientWidth));
   };
 
-  // Automatically move to the next hero media item every 5 seconds.
   useEffect(() => {
     if (mediaItems.length <= 1) return;
-
     const interval = window.setInterval(() => {
       const el = galleryRef.current;
-
       if (!el || !el.clientWidth) return;
-
       const next = (galleryIndex + 1) % mediaItems.length;
-
-      el.scrollTo({
-        left: el.clientWidth * next,
-        behavior: "smooth",
-      });
+      el.scrollTo({ left: el.clientWidth * next, behavior: "smooth" });
     }, 5000);
-
     return () => window.clearInterval(interval);
   }, [galleryIndex, mediaItems.length]);
 
-  const venueName = venue?.name || venue?.venueName || "Venue TBA";
+  // 🆕 Open the zoom lightbox at the currently visible image
+  const openZoom = (index: number) => {
+    setZoomIndex(index);
+    setZoomOpen(true);
+  };
 
+  /* ============================================================
+   * VENUE
+   * ============================================================ */
+
+  const venueName = venue?.name || venue?.venueName || "Venue TBA";
   const venueAddress =
     venue?.location ||
     venue?.address ||
     event?.location ||
     event?.address ||
     "";
-
   const venueLatitude =
     venue?.latitude ?? venue?.lat ?? event?.latitude ?? event?.lat;
-
   const venueLongitude =
     venue?.longitude ??
     venue?.lng ??
@@ -871,18 +830,15 @@ export const EventSlugPage = () => {
     event?.longitude ??
     event?.lng ??
     event?.lon;
-
   const venueMapQuery =
     venueLatitude && venueLongitude
       ? `${venueLatitude},${venueLongitude}`
       : [venueName, venueAddress].filter(Boolean).join(", ");
-
   const googleMapsEmbedUrl = venueMapQuery
     ? `https://www.google.com/maps?q=${encodeURIComponent(
         venueMapQuery
       )}&output=embed`
     : "";
-
   const googleMapsUrl = venueMapQuery
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
         venueMapQuery
@@ -891,33 +847,33 @@ export const EventSlugPage = () => {
 
   const openVenueOnMap = () => {
     setActiveTab("location");
-
     window.setTimeout(() => {
-      document.getElementById("event-venue")?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
+      document
+        .getElementById("event-venue")
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 50);
   };
 
-  // Display-only date pieces
+  /* ============================================================
+   * DATE
+   * ============================================================ */
+
   const eventDateObj = event?.date ? new Date(event.date) : null;
-
   const hasValidDate = !!eventDateObj && !isNaN(eventDateObj.getTime());
-
   const dateMonth = hasValidDate
     ? eventDateObj!.toLocaleDateString(undefined, { month: "short" })
     : "";
-
   const dateDay = hasValidDate ? eventDateObj!.getDate() : "";
-
   const dateWeekday = hasValidDate
     ? eventDateObj!.toLocaleDateString(undefined, { weekday: "short" })
     : "";
 
+  /* ============================================================
+   * STYLES
+   * ============================================================ */
+
   const ticketMask =
     "radial-gradient(circle 9px at calc(100% - 7rem) 0, #0000 98%, #000), radial-gradient(circle 9px at calc(100% - 7rem) 100%, #0000 98%, #000)";
-
   const ticketMaskStyle: any = {
     WebkitMask: ticketMask,
     WebkitMaskComposite: "source-in",
@@ -927,10 +883,8 @@ export const EventSlugPage = () => {
 
   const inputCls =
     "input input-bordered w-full h-12 rounded-xl pl-10 text-base sm:text-sm bg-base-100 focus:border-primary focus:outline-none";
-
   const overlayCls =
     "fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200";
-
   const sheetCls =
     "bg-base-100 w-full sm:max-w-md max-h-[92dvh] sm:max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain rounded-t-3xl sm:rounded-3xl shadow-2xl pb-[env(safe-area-inset-bottom)] animate-in slide-in-from-bottom-8 sm:slide-in-from-bottom-0 sm:zoom-in-95 fade-in duration-300";
 
@@ -940,11 +894,16 @@ export const EventSlugPage = () => {
     { label: "Get your tickets by email", state: "todo" },
   ];
 
-  // Only show every ticket's form when the buyer chose to assign now;
-  // otherwise just the buyer's own details.
   const visibleAttendees = shouldAssign
     ? attendeeDetails
     : attendeeDetails.slice(0, 1);
+
+  const highlightedTier = getTierById(highlightedTierId);
+  const highlightedMax = highlightedTier ? getMaxForTier(highlightedTier) : 0;
+
+  /* ============================================================
+   * RENDER
+   * ============================================================ */
 
   return (
     <div className="min-h-screen bg-base-100 text-base-content flex flex-col justify-between font-sans selection:bg-primary selection:text-primary-content relative">
@@ -957,18 +916,15 @@ export const EventSlugPage = () => {
             <div className="bg-[#43B02A]/10 px-6 pt-8 pb-6 text-center space-y-3">
               <div className="relative w-20 h-20 mx-auto">
                 <span className="absolute inset-0 rounded-full bg-[#43B02A]/25 animate-ping"></span>
-
                 <span className="relative w-20 h-20 rounded-full bg-white shadow-lg flex items-center justify-center border border-base-300">
                   <MpesaLogo className="h-7" />
                 </span>
               </div>
-
               <h3 className="text-2xl font-black">Check your phone</h3>
-
               <p className="text-sm text-base-content/70 leading-relaxed">
                 We sent a payment request for{" "}
                 <span className="font-bold text-base-content">
-                  KES {total.toLocaleString()}
+                  KES {formatKES(grandTotal)}
                 </span>{" "}
                 to{" "}
                 <span className="font-bold text-base-content">
@@ -976,8 +932,12 @@ export const EventSlugPage = () => {
                 </span>
                 .
               </p>
+              {serviceFee > 0 && (
+                <p className="text-xs text-base-content/60">
+                  Includes KES {formatKES(serviceFee)} service fee
+                </p>
+              )}
             </div>
-
             <div className="px-6 py-6 space-y-5">
               <ol className="space-y-4">
                 {mpesaSteps.map((s) => (
@@ -999,7 +959,6 @@ export const EventSlugPage = () => {
                         <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
                       )}
                     </span>
-
                     <span
                       className={`text-sm font-semibold ${
                         s.state === "todo" ? "text-base-content/40" : ""
@@ -1010,11 +969,9 @@ export const EventSlugPage = () => {
                   </li>
                 ))}
               </ol>
-
               <p className="text-xs text-base-content/60 text-center">
                 Please keep this page open. It updates by itself once you pay.
               </p>
-
               <button
                 onClick={() => {
                   setIsWaitingForMpesa(false);
@@ -1030,102 +987,115 @@ export const EventSlugPage = () => {
         </div>
       )}
 
-      {/* ---------- POPUP: You picked this ticket ---------- */}
-      {showPickedModal && selectedTicketType && (
+      {/* ---------- POPUP: Tier picker (add quantity to cart) ---------- */}
+      {showPickedModal && highlightedTier && (
         <div className={overlayCls} onClick={() => setShowPickedModal(false)}>
           <div className={sheetCls} onClick={(e) => e.stopPropagation()}>
             <div className="bg-primary/10 px-6 pt-7 pb-5 text-center space-y-1.5">
               <div className="w-14 h-14 rounded-full bg-primary text-primary-content flex items-center justify-center mx-auto shadow-lg mb-2">
-                <Check size={28} strokeWidth={3} />
+                <ShoppingBag size={26} strokeWidth={3} />
               </div>
-
-              <p className="text-sm font-semibold text-primary">You picked</p>
-
+              <p className="text-sm font-semibold text-primary">Add to cart</p>
               <h3 className="text-2xl font-black break-words">
-                {selectedTicketType.name}
+                {highlightedTier.name}
               </h3>
-
               <p className="text-sm text-base-content/70">
-                KES {Number(selectedTicketType.price || 0).toLocaleString()} per
+                KES {Number(highlightedTier.price || 0).toLocaleString()} per
                 ticket
               </p>
             </div>
-
             <div className="px-6 py-5 space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-bold">How many tickets?</label>
-
                 <div className="flex items-center justify-between bg-base-200/60 p-2 rounded-2xl border border-base-300">
                   <button
-                    onClick={decrementQuantity}
-                    disabled={ticketQuantity <= 1}
+                    onClick={() =>
+                      setPickerQuantity((q) => Math.max(1, q - 1))
+                    }
+                    disabled={pickerQuantity <= 1}
                     className="btn btn-ghost w-12 h-12 min-h-0 rounded-xl disabled:opacity-30"
                     aria-label="Fewer tickets"
                   >
                     <Minus size={18} />
                   </button>
-
                   <div className="flex flex-col items-center">
                     <span className="text-2xl font-black leading-none">
-                      {ticketQuantity}
+                      {pickerQuantity}
                     </span>
-
                     <span className="text-xs text-base-content/50 mt-1">
-                      {ticketQuantity === 1 ? "ticket" : "tickets"}
+                      {pickerQuantity === 1 ? "ticket" : "tickets"}
                     </span>
                   </div>
-
                   <button
-                    onClick={incrementQuantity}
-                    disabled={atMax}
+                    onClick={() =>
+                      setPickerQuantity((q) =>
+                        Math.min(highlightedMax, q + 1)
+                      )
+                    }
+                    disabled={pickerQuantity >= highlightedMax}
                     className="btn btn-ghost w-12 h-12 min-h-0 rounded-xl disabled:opacity-30"
                     aria-label="More tickets"
                   >
                     <Plus size={18} />
                   </button>
                 </div>
-
                 <p
                   className={`text-xs ${
-                    atMax
+                    pickerQuantity >= highlightedMax
                       ? "text-warning font-semibold"
                       : "text-base-content/50"
                   }`}
                 >
-                  {atMax
-                    ? "That's all the tickets left"
-                    : `${maxAvailable} tickets available`}
+                  {pickerQuantity >= highlightedMax
+                    ? "That's all the tickets left for this tier"
+                    : `${highlightedMax} tickets available`}
                 </p>
               </div>
 
-              <div className="flex items-center justify-between text-lg font-black">
-                <span>Total</span>
-                <span className="text-primary">
-                  KES {total.toLocaleString()}
-                </span>
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between text-sm text-base-content/70">
+                  <span>Tickets</span>
+                  <span className="font-semibold">
+                    KES{" "}
+                    {formatKES(
+                      Number(highlightedTier.price || 0) * pickerQuantity
+                    )}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-lg font-black pt-1.5 border-t border-base-300">
+                  <span>Line total</span>
+                  <span className="text-primary">
+                    KES{" "}
+                    {formatKES(
+                      Number(highlightedTier.price || 0) * pickerQuantity
+                    )}
+                  </span>
+                </div>
               </div>
 
               <button
                 onClick={() => {
+                  addToCart(highlightedTier, pickerQuantity);
                   setShowPickedModal(false);
-
                   setTimeout(() => {
-                    document.getElementById("holder-details")?.scrollIntoView({
-                      behavior: "smooth",
-                      block: "start",
-                    });
+                    document
+                      .getElementById("holder-details")
+                      ?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      });
                   }, 100);
                 }}
-                className="btn btn-primary h-14 rounded-2xl w-full font-black text-base"
+                className="btn btn-primary h-14 rounded-2xl w-full font-black text-base gap-2"
               >
-                Continue
+                <ShoppingBag size={18} /> Add to cart
               </button>
 
               <button
                 onClick={() => setShowPickedModal(false)}
                 className="btn btn-ghost h-11 rounded-2xl w-full text-base-content/70"
               >
-                Pick a different ticket
+                Cancel
               </button>
             </div>
           </div>
@@ -1139,14 +1109,11 @@ export const EventSlugPage = () => {
             <div className="bg-success/10 px-6 pt-8 pb-6 text-center space-y-3">
               <div className="relative w-20 h-20 mx-auto">
                 <span className="absolute inset-0 rounded-full bg-success/30 animate-ping"></span>
-
                 <span className="relative w-20 h-20 rounded-full bg-success text-success-content flex items-center justify-center shadow-lg">
                   <Check size={40} strokeWidth={3} />
                 </span>
               </div>
-
               <h3 className="text-2xl font-black">You're going!</h3>
-
               <p className="text-sm text-base-content/70 leading-relaxed">
                 Payment received. We emailed your tickets to{" "}
                 <span className="font-bold text-base-content break-all">
@@ -1155,34 +1122,40 @@ export const EventSlugPage = () => {
                 .
               </p>
             </div>
-
             <div className="px-6 py-6 space-y-5">
               <div className="rounded-2xl border-2 border-dashed border-base-300 bg-base-200/40 p-4 space-y-2.5 text-sm">
                 <div className="flex justify-between gap-4">
                   <span className="text-base-content/60">Event</span>
-
                   <span className="font-bold text-right">{event?.title}</span>
                 </div>
 
-                <div className="flex justify-between gap-4">
-                  <span className="text-base-content/60">Ticket</span>
+                {cart.map((line) => (
+                  <div
+                    key={line.ticketTypeId}
+                    className="flex justify-between gap-4"
+                  >
+                    <span className="text-base-content/60">
+                      {line.ticketTypeName} × {line.quantity}
+                    </span>
+                    <span className="font-bold">
+                      KES {formatKES(line.unitPrice * line.quantity)}
+                    </span>
+                  </div>
+                ))}
 
-                  <span className="font-bold text-right">
-                    {selectedTicketType?.name}
-                  </span>
-                </div>
-
-                <div className="flex justify-between gap-4">
-                  <span className="text-base-content/60">tickets</span>
-
-                  <span className="font-bold">{ticketQuantity}</span>
-                </div>
+                {serviceFee > 0 && (
+                  <div className="flex justify-between gap-4">
+                    <span className="text-base-content/60">Service fee</span>
+                    <span className="font-bold">
+                      KES {formatKES(serviceFee)}
+                    </span>
+                  </div>
+                )}
 
                 <div className="flex justify-between gap-4 pt-2.5 border-t border-base-300 text-base">
                   <span className="font-bold">Total paid</span>
-
                   <span className="font-black text-success">
-                    KES {total.toLocaleString()}
+                    KES {formatKES(grandTotal)}
                   </span>
                 </div>
               </div>
@@ -1191,6 +1164,7 @@ export const EventSlugPage = () => {
                 onClick={() => {
                   setShowSuccessModal(false);
                   setCheckoutSuccessMessage(null);
+                  setCart([]);
                 }}
                 className="btn btn-primary h-14 rounded-2xl w-full font-black text-base"
               >
@@ -1201,7 +1175,7 @@ export const EventSlugPage = () => {
         </div>
       )}
 
-      {/* ---------- POPUP 3: Something went wrong ---------- */}
+      {/* ---------- POPUP 3: Error ---------- */}
       {checkoutError && (
         <div className={overlayCls}>
           <div className={sheetCls}>
@@ -1209,13 +1183,10 @@ export const EventSlugPage = () => {
               <div className="w-16 h-16 rounded-full bg-error/10 text-error flex items-center justify-center mx-auto">
                 <AlertCircle size={32} />
               </div>
-
               <h3 className="text-xl font-black">We couldn't continue</h3>
-
               <p className="text-sm text-base-content/70 leading-relaxed">
                 {checkoutError}
               </p>
-
               <button
                 onClick={() => setCheckoutError(null)}
                 className="btn btn-primary h-12 rounded-2xl w-full font-bold mt-2"
@@ -1224,6 +1195,81 @@ export const EventSlugPage = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ---------- POPUP 4: 🆕 Image zoom lightbox ---------- */}
+      {zoomOpen && mediaItems.length > 0 && (
+        <div
+          className="fixed inset-0 z-[200] bg-black/95 flex flex-col animate-in fade-in duration-200"
+          onClick={() => setZoomOpen(false)}
+        >
+          {/* Header */}
+          <div
+            className="shrink-0 flex items-center justify-between gap-3 px-4 py-3 text-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="text-xs font-bold">
+              {zoomIndex + 1} / {mediaItems.length}
+            </span>
+            <button
+              onClick={() => setZoomOpen(false)}
+              className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
+              aria-label="Close image"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Image area */}
+          <div
+            className="flex-1 min-h-0 flex items-center justify-center px-3 sm:px-10 pb-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={mediaItems[zoomIndex]?.url}
+              alt={mediaItems[zoomIndex]?.altText || event?.title}
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            />
+          </div>
+
+          {/* Prev/next */}
+          {mediaItems.length > 1 && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomIndex((i) => Math.max(0, i - 1));
+                }}
+                disabled={zoomIndex === 0}
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center disabled:opacity-30"
+                aria-label="Previous image"
+              >
+                <ChevronLeft size={22} />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomIndex((i) =>
+                    Math.min(mediaItems.length - 1, i + 1)
+                  );
+                }}
+                disabled={zoomIndex === mediaItems.length - 1}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center disabled:opacity-30"
+                aria-label="Next image"
+              >
+                <ChevronRight size={22} />
+              </button>
+            </>
+          )}
+
+          {/* Footer hint */}
+          <p
+            className="shrink-0 text-center text-[11px] text-white/60 px-4 pb-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            Tap outside or press Esc to close · use ← → to navigate
+          </p>
         </div>
       )}
 
@@ -1238,7 +1284,6 @@ export const EventSlugPage = () => {
             >
               <ArrowLeft size={18} />
             </Link>
-
             <nav aria-label="Breadcrumb" className="min-w-0">
               <ol className="flex items-center gap-1.5 text-sm text-base-content/60 whitespace-nowrap overflow-hidden">
                 <li className="shrink-0 hidden sm:block">
@@ -1250,10 +1295,8 @@ export const EventSlugPage = () => {
                     <span>Home</span>
                   </Link>
                 </li>
-
                 <li className="shrink-0 hidden sm:flex items-center gap-1.5">
                   <ChevronRight size={14} className="opacity-50" />
-
                   <Link
                     to="/events"
                     className="hover:text-primary transition-colors"
@@ -1261,13 +1304,11 @@ export const EventSlugPage = () => {
                     Events
                   </Link>
                 </li>
-
                 <li className="min-w-0 flex items-center gap-1.5">
                   <ChevronRight
                     size={14}
                     className="opacity-50 shrink-0 hidden sm:block"
                   />
-
                   <span
                     aria-current="page"
                     className="truncate font-semibold text-base-content"
@@ -1288,7 +1329,6 @@ export const EventSlugPage = () => {
             >
               <Share2 size={17} />
             </button>
-
             <button
               onClick={() => setIsBookmarked(!isBookmarked)}
               className={`btn btn-ghost btn-circle w-10 h-10 min-h-0 ${
@@ -1320,14 +1360,11 @@ export const EventSlugPage = () => {
             <div className="w-16 h-16 rounded-2xl bg-error/10 text-error flex items-center justify-center mx-auto">
               <AlertCircle size={30} />
             </div>
-
             <h3 className="text-2xl font-extrabold">Event unavailable</h3>
-
             <p className="text-sm text-base-content/70 max-w-sm mx-auto leading-relaxed">
               This event may have ended, been unlisted, or the link may be
               incorrect.
             </p>
-
             <Link
               to="/events"
               className="btn btn-primary rounded-full font-bold px-8"
@@ -1339,7 +1376,19 @@ export const EventSlugPage = () => {
           <div className="space-y-8 sm:space-y-10">
             {/* Hero */}
             <section className="space-y-5 sm:space-y-6">
+              {/* 🆕 Well-fitted hero with click-to-zoom */}
               <div className="relative w-full overflow-hidden rounded-3xl bg-base-300 shadow-lg aspect-[4/3] sm:aspect-[16/9] lg:aspect-[2/1] lg:max-h-[30rem]">
+                {/* Blurred backdrop so the picture never looks stretched */}
+                {mediaItems[galleryIndex]?.type !== "video" &&
+                  mediaItems[galleryIndex]?.url && (
+                    <img
+                      src={mediaItems[galleryIndex].url}
+                      alt=""
+                      aria-hidden="true"
+                      className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-40 pointer-events-none"
+                    />
+                  )}
+
                 {mediaItems.length > 0 ? (
                   <div
                     ref={galleryRef}
@@ -1349,7 +1398,7 @@ export const EventSlugPage = () => {
                     {mediaItems.map((item, i) => (
                       <div
                         key={i}
-                        className="w-full h-full shrink-0 snap-center relative bg-black"
+                        className="w-full h-full shrink-0 snap-center relative"
                       >
                         {item.type === "video" ? (
                           <video
@@ -1357,15 +1406,28 @@ export const EventSlugPage = () => {
                             controls
                             playsInline
                             preload="metadata"
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-contain bg-black"
                           />
                         ) : (
-                          <img
-                            src={item.url}
-                            alt={item.altText || `${event.title} photo ${i + 1}`}
-                            loading={i === 0 ? "eager" : "lazy"}
-                            className="w-full h-full object-cover"
-                          />
+                          <button
+                            type="button"
+                            onClick={() => openZoom(i)}
+                            className="relative w-full h-full flex items-center justify-center group cursor-zoom-in"
+                            aria-label="Click to zoom image"
+                          >
+                            <img
+                              src={item.url}
+                              alt={
+                                item.altText || `${event.title} photo ${i + 1}`
+                              }
+                              loading={i === 0 ? "eager" : "lazy"}
+                              className="max-w-full max-h-full object-contain"
+                            />
+                            {/* 🆕 Zoom hint */}
+                            <span className="absolute bottom-3 right-3 z-10 inline-flex items-center gap-1.5 rounded-full bg-black/60 text-white text-[11px] font-bold px-3 py-1.5 backdrop-blur-sm opacity-90 group-hover:opacity-100 transition-opacity">
+                              <ZoomIn size={13} /> Click to zoom
+                            </span>
+                          </button>
                         )}
                       </div>
                     ))}
@@ -1373,11 +1435,23 @@ export const EventSlugPage = () => {
                 ) : (
                   <>
                     {event.bannerUrl ? (
-                      <img
-                        src={event.bannerUrl}
-                        alt={event.title}
-                        className="absolute inset-0 w-full h-full object-cover"
-                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          window.open(event.bannerUrl!, "_blank", "noopener")
+                        }
+                        className="absolute inset-0 cursor-zoom-in group"
+                        aria-label="Click to zoom image"
+                      >
+                        <img
+                          src={event.bannerUrl}
+                          alt={event.title}
+                          className="absolute inset-0 w-full h-full object-contain"
+                        />
+                        <span className="absolute bottom-3 right-3 z-10 inline-flex items-center gap-1.5 rounded-full bg-black/60 text-white text-[11px] font-bold px-3 py-1.5 backdrop-blur-sm opacity-90 group-hover:opacity-100 transition-opacity">
+                          <ZoomIn size={13} /> Click to zoom
+                        </span>
+                      </button>
                     ) : (
                       <div className="absolute inset-0 bg-base-200 flex items-center justify-center">
                         <CalendarIcon className="w-16 h-16 sm:w-20 sm:h-20 text-base-content/20" />
@@ -1395,7 +1469,6 @@ export const EventSlugPage = () => {
                     <span className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 text-xs font-bold text-white bg-black/55 backdrop-blur px-3 py-1.5 rounded-full">
                       {galleryIndex + 1} / {mediaItems.length}
                     </span>
-
                     <button
                       onClick={() => goToMedia(galleryIndex - 1)}
                       className="hidden sm:flex absolute left-4 top-1/2 -translate-y-1/2 z-10 w-11 h-11 rounded-full bg-base-100/90 shadow-md items-center justify-center hover:bg-base-100 active:scale-95 transition"
@@ -1403,7 +1476,6 @@ export const EventSlugPage = () => {
                     >
                       <ChevronLeft size={20} />
                     </button>
-
                     <button
                       onClick={() => goToMedia(galleryIndex + 1)}
                       className="hidden sm:flex absolute right-4 top-1/2 -translate-y-1/2 z-10 w-11 h-11 rounded-full bg-base-100/90 shadow-md items-center justify-center hover:bg-base-100 active:scale-95 transition"
@@ -1411,7 +1483,6 @@ export const EventSlugPage = () => {
                     >
                       <ChevronRight size={20} />
                     </button>
-
                     <div className="absolute bottom-3 sm:bottom-4 inset-x-0 z-10 flex justify-center gap-1.5">
                       {mediaItems.map((_, i) => (
                         <button
@@ -1437,19 +1508,16 @@ export const EventSlugPage = () => {
                     <div className="bg-primary text-primary-content text-xs font-bold py-1">
                       {dateMonth}
                     </div>
-
                     <div className="py-2">
                       <div className="text-3xl sm:text-4xl font-black leading-none">
                         {dateDay}
                       </div>
-
                       <div className="text-[11px] font-medium text-base-content/60 mt-1">
                         {dateWeekday}
                       </div>
                     </div>
                   </div>
                 )}
-
                 <div className="min-w-0 flex-1 space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold capitalize">
@@ -1457,15 +1525,20 @@ export const EventSlugPage = () => {
                         event.category?.replace("_", " ") || "Featured event"
                       ).toLowerCase()}
                     </span>
-
                     <span className="px-3 py-1 rounded-full bg-success/10 text-success text-xs font-semibold flex items-center gap-1.5">
                       <ShieldCheck size={13} /> Verified gate ticket
                     </span>
                   </div>
-
                   <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-[1.1] break-words">
                     {event.title}
                   </h1>
+
+                  {/* 🆕 ORGANIZER */}
+                  {event.organization && (
+                    <div className="pt-0.5">
+                      <OrganizerChip organization={event.organization} />
+                    </div>
+                  )}
 
                   <div className="flex flex-wrap gap-2 pt-1 text-sm font-medium">
                     <span className="inline-flex items-center gap-2 rounded-full bg-base-200 px-3 py-1.5">
@@ -1473,7 +1546,6 @@ export const EventSlugPage = () => {
                         size={15}
                         className="text-primary shrink-0"
                       />
-
                       <span>
                         {new Date(event.date).toLocaleDateString(undefined, {
                           weekday: "short",
@@ -1483,13 +1555,10 @@ export const EventSlugPage = () => {
                         })}
                       </span>
                     </span>
-
                     <span className="inline-flex items-center gap-2 rounded-full bg-base-200 px-3 py-1.5">
                       <Clock size={15} className="text-primary shrink-0" />
-
                       <span>{event.time || "Time TBA"}</span>
                     </span>
-
                     <button
                       type="button"
                       onClick={openVenueOnMap}
@@ -1497,7 +1566,6 @@ export const EventSlugPage = () => {
                       aria-label={`View ${venueName} on the map`}
                     >
                       <MapPin size={15} className="text-primary shrink-0" />
-
                       <span className="truncate">{venueName}</span>
                     </button>
                   </div>
@@ -1514,12 +1582,10 @@ export const EventSlugPage = () => {
                   size={20}
                   className="text-warning shrink-0 mt-0.5"
                 />
-
                 <div className="min-w-0">
                   <p className="font-extrabold text-sm sm:text-base">
                     This event has ended
                   </p>
-
                   <p className="text-sm text-base-content/70">
                     Ticket sales are closed, so booking is no longer available.
                   </p>
@@ -1530,19 +1596,17 @@ export const EventSlugPage = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-10 items-start">
               {/* LEFT */}
               <div className="lg:col-span-2 space-y-10 min-w-0">
-                {/* Step 1: tickets */}
+                {/* Step 1: ticket tiers */}
                 <section className="space-y-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
                       <span className="w-9 h-9 rounded-full bg-primary text-primary-content flex items-center justify-center font-black shrink-0">
                         1
                       </span>
-
                       <h2 className="text-xl sm:text-2xl font-black tracking-tight">
-                        Pick your ticket
+                        Pick your tickets
                       </h2>
                     </div>
-
                     <span className="text-xs sm:text-sm text-base-content/60 font-medium shrink-0">
                       {eventEnded
                         ? "Sales closed"
@@ -1555,16 +1619,13 @@ export const EventSlugPage = () => {
                       <div className="w-14 h-14 rounded-2xl bg-neutral/10 text-neutral flex items-center justify-center mx-auto">
                         <Clock size={28} />
                       </div>
-
                       <h4 className="font-extrabold text-lg">
                         Ticket sales have closed
                       </h4>
-
                       <p className="text-sm text-base-content/70 max-w-sm mx-auto leading-relaxed">
                         This event has ended, so tickets can no longer be
                         bought.
                       </p>
-
                       <Link
                         to="/events"
                         className="btn btn-primary rounded-full font-bold px-8"
@@ -1582,11 +1643,9 @@ export const EventSlugPage = () => {
                       <div className="w-14 h-14 rounded-2xl bg-warning/10 text-warning flex items-center justify-center mx-auto">
                         <AlertCircle size={28} />
                       </div>
-
                       <h4 className="font-extrabold text-lg">
                         Tickets are not on sale yet
                       </h4>
-
                       <p className="text-sm text-base-content/70 max-w-sm mx-auto leading-relaxed">
                         The organizer has not opened ticket sales for this
                         event. Please check back soon.
@@ -1595,39 +1654,36 @@ export const EventSlugPage = () => {
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
                       {ticketTypes.map((tier: any) => {
+                        const tierId = Number(tier.id || tier.ticketTypeId);
                         const isSoldOut =
                           tier.sold >= tier.quantity || tier.isSoldOut;
-
-                        const remaining = Math.max(
-                          0,
-                          (tier.quantity || 0) - (tier.sold || 0)
-                        );
-
-                        const isSelected = selectedTicketType?.id === tier.id;
-
+                        const remaining = getMaxForTier(tier);
+                        const inCartQty = getCartQtyFor(tierId);
                         const isLow =
                           !isSoldOut && remaining > 0 && remaining <= 10;
+                        const isHighlighted = highlightedTierId === tierId;
 
                         return (
                           <div
-                            key={tier.id || tier.ticketTypeId}
+                            key={tierId}
                             role="button"
-                            aria-pressed={isSelected}
+                            aria-pressed={isHighlighted}
                             tabIndex={isSoldOut ? -1 : 0}
                             onClick={() => {
-                              if (!isSoldOut) {
-                                setSelectedTicketType(tier);
-
-                                handleQuantityChange(1);
-
-                                setShowPickedModal(true);
-                              }
+                              if (isSoldOut) return;
+                              setHighlightedTierId(tierId);
+                              setPickerQuantity(1);
+                              setShowPickedModal(true);
                             }}
                             className={`drop-shadow-md transition-transform duration-200 focus-visible:outline-none ${
                               isSoldOut
                                 ? "opacity-60 grayscale cursor-not-allowed"
                                 : "cursor-pointer hover:-translate-y-0.5 active:scale-[0.99]"
-                            } ${isSelected ? "drop-shadow-xl" : ""}`}
+                            } ${
+                              isHighlighted || inCartQty > 0
+                                ? "drop-shadow-xl"
+                                : ""
+                            }`}
                           >
                             <div
                               style={ticketMaskStyle}
@@ -1635,18 +1691,26 @@ export const EventSlugPage = () => {
                             >
                               <div
                                 className={`flex-1 min-w-0 px-4 sm:px-5 py-4 flex flex-col justify-center gap-1.5 ${
-                                  isSelected ? "bg-primary/10" : ""
+                                  isHighlighted || inCartQty > 0
+                                    ? "bg-primary/10"
+                                    : ""
                                 }`}
                               >
-                                <h4 className="font-extrabold text-base leading-snug line-clamp-2 break-words">
-                                  {tier.name}
-                                </h4>
-
+                                <div className="flex items-center gap-2">
+                                  <h4 className="font-extrabold text-base leading-snug line-clamp-2 break-words">
+                                    {tier.name}
+                                  </h4>
+                                  {inCartQty > 0 && (
+                                    <span className="ml-auto shrink-0 inline-flex items-center gap-1 text-[11px] font-bold bg-primary text-primary-content px-2 py-0.5 rounded-full">
+                                      <ShoppingBag size={11} />{" "}
+                                      {inCartQty} in cart
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-xs text-base-content/70 leading-snug line-clamp-2">
                                   {tier.description ||
                                     "Entry to the event. Show your QR code at the gate."}
                                 </p>
-
                                 <p
                                   className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
                                     isSoldOut
@@ -1657,7 +1721,6 @@ export const EventSlugPage = () => {
                                   }`}
                                 >
                                   <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
-
                                   {isSoldOut
                                     ? "Sold out"
                                     : isLow
@@ -1668,7 +1731,7 @@ export const EventSlugPage = () => {
 
                               <div
                                 className={`absolute top-4 bottom-4 right-28 border-l-2 border-dashed ${
-                                  isSelected
+                                  isHighlighted || inCartQty > 0
                                     ? "border-primary/40"
                                     : "border-base-content/20"
                                 }`}
@@ -1676,7 +1739,7 @@ export const EventSlugPage = () => {
 
                               <div
                                 className={`w-28 shrink-0 flex flex-col items-center justify-center gap-2 px-2 py-4 text-center ${
-                                  isSelected && !isSoldOut
+                                  isHighlighted || inCartQty > 0
                                     ? "bg-primary text-primary-content"
                                     : "bg-base-300/40"
                                 }`}
@@ -1685,10 +1748,9 @@ export const EventSlugPage = () => {
                                   <p className="text-[11px] font-bold opacity-70 mb-1">
                                     KES
                                   </p>
-
                                   <p
                                     className={`text-xl font-black ${
-                                      isSelected && !isSoldOut
+                                      isHighlighted || inCartQty > 0
                                         ? ""
                                         : "text-primary"
                                     }`}
@@ -1696,20 +1758,17 @@ export const EventSlugPage = () => {
                                     {Number(tier.price || 0).toLocaleString()}
                                   </p>
                                 </div>
-
                                 {isSoldOut ? (
                                   <span className="text-[11px] font-bold text-base-content/50">
                                     Not available
                                   </span>
-                                ) : (
-                                  <span
-                                    className={`w-7 h-7 rounded-full flex items-center justify-center border-2 ${
-                                      isSelected
-                                        ? "bg-primary-content border-primary-content text-primary"
-                                        : "border-base-content/25 text-transparent"
-                                    }`}
-                                  >
+                                ) : inCartQty > 0 ? (
+                                  <span className="w-7 h-7 rounded-full flex items-center justify-center bg-primary-content text-primary border-2 border-primary-content">
                                     <Check size={16} strokeWidth={3} />
+                                  </span>
+                                ) : (
+                                  <span className="w-7 h-7 rounded-full flex items-center justify-center border-2 border-base-content/25 text-transparent">
+                                    <Plus size={16} strokeWidth={3} />
                                   </span>
                                 )}
                               </div>
@@ -1720,26 +1779,24 @@ export const EventSlugPage = () => {
                     </div>
                   )}
 
-                  {selectedTicketType && (
+                  {cart.length > 0 && (
                     <div className="flex items-center gap-2.5 rounded-xl bg-primary/10 border border-primary/30 px-3.5 py-2.5 text-sm">
                       <span className="w-6 h-6 rounded-full bg-primary text-primary-content flex items-center justify-center shrink-0">
-                        <Check size={14} strokeWidth={3} />
+                        <ShoppingBag size={14} />
                       </span>
-
                       <span className="min-w-0">
-                        You picked{" "}
                         <b className="font-extrabold">
-                          {selectedTicketType.name}
+                          {totalQuantity}{" "}
+                          {totalQuantity === 1 ? "ticket" : "tickets"}
                         </b>{" "}
-                        · KES{" "}
-                        {Number(selectedTicketType.price || 0).toLocaleString()}
+                        in your cart · <b>KES {formatKES(cartSubtotal)}</b>
                       </span>
                     </div>
                   )}
                 </section>
 
-                {/* Step 2 */}
-                {selectedTicketType && (
+                {/* Step 2: attendees */}
+                {cart.length > 0 && (
                   <section
                     id="holder-details"
                     className="space-y-4 animate-in fade-in duration-300 scroll-mt-24"
@@ -1748,14 +1805,12 @@ export const EventSlugPage = () => {
                       <span className="w-9 h-9 rounded-full bg-primary text-primary-content flex items-center justify-center font-black shrink-0">
                         2
                       </span>
-
                       <div className="min-w-0">
                         <h3 className="text-xl sm:text-2xl font-black tracking-tight">
                           Who is coming?
                         </h3>
-
                         <p className="text-sm text-base-content/60 mt-0.5">
-                          {ticketQuantity > 1
+                          {totalQuantity > 1
                             ? shouldAssign
                               ? "Your details are required. Details for the other tickets are optional."
                               : "Just your details are needed. All tickets will be sent to you."
@@ -1764,21 +1819,18 @@ export const EventSlugPage = () => {
                       </div>
                     </div>
 
-                    {/* Ask whether to assign the tickets now (2+ tickets only) */}
-                    {ticketQuantity > 1 && (
+                    {totalQuantity > 1 && (
                       <div className="rounded-2xl border border-base-300 bg-base-200/60 p-4 space-y-3">
                         <div>
                           <p className="text-sm font-bold">
-                            Do you want to assign these {ticketQuantity}{" "}
-                            tickets now?
+                            Do you want to assign these {totalQuantity} tickets
+                            now?
                           </p>
-
                           <p className="text-xs text-base-content/60 mt-0.5">
                             If not, all tickets will be sent to you and you can
                             share them with your guests later.
                           </p>
                         </div>
-
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <button
                             type="button"
@@ -1800,7 +1852,6 @@ export const EventSlugPage = () => {
                             </span>
                             No, send them all to me
                           </button>
-
                           <button
                             type="button"
                             onClick={() => setAssignNow(true)}
@@ -1836,14 +1887,12 @@ export const EventSlugPage = () => {
                               <span className="w-8 h-8 rounded-full bg-primary/10 text-primary font-black text-sm flex items-center justify-center shrink-0">
                                 {index + 1}
                               </span>
-
                               <div className="min-w-0">
                                 <p className="text-sm font-bold leading-tight">
                                   {shouldAssign
                                     ? `ticket ${index + 1}`
                                     : "Your details"}
                                 </p>
-
                                 {index === 0 ? (
                                   <p className="text-xs font-semibold text-primary">
                                     {shouldAssign
@@ -1857,15 +1906,6 @@ export const EventSlugPage = () => {
                                 )}
                               </div>
                             </div>
-
-                            {shouldAssign && (
-                              <span className="text-xs font-semibold text-base-content/50 shrink-0">
-                                KES{" "}
-                                {Number(
-                                  selectedTicketType.price || 0
-                                ).toLocaleString()}
-                              </span>
-                            )}
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1873,7 +1913,6 @@ export const EventSlugPage = () => {
                               <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-base-content/40">
                                 <User size={16} />
                               </span>
-
                               <input
                                 type="text"
                                 autoComplete={index === 0 ? "name" : "off"}
@@ -1883,15 +1922,28 @@ export const EventSlugPage = () => {
                                     : "Full name (optional)"
                                 }
                                 value={attendee.name}
-                                readOnly={index === 0 && isAuthenticated && !!loggedInName}
-                                onChange={(e) =>
-                                  handleAttendeeChange(
-                                    index,
-                                    "name",
-                                    e.target.value
-                                  )
+                                readOnly={
+                                  index === 0 &&
+                                  isAuthenticated &&
+                                  !!loggedInName
                                 }
-                                className={`${inputCls} ${index === 0 && isAuthenticated && loggedInName ? "cursor-not-allowed bg-base-200/70" : ""}`}
+                                onChange={(e) =>
+                                  setAttendeeDetails((prev) => {
+                                    const updated = [...prev];
+                                    updated[index] = {
+                                      ...updated[index],
+                                      name: e.target.value,
+                                    };
+                                    return updated;
+                                  })
+                                }
+                                className={`${inputCls} ${
+                                  index === 0 &&
+                                  isAuthenticated &&
+                                  loggedInName
+                                    ? "cursor-not-allowed bg-base-200/70"
+                                    : ""
+                                }`}
                                 required={index === 0}
                               />
                             </div>
@@ -1900,7 +1952,6 @@ export const EventSlugPage = () => {
                               <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-base-content/40">
                                 <Phone size={16} />
                               </span>
-
                               <input
                                 type="tel"
                                 autoComplete={index === 0 ? "tel" : "off"}
@@ -1912,11 +1963,14 @@ export const EventSlugPage = () => {
                                 }
                                 value={attendee.phone}
                                 onChange={(e) =>
-                                  handleAttendeeChange(
-                                    index,
-                                    "phone",
-                                    e.target.value
-                                  )
+                                  setAttendeeDetails((prev) => {
+                                    const updated = [...prev];
+                                    updated[index] = {
+                                      ...updated[index],
+                                      phone: e.target.value,
+                                    };
+                                    return updated;
+                                  })
                                 }
                                 className={inputCls}
                                 required={index === 0}
@@ -1927,7 +1981,6 @@ export const EventSlugPage = () => {
                               <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-base-content/40">
                                 <Mail size={16} />
                               </span>
-
                               <input
                                 type="email"
                                 autoComplete={index === 0 ? "email" : "off"}
@@ -1938,15 +1991,28 @@ export const EventSlugPage = () => {
                                     : "Email address (optional)"
                                 }
                                 value={attendee.email}
-                                readOnly={index === 0 && isAuthenticated && !!loggedInEmail}
-                                onChange={(e) =>
-                                  handleAttendeeChange(
-                                    index,
-                                    "email",
-                                    e.target.value
-                                  )
+                                readOnly={
+                                  index === 0 &&
+                                  isAuthenticated &&
+                                  !!loggedInEmail
                                 }
-                                className={`${inputCls} ${index === 0 && isAuthenticated && loggedInEmail ? "cursor-not-allowed bg-base-200/70" : ""}`}
+                                onChange={(e) =>
+                                  setAttendeeDetails((prev) => {
+                                    const updated = [...prev];
+                                    updated[index] = {
+                                      ...updated[index],
+                                      email: e.target.value,
+                                    };
+                                    return updated;
+                                  })
+                                }
+                                className={`${inputCls} ${
+                                  index === 0 &&
+                                  isAuthenticated &&
+                                  loggedInEmail
+                                    ? "cursor-not-allowed bg-base-200/70"
+                                    : ""
+                                }`}
                                 required={index === 0}
                               />
                             </div>
@@ -1973,9 +2039,7 @@ export const EventSlugPage = () => {
                       { id: "location", label: "Venue", icon: Building2 },
                     ].map((tab) => {
                       const IconComponent = tab.icon;
-
                       const active = activeTab === tab.id;
-
                       return (
                         <button
                           key={tab.id}
@@ -1987,7 +2051,6 @@ export const EventSlugPage = () => {
                           }`}
                         >
                           <IconComponent size={16} />
-
                           <span>{tab.label}</span>
                         </button>
                       );
@@ -2001,7 +2064,6 @@ export const EventSlugPage = () => {
                           <FileText size={18} className="text-primary" /> About
                           this event
                         </h3>
-
                         <p className="text-base text-base-content/80 leading-relaxed whitespace-pre-line max-w-prose break-words">
                           {event.description ||
                             "No full description provided for this event yet."}
@@ -2016,7 +2078,6 @@ export const EventSlugPage = () => {
                             <Building2 size={18} className="text-primary" />{" "}
                             Venue
                           </h3>
-
                           <a
                             href={googleMapsUrl}
                             target="_blank"
@@ -2043,17 +2104,14 @@ export const EventSlugPage = () => {
                             <div className="w-11 h-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
                               <MapPin size={20} />
                             </div>
-
                             <div className="space-y-1 min-w-0">
                               <h4 className="font-extrabold text-base break-words">
                                 {venueName}
                               </h4>
-
                               <p className="text-sm text-base-content/70 break-words">
                                 {venueAddress ||
                                   "The exact location is sent with your ticket."}
                               </p>
-
                               <p className="text-xs font-bold text-primary pt-1">
                                 Tap to open directions in Google Maps →
                               </p>
@@ -2078,7 +2136,6 @@ export const EventSlugPage = () => {
                               size={30}
                               className="mx-auto text-primary mb-2"
                             />
-
                             <p className="text-sm text-base-content/70">
                               A map will appear once this venue has a location
                               or address.
@@ -2091,15 +2148,17 @@ export const EventSlugPage = () => {
                 </section>
               </div>
 
-              {/* RIGHT: checkout */}
+              {/* RIGHT: CART + CHECKOUT */}
               <aside
                 id="checkout"
                 className="lg:col-span-1 lg:sticky lg:top-28 scroll-mt-24 min-w-0"
               >
                 <div className="bg-base-100 border border-base-300 rounded-3xl shadow-xl overflow-hidden">
                   <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 bg-base-200/70 border-b border-base-300">
-                    <h3 className="text-lg font-extrabold">Your order</h3>
-
+                    <h3 className="text-lg font-extrabold flex items-center gap-2">
+                      <ShoppingBag size={18} className="text-primary" />
+                      Your cart
+                    </h3>
                     <span className="inline-flex items-center gap-1 text-xs font-bold text-success bg-success/10 px-2.5 py-1 rounded-full shrink-0">
                       <ShieldCheck size={13} /> Instant ticket
                     </span>
@@ -2112,7 +2171,6 @@ export const EventSlugPage = () => {
                           size={16}
                           className="shrink-0 mt-0.5"
                         />
-
                         <span>{checkoutSuccessMessage}</span>
                       </div>
                     )}
@@ -2122,132 +2180,101 @@ export const EventSlugPage = () => {
                         <div className="w-14 h-14 rounded-2xl bg-neutral/10 text-neutral flex items-center justify-center mx-auto">
                           <Ticket size={26} />
                         </div>
-
                         <div className="space-y-1">
                           <h4 className="font-extrabold">Event ended</h4>
-
                           <p className="text-sm text-base-content/70 max-w-xs mx-auto">
                             Booking is closed for this event.
                           </p>
                         </div>
                       </div>
-                    ) : selectedTicketType ? (
-                      <div className="space-y-5 animate-in fade-in duration-300">
-                        <div className="flex items-center justify-between gap-3 p-4 rounded-2xl bg-base-200/60 border border-base-300">
-                          <div className="min-w-0">
-                            <h4 className="font-extrabold break-words">
-                              {selectedTicketType.name}
-                            </h4>
-
-                            <p className="text-sm text-base-content/70">
-                              KES{" "}
-                              {Number(
-                                selectedTicketType.price || 0
-                              ).toLocaleString()}{" "}
-                              per ticket
-                            </p>
-                          </div>
-
-                          <Ticket
-                            size={22}
-                            className="text-primary shrink-0"
-                          />
+                    ) : cart.length === 0 ? (
+                      <div className="text-center py-8 space-y-3">
+                        <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                          <Ticket size={26} />
                         </div>
-
+                        <div className="space-y-1">
+                          <h4 className="font-extrabold">Your cart is empty</h4>
+                          <p className="text-sm text-base-content/70 max-w-xs mx-auto">
+                            Pick any ticket type above to add it here. You can
+                            mix Comrade, Regular and VIP in one checkout.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4 animate-in fade-in duration-300">
                         <div className="space-y-2">
-                          <label className="text-sm font-bold">
-                            How many tickets?
-                          </label>
-
-                          <div className="flex items-center justify-between bg-base-200/60 p-2 rounded-2xl border border-base-300">
-                            <button
-                              onClick={decrementQuantity}
-                              disabled={ticketQuantity <= 1 || isProcessing}
-                              className="btn btn-ghost w-12 h-12 min-h-0 rounded-xl disabled:opacity-30"
-                              title="Fewer tickets"
-                              aria-label="Fewer tickets"
+                          {cart.map((line) => (
+                            <div
+                              key={line.ticketTypeId}
+                              className="rounded-2xl border border-base-300 bg-base-200/60 p-3 flex items-center gap-3"
                             >
-                              <Minus size={18} />
-                            </button>
-
-                            <div className="flex flex-col items-center">
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                aria-label="Number of tickets"
-                                value={quantityText}
-                                disabled={isProcessing}
-                                onChange={(e) => {
-                                  const digits = e.target.value.replace(
-                                    /\D/g,
-                                    ""
-                                  );
-
-                                  if (digits === "") {
-                                    setQuantityText("");
-
-                                    return;
+                              <div className="min-w-0 flex-1">
+                                <p className="font-extrabold text-sm leading-snug break-words">
+                                  {line.ticketTypeName}
+                                </p>
+                                <p className="text-xs text-base-content/60">
+                                  KES {formatKES(line.unitPrice)} each
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  onClick={() =>
+                                    updateCartLine(
+                                      line.ticketTypeId,
+                                      line.quantity - 1
+                                    )
                                   }
-
-                                  const n = Math.max(
-                                    1,
-                                    Math.min(parseInt(digits, 10), maxAvailable)
-                                  );
-
-                                  setQuantityText(String(n));
-
-                                  handleQuantityChange(n);
-                                }}
-                                onBlur={() =>
-                                  setQuantityText(String(ticketQuantity))
+                                  disabled={line.quantity <= 1}
+                                  className="btn btn-ghost btn-xs w-7 h-7 min-h-0 rounded-md disabled:opacity-30"
+                                  aria-label={`Fewer ${line.ticketTypeName}`}
+                                >
+                                  <Minus size={12} />
+                                </button>
+                                <span className="w-6 text-center text-sm font-black">
+                                  {line.quantity}
+                                </span>
+                                <button
+                                  onClick={() =>
+                                    updateCartLine(
+                                      line.ticketTypeId,
+                                      line.quantity + 1
+                                    )
+                                  }
+                                  disabled={
+                                    line.quantity >= line.maxAvailable
+                                  }
+                                  className="btn btn-ghost btn-xs w-7 h-7 min-h-0 rounded-md disabled:opacity-30"
+                                  aria-label={`More ${line.ticketTypeName}`}
+                                >
+                                  <Plus size={12} />
+                                </button>
+                              </div>
+                              <button
+                                onClick={() =>
+                                  removeCartLine(line.ticketTypeId)
                                 }
-                                className="w-16 text-center text-2xl font-black leading-none bg-transparent rounded-lg focus:outline-none focus:bg-base-100"
-                              />
-
-                              <span className="text-xs text-base-content/50 mt-1">
-                                {ticketQuantity === 1 ? "ticket" : "tickets"}
-                              </span>
+                                className="btn btn-ghost btn-xs w-7 h-7 min-h-0 rounded-md text-error"
+                                aria-label={`Remove ${line.ticketTypeName}`}
+                              >
+                                <Trash2 size={13} />
+                              </button>
                             </div>
-
-                            <button
-                              onClick={incrementQuantity}
-                              disabled={isProcessing || atMax}
-                              className="btn btn-ghost w-12 h-12 min-h-0 rounded-xl disabled:opacity-30"
-                              title="More tickets"
-                              aria-label="More tickets"
-                            >
-                              <Plus size={18} />
-                            </button>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-2">
-                            <p
-                              className={`text-xs ${
-                                atMax
-                                  ? "text-warning font-semibold"
-                                  : "text-base-content/50"
-                              }`}
-                            >
-                              {atMax
-                                ? "That's all the tickets left"
-                                : `${maxAvailable} tickets available`}
-                            </p>
-
-                            <button
-                              type="button"
-                              onClick={() => handleQuantityChange(maxAvailable)}
-                              disabled={isProcessing || atMax}
-                              className="btn btn-ghost btn-xs rounded-full text-primary disabled:opacity-30"
-                            >
-                              Get the max
-                            </button>
-                          </div>
+                          ))}
                         </div>
+
+                        <button
+                          onClick={() => {
+                            document
+                              .getElementById("ticket-tiers")
+                              ?.scrollIntoView({ behavior: "smooth" });
+                          }}
+                          className="btn btn-ghost btn-sm w-full rounded-xl border border-dashed border-base-300 text-primary font-bold"
+                        >
+                          <Plus size={14} /> Add another ticket type
+                        </button>
 
                         <div className="space-y-2">
                           <label className="text-sm font-bold">Pay with</label>
-
                           <div className="grid grid-cols-2 gap-2">
                             <button
                               type="button"
@@ -2263,14 +2290,11 @@ export const EventSlugPage = () => {
                                   <Check size={12} strokeWidth={3} />
                                 </span>
                               )}
-
                               <MpesaLogo className="h-7" />
-
                               <span className="text-[11px] font-semibold text-base-content/60">
                                 Pay from your phone
                               </span>
                             </button>
-
                             <button
                               type="button"
                               onClick={() => setPaymentMethod("card")}
@@ -2285,7 +2309,6 @@ export const EventSlugPage = () => {
                                   <Check size={12} strokeWidth={3} />
                                 </span>
                               )}
-
                               <span className="h-7 flex items-center gap-2 font-black text-sm">
                                 <CreditCard
                                   size={20}
@@ -2293,7 +2316,6 @@ export const EventSlugPage = () => {
                                 />{" "}
                                 Card
                               </span>
-
                               <span className="text-[11px] font-semibold text-base-content/60">
                                 Visa · Mastercard
                               </span>
@@ -2304,27 +2326,69 @@ export const EventSlugPage = () => {
                         <div className="pt-4 border-t border-dashed border-base-300 space-y-2">
                           <div className="flex items-center justify-between gap-3 text-sm">
                             <span className="text-base-content/70">
-                              Subtotal ({ticketQuantity}{" "}
-                              {ticketQuantity === 1 ? "ticket" : "tickets"})
+                              Subtotal ({totalQuantity}{" "}
+                              {totalQuantity === 1 ? "ticket" : "tickets"})
                             </span>
-
                             <span className="font-bold shrink-0">
-                              KES {total.toLocaleString()}
+                              KES {formatKES(cartSubtotal)}
                             </span>
                           </div>
 
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-base-content/70">Fees</span>
-
-                            <span className="font-bold text-success">Free</span>
+                          <div className="flex items-center justify-between gap-3 text-sm">
+                            <span className="text-base-content/70">
+                              Service fee
+                              {feePreview && serviceFeePercent > 0
+                                ? ` (${serviceFeePercent}%)`
+                                : ""}
+                            </span>
+                            {cartSubtotal <= 0 ? (
+                              <span className="font-bold text-success shrink-0">
+                                Free
+                              </span>
+                            ) : feePreview ? (
+                              <span className="font-bold shrink-0">
+                                KES {formatKES(serviceFee)}
+                              </span>
+                            ) : feeFailed ? (
+                              <button
+                                type="button"
+                                onClick={() => feeQuery.refetch()}
+                                className="text-xs font-bold text-error underline shrink-0"
+                              >
+                                Retry
+                              </button>
+                            ) : (
+                              <span className="inline-block h-4 w-16 rounded bg-base-300 animate-pulse shrink-0"></span>
+                            )}
                           </div>
+
+                          {feePreview && serviceFee > 0 && (
+                            <p className="text-[11px] text-base-content/50 leading-snug flex items-start gap-1.5">
+                              <Sparkles
+                                size={12}
+                                className="shrink-0 mt-0.5 text-primary"
+                              />
+                              Buy more tickets in one order to unlock a lower
+                              fee.
+                            </p>
+                          )}
+
+                          {feeFailed && (
+                            <p className="text-xs text-error leading-snug">
+                              We couldn't load the fees. Please retry before
+                              paying.
+                            </p>
+                          )}
 
                           <div className="flex items-center justify-between gap-3 text-xl font-black pt-3 border-t border-base-300">
                             <span>Total</span>
-
-                            <span className="text-primary shrink-0">
-                              KES {total.toLocaleString()}
-                            </span>
+                            {feeReady ? (
+                              <span className="text-primary shrink-0">
+                                KES {formatKES(grandTotal)}
+                              </span>
+                            ) : (
+                              <span className="inline-block h-6 w-24 rounded bg-base-300 animate-pulse shrink-0"></span>
+                            )}
                           </div>
                         </div>
 
@@ -2332,7 +2396,7 @@ export const EventSlugPage = () => {
                           <>
                             <button
                               onClick={handleMpesaCheckout}
-                              disabled={isProcessing}
+                              disabled={isProcessing || !feeReady}
                               className="btn w-full h-14 rounded-2xl font-black text-base gap-3 border-0 text-white bg-[#43B02A] hover:bg-[#3a9a24] shadow-lg shadow-[#43B02A]/30 disabled:opacity-60"
                             >
                               {isProcessing ? (
@@ -2348,11 +2412,12 @@ export const EventSlugPage = () => {
                                   <span className="bg-white rounded-lg px-1.5 py-1 flex items-center">
                                     <MpesaLogo className="h-4" />
                                   </span>
-                                  Pay KES {total.toLocaleString()}
+                                  {feeReady
+                                    ? `Pay KES ${formatKES(grandTotal)}`
+                                    : "Calculating..."}
                                 </>
                               )}
                             </button>
-
                             <p className="text-xs text-center text-base-content/60 -mt-2">
                               A payment prompt will be sent to{" "}
                               <span className="font-bold">
@@ -2363,7 +2428,7 @@ export const EventSlugPage = () => {
                         ) : (
                           <button
                             onClick={handleCardCheckout}
-                            disabled={isProcessing}
+                            disabled={isProcessing || !feeReady}
                             className="btn btn-primary w-full h-14 rounded-2xl font-black text-base shadow-lg shadow-primary/25 gap-2"
                           >
                             {isProcessing ? (
@@ -2373,26 +2438,14 @@ export const EventSlugPage = () => {
                               </>
                             ) : (
                               <>
-                                <CreditCard size={18} /> Pay with card
+                                <CreditCard size={18} />{" "}
+                                {feeReady
+                                  ? `Pay KES ${formatKES(grandTotal)} with card`
+                                  : "Calculating..."}
                               </>
                             )}
                           </button>
                         )}
-                      </div>
-                    ) : (
-                      <div className="text-center py-8 space-y-3">
-                        <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
-                          <Ticket size={26} />
-                        </div>
-
-                        <div className="space-y-1">
-                          <h4 className="font-extrabold">No ticket picked</h4>
-
-                          <p className="text-sm text-base-content/70 max-w-xs mx-auto">
-                            Pick a ticket above to choose how many tickets you
-                            want and pay.
-                          </p>
-                        </div>
                       </div>
                     )}
 
@@ -2411,21 +2464,24 @@ export const EventSlugPage = () => {
       </main>
 
       {/* Mobile sticky summary bar */}
-      {event && selectedTicketType && !isEventLoading && (
+      {event && cart.length > 0 && !isEventLoading && (
         <div
           style={{ bottom: BOTTOM_NAV_HEIGHT }}
           className="lg:hidden fixed inset-x-0 z-30 bg-base-100/95 backdrop-blur-xl border-t border-base-300 px-4 py-3 flex items-center justify-between gap-3"
         >
           <div className="min-w-0">
             <p className="text-xs text-base-content/60 truncate">
-              {selectedTicketType.name} × {ticketQuantity}
+              {totalQuantity} {totalQuantity === 1 ? "ticket" : "tickets"}
+              {serviceFee > 0 ? " + service fee" : ""}
             </p>
-
-            <p className="text-lg font-black text-primary leading-tight">
-              KES {total.toLocaleString()}
-            </p>
+            {feeReady ? (
+              <p className="text-lg font-black text-primary leading-tight">
+                KES {formatKES(grandTotal)}
+              </p>
+            ) : (
+              <span className="inline-block h-6 w-24 rounded bg-base-300 animate-pulse"></span>
+            )}
           </div>
-
           <a
             href="#checkout"
             className="btn btn-primary h-12 rounded-2xl px-6 font-black shrink-0"

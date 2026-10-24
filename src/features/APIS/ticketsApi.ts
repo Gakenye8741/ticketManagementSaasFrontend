@@ -1,25 +1,97 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 
+// ==========================================
 // Ticket Payload and Input Interfaces
+// ==========================================
+
+/** Valid = usable. Refunded = money returned, ticket is dead. */
+export type TicketLifecycleStatus = 'Valid' | 'Refunded' | (string & {});
+
 export interface Ticket {
   ticketId?: number;
   id?: number;
   bookingId: number;
   eventId: number;
-  ticketTypeId?: number;
+
+  // 🆕 Ticket type info (from the schema fix)
+  ticketTypeId?: number | null;
+  ticketTypeName?: string | null;
+
+  // 🆕 Which cart line this ticket was generated from
+  bookingItemId?: number | null;
+
   ticketToken?: string;
+  ticketNumber?: string;
   groupBundleId?: string | null;
+
+  // Names the backend actually returns
+  purchaserDigitalId?: number | null;
+  digitalId?: number | null;
+
+  // Older names kept so existing screens don't break
   purchaserId?: number;
   holderId?: number | null;
+
   attendeeName?: string | null;
   attendeeEmail?: string | null;
   attendeePhone?: string | null;
+  isAssigned?: boolean;
+  transferStatus?: string | null;
   isScanned?: boolean;
   scannedAt?: string | null;
+
+  // NEW: refund state
+  lifecycleStatus?: TicketLifecycleStatus;
+  refundedAt?: string | null;
+
   createdAt?: string;
   updatedAt?: string;
 }
 
+/** NEW: true only when the ticket can still be used (show QR, transfer, assign, etc.) */
+export const isTicketUsable = (t?: Pick<Ticket, 'lifecycleStatus' | 'isScanned'> | null): boolean =>
+  !!t && (t.lifecycleStatus ?? 'Valid') === 'Valid' && !t.isScanned;
+
+/** NEW: true when the ticket was refunded (show a "Refunded" badge, hide the QR) */
+export const isTicketRefunded = (t?: Pick<Ticket, 'lifecycleStatus'> | null): boolean =>
+  t?.lifecycleStatus === 'Refunded';
+
+/**
+ * 🆕 Ticket type label for any ticket.
+ * Uses the snapshot written onto the ticket first, then the ID, then a fallback.
+ */
+export const getTicketTypeLabel = (t?: Pick<Ticket, 'ticketTypeName' | 'ticketTypeId'> | null, fallback = 'General'): string => {
+  if (!t) return fallback;
+  if (t.ticketTypeName && t.ticketTypeName.trim()) return t.ticketTypeName;
+  if (t.ticketTypeId != null) return `Ticket type #${t.ticketTypeId}`;
+  return fallback;
+};
+
+/**
+ * 🆕 Colour tone for a ticket type badge. Matches the palette used on MyTickets.
+ */
+export const getTicketTypeTone = (name?: string | null): string => {
+  const n = (name ?? '').toLowerCase();
+  if (n.includes('vip')) return 'badge-warning text-warning-content';
+  if (n.includes('comrade')) return 'badge-primary text-primary-content';
+  if (n.includes('student') || n.includes('scholar')) return 'badge-secondary text-secondary-content';
+  if (n.includes('early') || n.includes('advance')) return 'badge-info text-info-content';
+  if (n.includes('regular') || n.includes('standard') || n.includes('general')) return 'badge-success text-success-content';
+  return 'badge-neutral';
+};
+
+/**
+ * NEW: pulls the real message out of an RTK Query error,
+ * e.g. "This ticket has been refunded and is no longer valid 🚫"
+ */
+export const getTicketErrorMessage = (error: unknown, fallback = 'Something went wrong'): string => {
+  const e = error as any;
+  return e?.data?.message || e?.error || e?.message || fallback;
+};
+
+// NOTE: the server now takes the user from the login token and IGNORES
+// holderId / ownerId / newHolderDigitalId in the request body.
+// They are still sent because the server's validators still require them.
 export interface AssignTicketPayload {
   ticketId: number;
   name: string;
@@ -171,17 +243,19 @@ export const tikitiApi = createApi({
         method: 'POST',
         body: payload,
       }),
-      invalidatesTags: ['tickets', 'ticket', 'ticketsByEvent', 'ticketsByHolder'],
+      invalidatesTags: ['tickets', 'ticket', 'ticketsByEvent', 'ticketsByBooking', 'ticketsByHolder'],
     }),
 
     // 12. Scan Ticket at Gate
+    // A refunded ticket returns a 400 with { success: false, message }.
+    // Use getTicketErrorMessage(error) to show that message on the scanner screen.
     scanTicket: builder.mutation<any, ScanTicketPayload>({
       query: (payload) => ({
         url: 'tickets/scan',
         method: 'POST',
         body: payload,
       }),
-      invalidatesTags: ['ticket', 'ticketsByEvent', 'ticketStats'],
+      invalidatesTags: ['ticket', 'ticketsByEvent', 'ticketsByBooking', 'ticketsByHolder', 'ticketStats'],
     }),
 
     // 13. Unassign Ticket
@@ -212,7 +286,7 @@ export const tikitiApi = createApi({
       providesTags: ['ticketStats'],
     }),
 
-    // 17. Update Ticket Holder
+    // 17. Update Ticket Holder (admin only on the server)
     updateTicketHolder: builder.mutation<any, UpdateTicketHolderPayload>({
       query: (payload) => ({
         url: 'tickets/holder/update',
@@ -228,7 +302,7 @@ export const tikitiApi = createApi({
         url: `tickets/${ticketId}/reset-scan`,
         method: 'PATCH',
       }),
-      invalidatesTags: ['ticket', 'ticketsByEvent', 'ticketStats'],
+      invalidatesTags: ['ticket', 'ticketsByEvent', 'ticketsByHolder', 'ticketStats'],
     }),
 
     // 19. Get Unassigned User Tickets
@@ -247,6 +321,22 @@ export const tikitiApi = createApi({
     }),
   }),
 });
+
+/**
+ * NEW: call this after a refund is approved / completed / reverted so every
+ * ticket list on screen refetches and shows the new "Refunded" state.
+ * Usage (inside your refunds API mutation): see onQueryStarted example.
+ */
+export const invalidateTicketCaches = () =>
+  tikitiApi.util.invalidateTags([
+    'tickets',
+    'ticket',
+    'ticketsByEvent',
+    'ticketsByBooking',
+    'ticketsByHolder',
+    'ticketsByBundle',
+    'ticketStats',
+  ]);
 
 export const {
   useGenerateTicketsMutation,
@@ -269,4 +359,4 @@ export const {
   useResetTicketScanMutation,
   useGetUnassignedUserTicketsQuery,
   useDeleteTicketMutation,
-} =tikitiApi;
+} = tikitiApi;

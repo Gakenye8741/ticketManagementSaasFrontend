@@ -6,12 +6,16 @@ import {
   LogOut,
   CreditCard,
   Ticket,
-  TicketCheck,
+  LifeBuoy,
   Home,
   ShoppingBag,
-  QrCode,
   TrendingUp,
   Store,
+  LayoutDashboard,
+  Wallet,
+  CalendarDays,
+  ScanLine,
+  BadgeCheck,
 } from "lucide-react";
 import { clearCredentials } from "../../features/Auth/AuthSlice";
 import { type RootState } from "../../App/store";
@@ -21,6 +25,19 @@ interface SideNavProps {
   isCollapsed?: boolean;
 }
 
+/**
+ * Navigation groups. Icons are chosen to match each item's real purpose:
+ *  - Explore        → Home            (discover events)
+ *  - My Analytics   → TrendingUp      (charts and spend insights)
+ *  - Bookings       → ShoppingBag     (orders you placed)
+ *  - My Tickets     → Ticket          (individual passes in your wallet)
+ *  - My Payments    → Wallet          (money side of your activity)
+ *  - Support        → LifeBuoy        (help / customer support)
+ *  - Profile        → User            (account, name, contact details)
+ *
+ * Paths are kept as relative strings, exactly as you had them, so they
+ * still resolve under your /dashboard-style parent route.
+ */
 const navigationLinks = [
   {
     title: "Overview",
@@ -33,14 +50,14 @@ const navigationLinks = [
     title: "My Activity",
     items: [
       { path: "my-bookings", label: "Bookings", icon: ShoppingBag },
-      { path: "tickets", label: "My Tickets", icon: Ticket }
+      { path: "tickets", label: "My Tickets", icon: Ticket },
     ],
   },
   {
     title: "Finance & Support",
     items: [
-      { path: "Payments", label: "My Payments", icon: CreditCard },
-      { path: "supportTickets", label: "Support", icon: TicketCheck },
+      { path: "Payments", label: "My Payments", icon: Wallet },
+      { path: "supportTickets", label: "Support", icon: LifeBuoy },
     ],
   },
   {
@@ -59,6 +76,8 @@ export const SideNav = ({ onNavItemClick, isCollapsed = false }: SideNavProps) =
     navigate("/login");
     onNavItemClick?.();
   };
+
+  const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "Member";
 
   return (
     <aside className="w-full h-full bg-base-100 flex flex-col justify-between shrink-0 select-none">
@@ -110,14 +129,16 @@ export const SideNav = ({ onNavItemClick, isCollapsed = false }: SideNavProps) =
                 {user?.profileImageUrl ? (
                   <img src={user.profileImageUrl} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
-                  user?.firstName?.charAt(0) || "U"
+                  (user?.firstName?.charAt(0) || "U").toUpperCase()
                 )}
               </div>
-              <div className="flex flex-col overflow-hidden">
-                <span className="text-xs font-bold text-base-content truncate">
-                  {user?.firstName ? `${user.firstName} ${user.lastName || ""}` : "Member"}
+              <div className="flex flex-col overflow-hidden min-w-0">
+                <span className="text-xs font-bold text-base-content truncate" title={fullName}>
+                  {fullName}
                 </span>
-                <span className="text-[10px] text-primary font-semibold truncate">Member</span>
+                <span className="text-[10px] text-primary font-semibold truncate inline-flex items-center gap-1">
+                  <BadgeCheck size={10} /> Member
+                </span>
               </div>
             </motion.div>
           )}
@@ -179,6 +200,15 @@ export const SideNav = ({ onNavItemClick, isCollapsed = false }: SideNavProps) =
                         </motion.span>
                       )}
                     </AnimatePresence>
+
+                    {/* Active dot on the right edge of the pill */}
+                    {isActive && !isCollapsed && (
+                      <motion.span
+                        layoutId="sidenav-active-dot"
+                        className="ml-auto w-1.5 h-1.5 rounded-full bg-primary-content/80 shrink-0"
+                        aria-hidden="true"
+                      />
+                    )}
                   </>
                 )}
               </NavLink>

@@ -2,10 +2,10 @@ import React, { useRef } from "react";
 import emailjs from "emailjs-com";
 import { toast, Toaster } from "react-hot-toast";
 import { 
-  Instagram, 
-  Linkedin, 
-  Twitter, 
-  Github, 
+  Globe, 
+  Link as LinkIcon, 
+  AtSign, 
+  Code, 
   Mail, 
   MessageSquare, 
   User, 
@@ -167,10 +167,10 @@ const ContactSection: React.FC = () => {
                 <div className="pt-4 border-t border-base-300">
                   <span className="text-[10px] font-black uppercase tracking-wider text-primary block mb-3">Social Media Links</span>
                   <div className="flex gap-3">
-                    <SocialLink href="https://instagram.com"><Instagram size={18} /></SocialLink>
-                    <SocialLink href="https://twitter.com"><Twitter size={18} /></SocialLink>
-                    <SocialLink href="https://linkedin.com"><Linkedin size={18} /></SocialLink>
-                    <SocialLink href="https://github.com"><Github size={18} /></SocialLink>
+                    <SocialLink href="https://instagram.com"><Globe size={18} /></SocialLink>
+                    <SocialLink href="https://twitter.com"><AtSign size={18} /></SocialLink>
+                    <SocialLink href="https://linkedin.com"><LinkIcon size={18} /></SocialLink>
+                    <SocialLink href="https://github.com"><Code size={18} /></SocialLink>
                   </div>
                 </div>
 
@@ -277,4 +277,4 @@ const SocialLink = ({ href, children }: { href: string; children: React.ReactNod
   </a>
 );
 
-export default ContactSection;
+export default ContactSection;b

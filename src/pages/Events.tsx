@@ -40,6 +40,7 @@ import {
   Store,
   BadgeCheck,
 } from "lucide-react";
+import { Helmet } from "react-helmet-async"; // 👈 Added for SEO
 
 // Icon per category value, used to give the category filter a scannable identity
 const categoryIcons: Record<string, any> = {
@@ -997,538 +998,549 @@ export const EventsPage = () => {
   );
 
   return (
-    <div className="min-h-screen bg-base-100 text-base-content flex flex-col justify-between font-sans selection:bg-primary selection:text-primary-content">
-      <Navbar />
+    <>
+      {/* 👇 ADDED SEO TAGS FOR GOOGLE */}
+      <Helmet>
+        <title>Events | TicketStream</title>
+        <meta 
+          name="description" 
+          content="Discover upcoming events, buy tickets securely, and manage gate passes seamlessly on Ticket Stream. TicketStream is an advanced multi-tenant event management" 
+        />
+      </Helmet>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-20 w-full">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10 pb-7 border-b border-base-300">
-          <div className="space-y-2.5">
-            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight leading-tight">
-              Discover events & shows
-            </h1>
-            <p className="text-sm text-base-content/60 max-w-md">
-              Live concerts, tech meetups, workshops, and nightlife happening near you.
-            </p>
-          </div>
+      <div className="min-h-screen bg-base-100 text-base-content flex flex-col justify-between font-sans selection:bg-primary selection:text-primary-content">
+        <Navbar />
 
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
-            <span className="text-xs font-semibold text-base-content/50 flex items-center gap-1 shrink-0 mr-1">
-              <Clock size={13} />
-              When
-            </span>
-
-            {[
-              { label: "All upcoming", value: "all" },
-              { label: "Tomorrow", value: "tomorrow" },
-              { label: "This week", value: "this_week" },
-              { label: "Next week", value: "next_week" },
-            ].map((tab) => (
-              <button
-                key={tab.value}
-                onClick={() => setDateFilter(tab.value)}
-                className={`text-sm font-semibold rounded-full px-4 py-1.5 shrink-0 transition-colors duration-150 border ${
-                  dateFilter === tab.value
-                    ? "bg-primary text-primary-content border-primary"
-                    : "bg-base-100 border-base-300 text-base-content/65 hover:border-primary/40 hover:text-base-content"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="lg:hidden mb-6">
-          <button
-            onClick={() => setIsMobileModalOpen(true)}
-            className="flex items-center justify-center gap-2 w-full rounded-xl font-bold text-sm py-2.5 bg-primary text-primary-content transition-transform active:scale-[0.98]"
-          >
-            <SlidersHorizontal size={16} />
-            <span>Open filters & search</span>
-          </button>
-        </div>
-
-        {isMobileModalOpen && (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 lg:hidden">
-            <div className="bg-base-100 border border-base-300 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl relative max-h-[88vh] flex flex-col">
-              <div className="flex items-center justify-between pb-4 mb-4 border-b border-base-300 shrink-0">
-                <div className="flex items-center gap-2 font-bold text-base">
-                  <SlidersHorizontal size={17} className="text-primary" />
-                  <span>Filter events</span>
-                </div>
-
-                <button
-                  onClick={() => setIsMobileModalOpen(false)}
-                  className="rounded-full p-1.5 hover:bg-base-300/60 transition-colors"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div className="overflow-y-auto pr-1 flex-1">
-                {filterControlsContent}
-              </div>
-
-              <div className="pt-4 mt-4 border-t border-base-300 shrink-0">
-                <button
-                  onClick={() => setIsMobileModalOpen(false)}
-                  className="w-full rounded-xl font-bold text-sm py-2.5 bg-primary text-primary-content transition-transform active:scale-[0.98]"
-                >
-                  View results
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
-          <aside className="hidden lg:block lg:col-span-1 lg:sticky lg:top-28 bg-base-200/50 border border-base-300 p-6 rounded-2xl">
-            {filterControlsContent}
-          </aside>
-
-          <div ref={resultsRef} className="lg:col-span-3 space-y-6 scroll-mt-28">
-            <div className="relative overflow-hidden bg-primary text-primary-content px-6 py-6 sm:px-8 sm:py-7 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-6">
-              <div className="absolute -right-8 -top-10 w-40 h-40 rounded-full bg-primary-content/10 pointer-events-none" />
-              <div className="absolute -right-2 bottom-0 w-24 h-24 rounded-full bg-primary-content/10 pointer-events-none" />
-
-              <div className="flex items-center gap-4 relative">
-                <div className="w-11 h-11 rounded-xl bg-primary-content/15 flex items-center justify-center shrink-0">
-                  <PlusCircle size={22} />
-                </div>
-
-                <div className="space-y-1">
-                  <h3 className="font-extrabold text-base sm:text-lg">
-                    Got an event to share?
-                  </h3>
-                  <p className="text-xs sm:text-sm text-primary-content/80 max-w-sm">
-                    Launch your event in minutes and sell secure tickets via M-Pesa or card.
-                  </p>
-                </div>
-              </div>
-
-              <Link
-                to="/organizer/dashboard"
-                className="relative shrink-0 rounded-xl font-bold text-sm px-5 py-2.5 bg-primary-content text-primary transition-transform active:scale-95 hover:scale-[1.03]"
-              >
-                Create event
-              </Link>
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-20 w-full">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10 pb-7 border-b border-base-300">
+            <div className="space-y-2.5">
+              <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight leading-tight">
+                Discover events & shows
+              </h1>
+              <p className="text-sm text-base-content/60 max-w-md">
+                Live concerts, tech meetups, workshops, and nightlife happening near you.
+              </p>
             </div>
 
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="text-sm text-base-content/60">
-                Showing{" "}
-                <strong className="text-base-content font-bold">
-                  {filteredAndSortedEvents.length === 0
-                    ? 0
-                    : (safePage - 1) * eventsPerPage + 1}
-                  –
-                  {Math.min(
-                    safePage * eventsPerPage,
-                    filteredAndSortedEvents.length
-                  )}
-                </strong>{" "}
-                of{" "}
-                <strong className="text-base-content font-bold">
-                  {filteredAndSortedEvents.length}
-                </strong>{" "}
-                event
-                {filteredAndSortedEvents.length === 1 ? "" : "s"}
-              </div>
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
+              <span className="text-xs font-semibold text-base-content/50 flex items-center gap-1 shrink-0 mr-1">
+                <Clock size={13} />
+                When
+              </span>
 
-              <div className="flex items-center gap-4 flex-wrap">
-                <div className="flex items-center bg-base-200/70 border border-base-300 p-0.5 rounded-lg">
-                  <button
-                    onClick={() => setViewMode("grid")}
-                    className={`rounded-md p-1.5 transition-colors ${
-                      viewMode === "grid"
-                        ? "bg-base-100 text-primary shadow-sm"
-                        : "text-base-content/45 hover:text-base-content/70"
-                    }`}
-                    title="Grid view"
-                  >
-                    <LayoutGrid size={15} />
-                  </button>
+              {[
+                { label: "All upcoming", value: "all" },
+                { label: "Tomorrow", value: "tomorrow" },
+                { label: "This week", value: "this_week" },
+                { label: "Next week", value: "next_week" },
+              ].map((tab) => (
+                <button
+                  key={tab.value}
+                  onClick={() => setDateFilter(tab.value)}
+                  className={`text-sm font-semibold rounded-full px-4 py-1.5 shrink-0 transition-colors duration-150 border ${
+                    dateFilter === tab.value
+                      ? "bg-primary text-primary-content border-primary"
+                      : "bg-base-100 border-base-300 text-base-content/65 hover:border-primary/40 hover:text-base-content"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="lg:hidden mb-6">
+            <button
+              onClick={() => setIsMobileModalOpen(true)}
+              className="flex items-center justify-center gap-2 w-full rounded-xl font-bold text-sm py-2.5 bg-primary text-primary-content transition-transform active:scale-[0.98]"
+            >
+              <SlidersHorizontal size={16} />
+              <span>Open filters & search</span>
+            </button>
+          </div>
+
+          {isMobileModalOpen && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 lg:hidden">
+              <div className="bg-base-100 border border-base-300 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl relative max-h-[88vh] flex flex-col">
+                <div className="flex items-center justify-between pb-4 mb-4 border-b border-base-300 shrink-0">
+                  <div className="flex items-center gap-2 font-bold text-base">
+                    <SlidersHorizontal size={17} className="text-primary" />
+                    <span>Filter events</span>
+                  </div>
 
                   <button
-                    onClick={() => setViewMode("list")}
-                    className={`rounded-md p-1.5 transition-colors ${
-                      viewMode === "list"
-                        ? "bg-base-100 text-primary shadow-sm"
-                        : "text-base-content/45 hover:text-base-content/70"
-                    }`}
-                    title="List view"
+                    onClick={() => setIsMobileModalOpen(false)}
+                    className="rounded-full p-1.5 hover:bg-base-300/60 transition-colors"
                   >
-                    <ListIcon size={15} />
+                    <X size={18} />
                   </button>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <ArrowUpDown size={13} className="text-base-content/40" />
+                <div className="overflow-y-auto pr-1 flex-1">
+                  {filterControlsContent}
+                </div>
 
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                    className="select select-sm select-bordered rounded-lg font-semibold bg-base-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer"
+                <div className="pt-4 mt-4 border-t border-base-300 shrink-0">
+                  <button
+                    onClick={() => setIsMobileModalOpen(false)}
+                    className="w-full rounded-xl font-bold text-sm py-2.5 bg-primary text-primary-content transition-transform active:scale-[0.98]"
                   >
-                    <option value="date_asc">Date: soonest first</option>
-                    <option value="date_desc">Date: latest first</option>
-                    <option value="price_asc">Price: low to high</option>
-                    <option value="price_desc">Price: high to low</option>
-                    <option value="title">Title: A–Z</option>
-                  </select>
+                    View results
+                  </button>
                 </div>
               </div>
             </div>
+          )}
 
-            {isLoading ? (
-              <div
-                className={
-                  viewMode === "grid"
-                    ? "grid grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-5"
-                    : "grid grid-cols-2 gap-3 sm:grid-cols-1 sm:gap-4"
-                }
-              >
-                {Array.from({ length: eventsPerPage }, (_, i) => i + 1).map(
-                  (n) => (
-                    <div
-                      key={n}
-                      className={
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
+            <aside className="hidden lg:block lg:col-span-1 lg:sticky lg:top-28 bg-base-200/50 border border-base-300 p-6 rounded-2xl">
+              {filterControlsContent}
+            </aside>
+
+            <div ref={resultsRef} className="lg:col-span-3 space-y-6 scroll-mt-28">
+              <div className="relative overflow-hidden bg-primary text-primary-content px-6 py-6 sm:px-8 sm:py-7 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-6">
+                <div className="absolute -right-8 -top-10 w-40 h-40 rounded-full bg-primary-content/10 pointer-events-none" />
+                <div className="absolute -right-2 bottom-0 w-24 h-24 rounded-full bg-primary-content/10 pointer-events-none" />
+
+                <div className="flex items-center gap-4 relative">
+                  <div className="w-11 h-11 rounded-xl bg-primary-content/15 flex items-center justify-center shrink-0">
+                    <PlusCircle size={22} />
+                  </div>
+
+                  <div className="space-y-1">
+                    <h3 className="font-extrabold text-base sm:text-lg">
+                      Got an event to share?
+                    </h3>
+                    <p className="text-xs sm:text-sm text-primary-content/80 max-w-sm">
+                      Launch your event in minutes and sell secure tickets via M-Pesa or card.
+                    </p>
+                  </div>
+                </div>
+
+                <Link
+                  to="/organizer/dashboard"
+                  className="relative shrink-0 rounded-xl font-bold text-sm px-5 py-2.5 bg-primary-content text-primary transition-transform active:scale-95 hover:scale-[1.03]"
+                >
+                  Create event
+                </Link>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="text-sm text-base-content/60">
+                  Showing{" "}
+                  <strong className="text-base-content font-bold">
+                    {filteredAndSortedEvents.length === 0
+                      ? 0
+                      : (safePage - 1) * eventsPerPage + 1}
+                    –
+                    {Math.min(
+                      safePage * eventsPerPage,
+                      filteredAndSortedEvents.length
+                    )}
+                  </strong>{" "}
+                  of{" "}
+                  <strong className="text-base-content font-bold">
+                    {filteredAndSortedEvents.length}
+                  </strong>{" "}
+                  event
+                  {filteredAndSortedEvents.length === 1 ? "" : "s"}
+                </div>
+
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div className="flex items-center bg-base-200/70 border border-base-300 p-0.5 rounded-lg">
+                    <button
+                      onClick={() => setViewMode("grid")}
+                      className={`rounded-md p-1.5 transition-colors ${
                         viewMode === "grid"
-                          ? "h-80 bg-base-200 border border-base-300 rounded-2xl animate-pulse"
-                          : "h-48 sm:h-32 bg-base-200 border border-base-300 rounded-2xl animate-pulse"
-                      }
-                    />
-                  )
-                )}
+                          ? "bg-base-100 text-primary shadow-sm"
+                          : "text-base-content/45 hover:text-base-content/70"
+                      }`}
+                      title="Grid view"
+                    >
+                      <LayoutGrid size={15} />
+                    </button>
+
+                    <button
+                      onClick={() => setViewMode("list")}
+                      className={`rounded-md p-1.5 transition-colors ${
+                        viewMode === "list"
+                          ? "bg-base-100 text-primary shadow-sm"
+                          : "text-base-content/45 hover:text-base-content/70"
+                      }`}
+                      title="List view"
+                    >
+                      <ListIcon size={15} />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <ArrowUpDown size={13} className="text-base-content/40" />
+
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value)}
+                      className="select select-sm select-bordered rounded-lg font-semibold bg-base-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer"
+                    >
+                      <option value="date_asc">Date: soonest first</option>
+                      <option value="date_desc">Date: latest first</option>
+                      <option value="price_asc">Price: low to high</option>
+                      <option value="price_desc">Price: high to low</option>
+                      <option value="title">Title: A–Z</option>
+                    </select>
+                  </div>
+                </div>
               </div>
-            ) : filteredAndSortedEvents.length > 0 ? (
-              viewMode === "grid" ? (
-                <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-5">
-                  {paginatedEvents.map((event: any) => {
-                    const eventDate = new Date(event.date);
-                    const eventStatus = getEventStatus(event);
-                    const ended = eventStatus?.tone === "ended";
 
-                    return (
-                      <EventCardShell
-                        key={event.eventId}
-                        ended={ended}
-                        to={`/events/${event.slug}`}
-                        baseClass="flex flex-col bg-base-100 border border-base-300 rounded-2xl overflow-hidden transition-all duration-300"
-                        activeClass="group hover:border-primary/50 hover:shadow-xl hover:shadow-base-300/40 hover:-translate-y-1"
-                      >
-                        <div className="relative h-32 sm:h-48 bg-base-300 overflow-hidden">
-                          <EventCardImage
-                            eventId={event.eventId}
-                            bannerUrl={event.bannerUrl}
-                            title={event.title}
-                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                          />
+              {isLoading ? (
+                <div
+                  className={
+                    viewMode === "grid"
+                      ? "grid grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-5"
+                      : "grid grid-cols-2 gap-3 sm:grid-cols-1 sm:gap-4"
+                  }
+                >
+                  {Array.from({ length: eventsPerPage }, (_, i) => i + 1).map(
+                    (n) => (
+                      <div
+                        key={n}
+                        className={
+                          viewMode === "grid"
+                            ? "h-80 bg-base-200 border border-base-300 rounded-2xl animate-pulse"
+                            : "h-48 sm:h-32 bg-base-200 border border-base-300 rounded-2xl animate-pulse"
+                        }
+                      />
+                    )
+                  )}
+                </div>
+              ) : filteredAndSortedEvents.length > 0 ? (
+                viewMode === "grid" ? (
+                  <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-5">
+                    {paginatedEvents.map((event: any) => {
+                      const eventDate = new Date(event.date);
+                      const eventStatus = getEventStatus(event);
+                      const ended = eventStatus?.tone === "ended";
 
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/0 to-black/0" />
+                      return (
+                        <EventCardShell
+                          key={event.eventId}
+                          ended={ended}
+                          to={`/events/${event.slug}`}
+                          baseClass="flex flex-col bg-base-100 border border-base-300 rounded-2xl overflow-hidden transition-all duration-300"
+                          activeClass="group hover:border-primary/50 hover:shadow-xl hover:shadow-base-300/40 hover:-translate-y-1"
+                        >
+                          <div className="relative h-32 sm:h-48 bg-base-300 overflow-hidden">
+                            <EventCardImage
+                              eventId={event.eventId}
+                              bannerUrl={event.bannerUrl}
+                              title={event.title}
+                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                            />
 
-                          <div className="absolute top-2 left-2 sm:top-3 sm:left-3 flex flex-col items-start gap-1 sm:gap-1.5">
-                            <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md bg-base-100/90 text-base-content text-[10px] font-bold uppercase tracking-wide max-w-[110px] sm:max-w-none truncate">
-                              {event.category?.replace("_", " ")}
-                            </span>
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/0 to-black/0" />
 
-                            <EventStatusBadge
-                              status={eventStatus}
-                              variant="overlay"
+                            <div className="absolute top-2 left-2 sm:top-3 sm:left-3 flex flex-col items-start gap-1 sm:gap-1.5">
+                              <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md bg-base-100/90 text-base-content text-[10px] font-bold uppercase tracking-wide max-w-[110px] sm:max-w-none truncate">
+                                {event.category?.replace("_", " ")}
+                              </span>
+
+                              <EventStatusBadge
+                                status={eventStatus}
+                                variant="overlay"
+                              />
+                            </div>
+
+                            {!ended && (
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                }}
+                                className="absolute top-2 right-2 sm:top-3 sm:right-3 w-7 h-7 rounded-full bg-base-100/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                                title="Save event"
+                              >
+                                <Bookmark size={13} className="text-primary" />
+                              </button>
+                            )}
+
+                            <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-3 sm:right-3 flex items-end justify-between gap-1 text-white">
+                              <span className="text-xs font-bold">
+                                {eventDate.toLocaleDateString(undefined, {
+                                  month: "short",
+                                  day: "numeric",
+                                })}
+                              </span>
+
+                              <EventCardPrice
+                                eventId={event.eventId}
+                                fallbackPricing={getEventPricing(event)}
+                                variant="overlay"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col flex-1 p-3 sm:p-4 gap-1.5 sm:gap-2">
+                            <h3
+                              className={`text-sm sm:text-base font-bold leading-snug line-clamp-1 transition-colors ${
+                                ended ? "" : "group-hover:text-primary"
+                              }`}
+                            >
+                              {event.title}
+                            </h3>
+
+                            {/* 🆕 ORGANIZER SECTION */}
+                            <OrganizerSection organization={event.organization} compact />
+
+                            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-base-content/60">
+                              <MapPin size={13} className="shrink-0 text-primary" />
+                              <span className="line-clamp-1">
+                                {event.venue?.name || "Venue TBA"}
+                                {event.venue?.address ? ` · ${event.venue.address}` : ""}
+                              </span>
+                            </div>
+
+                            <div className="mt-2 pt-2 sm:mt-3 sm:pt-3 border-t border-base-300 flex items-center justify-end sm:justify-between">
+                              <span className="text-[11px] font-medium text-base-content/45 hidden sm:flex items-center gap-1">
+                                <Ticket size={12} />
+                                Verified
+                              </span>
+
+                              {ended ? (
+                                <span className="text-xs font-bold text-base-content/50">
+                                  Event ended
+                                </span>
+                              ) : (
+                                <span className="text-xs font-bold text-primary group-hover:underline underline-offset-2">
+                                  Get ticket
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </EventCardShell>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-1">
+                    {paginatedEvents.map((event: any) => {
+                      const eventStatus = getEventStatus(event);
+                      const ended = eventStatus?.tone === "ended";
+
+                      return (
+                        <EventCardShell
+                          key={event.eventId}
+                          ended={ended}
+                          to={`/events/${event.slug}`}
+                          baseClass="bg-base-100 border border-base-300 rounded-2xl p-2.5 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4 transition-all duration-200"
+                          activeClass="group hover:border-primary/50 hover:shadow-md"
+                        >
+                          <div className="w-full h-28 sm:w-32 sm:h-24 rounded-xl bg-base-300 shrink-0 relative overflow-hidden flex items-center justify-center">
+                            <EventCardImage
+                              eventId={event.eventId}
+                              bannerUrl={event.bannerUrl}
+                              title={event.title}
+                              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                             />
                           </div>
 
-                          {!ended && (
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                              }}
-                              className="absolute top-2 right-2 sm:top-3 sm:right-3 w-7 h-7 rounded-full bg-base-100/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                              title="Save event"
+                          <div className="flex-1 min-w-0 space-y-1.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-primary/10 text-primary">
+                                {event.category?.replace("_", " ") || "Event"}
+                              </span>
+
+                              <EventStatusBadge status={eventStatus} variant="list" />
+
+                              <span className="text-xs font-semibold text-base-content/50">
+                                {new Date(event.date).toLocaleDateString(
+                                  undefined,
+                                  {
+                                    month: "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                  }
+                                )}{" "}
+                                · {formatEventTime(event.time) || "Time TBA"}
+                              </span>
+                            </div>
+
+                            <h3
+                              className={`text-sm sm:text-base font-bold line-clamp-1 transition-colors ${
+                                ended ? "" : "group-hover:text-primary"
+                              }`}
                             >
-                              <Bookmark size={13} className="text-primary" />
-                            </button>
-                          )}
+                              {event.title}
+                            </h3>
 
-                          <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-3 sm:right-3 flex items-end justify-between gap-1 text-white">
-                            <span className="text-xs font-bold">
-                              {eventDate.toLocaleDateString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </span>
+                            {/* 🆕 ORGANIZER SECTION */}
+                            <OrganizerSection organization={event.organization} />
 
+                            {/* 🆕 ONE-LINE DESCRIPTION (hover reveals full text) */}
+                            <TruncatedDescription text={event.description} />
+
+                            <div className="flex items-center gap-1.5 text-xs text-base-content/60">
+                              <MapPin size={13} className="text-primary shrink-0" />
+                              <span className="line-clamp-1">
+                                {event.venue?.name || "Venue TBA"}
+                                {event.venue?.address ? ` · ${event.venue.address}` : ""}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col items-stretch sm:items-end justify-center gap-1.5 sm:gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-base-300 w-full sm:w-auto">
                             <EventCardPrice
                               eventId={event.eventId}
                               fallbackPricing={getEventPricing(event)}
-                              variant="overlay"
+                              variant="list"
                             />
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col flex-1 p-3 sm:p-4 gap-1.5 sm:gap-2">
-                          <h3
-                            className={`text-sm sm:text-base font-bold leading-snug line-clamp-1 transition-colors ${
-                              ended ? "" : "group-hover:text-primary"
-                            }`}
-                          >
-                            {event.title}
-                          </h3>
-
-                          {/* 🆕 ORGANIZER SECTION */}
-                          <OrganizerSection organization={event.organization} compact />
-
-                          <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-base-content/60">
-                            <MapPin size={13} className="shrink-0 text-primary" />
-                            <span className="line-clamp-1">
-                              {event.venue?.name || "Venue TBA"}
-                              {event.venue?.address ? ` · ${event.venue.address}` : ""}
-                            </span>
-                          </div>
-
-                          <div className="mt-2 pt-2 sm:mt-3 sm:pt-3 border-t border-base-300 flex items-center justify-end sm:justify-between">
-                            <span className="text-[11px] font-medium text-base-content/45 hidden sm:flex items-center gap-1">
-                              <Ticket size={12} />
-                              Verified
-                            </span>
 
                             {ended ? (
-                              <span className="text-xs font-bold text-base-content/50">
+                              <span className="text-xs font-bold px-4 py-2 rounded-xl bg-base-300 text-base-content/50 text-center">
                                 Event ended
                               </span>
                             ) : (
-                              <span className="text-xs font-bold text-primary group-hover:underline underline-offset-2">
+                              <span className="text-xs font-bold px-4 py-2 rounded-xl bg-primary text-primary-content text-center transition-transform group-hover:scale-105">
                                 Get ticket
                               </span>
                             )}
                           </div>
-                        </div>
-                      </EventCardShell>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-1">
-                  {paginatedEvents.map((event: any) => {
-                    const eventStatus = getEventStatus(event);
-                    const ended = eventStatus?.tone === "ended";
-
-                    return (
-                      <EventCardShell
-                        key={event.eventId}
-                        ended={ended}
-                        to={`/events/${event.slug}`}
-                        baseClass="bg-base-100 border border-base-300 rounded-2xl p-2.5 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4 transition-all duration-200"
-                        activeClass="group hover:border-primary/50 hover:shadow-md"
-                      >
-                        <div className="w-full h-28 sm:w-32 sm:h-24 rounded-xl bg-base-300 shrink-0 relative overflow-hidden flex items-center justify-center">
-                          <EventCardImage
-                            eventId={event.eventId}
-                            bannerUrl={event.bannerUrl}
-                            title={event.title}
-                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          />
-                        </div>
-
-                        <div className="flex-1 min-w-0 space-y-1.5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-primary/10 text-primary">
-                              {event.category?.replace("_", " ") || "Event"}
-                            </span>
-
-                            <EventStatusBadge status={eventStatus} variant="list" />
-
-                            <span className="text-xs font-semibold text-base-content/50">
-                              {new Date(event.date).toLocaleDateString(
-                                undefined,
-                                {
-                                  month: "short",
-                                  day: "numeric",
-                                  year: "numeric",
-                                }
-                              )}{" "}
-                              · {formatEventTime(event.time) || "Time TBA"}
-                            </span>
-                          </div>
-
-                          <h3
-                            className={`text-sm sm:text-base font-bold line-clamp-1 transition-colors ${
-                              ended ? "" : "group-hover:text-primary"
-                            }`}
-                          >
-                            {event.title}
-                          </h3>
-
-                          {/* 🆕 ORGANIZER SECTION */}
-                          <OrganizerSection organization={event.organization} />
-
-                          {/* 🆕 ONE-LINE DESCRIPTION (hover reveals full text) */}
-                          <TruncatedDescription text={event.description} />
-
-                          <div className="flex items-center gap-1.5 text-xs text-base-content/60">
-                            <MapPin size={13} className="text-primary shrink-0" />
-                            <span className="line-clamp-1">
-                              {event.venue?.name || "Venue TBA"}
-                              {event.venue?.address ? ` · ${event.venue.address}` : ""}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col items-stretch sm:items-end justify-center gap-1.5 sm:gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-base-300 w-full sm:w-auto">
-                          <EventCardPrice
-                            eventId={event.eventId}
-                            fallbackPricing={getEventPricing(event)}
-                            variant="list"
-                          />
-
-                          {ended ? (
-                            <span className="text-xs font-bold px-4 py-2 rounded-xl bg-base-300 text-base-content/50 text-center">
-                              Event ended
-                            </span>
-                          ) : (
-                            <span className="text-xs font-bold px-4 py-2 rounded-xl bg-primary text-primary-content text-center transition-transform group-hover:scale-105">
-                              Get ticket
-                            </span>
-                          )}
-                        </div>
-                      </EventCardShell>
-                    );
-                  })}
-                </div>
-              )
-            ) : (
-              <div className="text-center py-24 bg-base-200/40 rounded-2xl border border-base-300 space-y-3">
-                <CalendarIcon className="w-11 h-11 text-base-content/30 mx-auto" />
-
-                <h3 className="text-lg font-bold">No events found</h3>
-
-                <p className="text-sm text-base-content/60 max-w-sm mx-auto">
-                  Try clearing your filters or search terms to browse all available upcoming events.
-                </p>
-
-                <button
-                  onClick={() => {
-                    setStatusFilter(DEFAULT_STATUS_FILTER);
-                    setSelectedCategory("all");
-                    setSelectedCity("all");
-                    setDateFilter("all");
-                    setPriceType("all");
-                    setSearchQuery("");
-                    setPriceRange(50000);
-                  }}
-                  className="mt-2 text-sm font-bold px-5 py-2 rounded-xl bg-primary text-primary-content transition-transform active:scale-95"
-                >
-                  Reset filters
-                </button>
-              </div>
-            )}
-
-            {!isLoading &&
-              filteredAndSortedEvents.length > PAGE_SIZE_OPTIONS[0] && (
-                <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-4 border-t border-base-300">
-                  <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-base-content/60">
-                    <span>
-                      Page{" "}
-                      <strong className="text-base-content font-bold">
-                        {safePage}
-                      </strong>{" "}
-                      of{" "}
-                      <strong className="text-base-content font-bold">
-                        {totalPages}
-                      </strong>
-                    </span>
-
-                    <label className="flex items-center gap-2">
-                      <span>Per page</span>
-
-                      <select
-                        value={eventsPerPage}
-                        onChange={(e) =>
-                          setEventsPerPage(Number(e.target.value))
-                        }
-                        className="select select-xs select-bordered rounded-lg font-semibold bg-base-100 cursor-pointer"
-                      >
-                        {PAGE_SIZE_OPTIONS.map((n) => (
-                          <option key={n} value={n}>
-                            {n}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                        </EventCardShell>
+                      );
+                    })}
                   </div>
+                )
+              ) : (
+                <div className="text-center py-24 bg-base-200/40 rounded-2xl border border-base-300 space-y-3">
+                  <CalendarIcon className="w-11 h-11 text-base-content/30 mx-auto" />
 
-                  {totalPages > 1 && (
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => goToPage(1)}
-                        disabled={safePage === 1}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg border border-base-300 text-base-content/70 transition-colors hover:border-primary/40 hover:text-base-content disabled:opacity-40 disabled:pointer-events-none"
-                        aria-label="First page"
-                      >
-                        <ChevronsLeft size={15} />
-                      </button>
+                  <h3 className="text-lg font-bold">No events found</h3>
 
-                      <button
-                        onClick={() => goToPage(safePage - 1)}
-                        disabled={safePage === 1}
-                        className="flex items-center gap-1 text-sm font-semibold px-3 h-8 rounded-lg border border-base-300 text-base-content/70 transition-colors hover:border-primary/40 hover:text-base-content disabled:opacity-40 disabled:pointer-events-none"
-                      >
-                        <ChevronLeft size={15} />
-                        <span className="hidden sm:inline">Prev</span>
-                      </button>
+                  <p className="text-sm text-base-content/60 max-w-sm mx-auto">
+                    Try clearing your filters or search terms to browse all available upcoming events.
+                  </p>
 
-                      {getPageNumbers(safePage, totalPages).map((page, idx) =>
-                        page === "…" ? (
-                          <span
-                            key={`gap-${idx}`}
-                            className="w-6 text-center text-base-content/40 select-none"
-                          >
-                            …
-                          </span>
-                        ) : (
-                          <button
-                            key={page}
-                            onClick={() => goToPage(page)}
-                            aria-current={
-                              page === safePage ? "page" : undefined
-                            }
-                            className={`w-8 h-8 rounded-lg text-sm font-semibold transition-colors ${
-                              page === safePage
-                                ? "bg-primary text-primary-content"
-                                : "text-base-content/60 hover:bg-base-200"
-                            }`}
-                          >
-                            {page}
-                          </button>
-                        )
-                      )}
-
-                      <button
-                        onClick={() => goToPage(safePage + 1)}
-                        disabled={safePage === totalPages}
-                        className="flex items-center gap-1 text-sm font-semibold px-3 h-8 rounded-lg border border-base-300 text-base-content/70 transition-colors hover:border-primary/40 hover:text-base-content disabled:opacity-40 disabled:pointer-events-none"
-                      >
-                        <span className="hidden sm:inline">Next</span>
-                        <ChevronRight size={15} />
-                      </button>
-
-                      <button
-                        onClick={() => goToPage(totalPages)}
-                        disabled={safePage === totalPages}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg border border-base-300 text-base-content/70 transition-colors hover:border-primary/40 hover:text-base-content disabled:opacity-40 disabled:pointer-events-none"
-                        aria-label="Last page"
-                      >
-                        <ChevronsRight size={15} />
-                      </button>
-                    </div>
-                  )}
+                  <button
+                    onClick={() => {
+                      setStatusFilter(DEFAULT_STATUS_FILTER);
+                      setSelectedCategory("all");
+                      setSelectedCity("all");
+                      setDateFilter("all");
+                      setPriceType("all");
+                      setSearchQuery("");
+                      setPriceRange(50000);
+                    }}
+                    className="mt-2 text-sm font-bold px-5 py-2 rounded-xl bg-primary text-primary-content transition-transform active:scale-95"
+                  >
+                    Reset filters
+                  </button>
                 </div>
               )}
-          </div>
-        </div>
-      </main>
 
-      <Footer />
-    </div>
+              {!isLoading &&
+                filteredAndSortedEvents.length > PAGE_SIZE_OPTIONS[0] && (
+                  <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-4 border-t border-base-300">
+                    <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-base-content/60">
+                      <span>
+                        Page{" "}
+                        <strong className="text-base-content font-bold">
+                          {safePage}
+                        </strong>{" "}
+                        of{" "}
+                        <strong className="text-base-content font-bold">
+                          {totalPages}
+                        </strong>
+                      </span>
+
+                      <label className="flex items-center gap-2">
+                        <span>Per page</span>
+
+                        <select
+                          value={eventsPerPage}
+                          onChange={(e) =>
+                            setEventsPerPage(Number(e.target.value))
+                          }
+                          className="select select-xs select-bordered rounded-lg font-semibold bg-base-100 cursor-pointer"
+                        >
+                          {PAGE_SIZE_OPTIONS.map((n) => (
+                            <option key={n} value={n}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    {totalPages > 1 && (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => goToPage(1)}
+                          disabled={safePage === 1}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg border border-base-300 text-base-content/70 transition-colors hover:border-primary/40 hover:text-base-content disabled:opacity-40 disabled:pointer-events-none"
+                          aria-label="First page"
+                        >
+                          <ChevronsLeft size={15} />
+                        </button>
+
+                        <button
+                          onClick={() => goToPage(safePage - 1)}
+                          disabled={safePage === 1}
+                          className="flex items-center gap-1 text-sm font-semibold px-3 h-8 rounded-lg border border-base-300 text-base-content/70 transition-colors hover:border-primary/40 hover:text-base-content disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          <ChevronLeft size={15} />
+                          <span className="hidden sm:inline">Prev</span>
+                        </button>
+
+                        {getPageNumbers(safePage, totalPages).map((page, idx) =>
+                          page === "…" ? (
+                            <span
+                              key={`gap-${idx}`}
+                              className="w-6 text-center text-base-content/40 select-none"
+                            >
+                              …
+                            </span>
+                          ) : (
+                            <button
+                              key={page}
+                              onClick={() => goToPage(page)}
+                              aria-current={
+                                page === safePage ? "page" : undefined
+                              }
+                              className={`w-8 h-8 rounded-lg text-sm font-semibold transition-colors ${
+                                page === safePage
+                                  ? "bg-primary text-primary-content"
+                                  : "text-base-content/60 hover:bg-base-200"
+                              }`}
+                            >
+                              {page}
+                            </button>
+                          )
+                        )}
+
+                        <button
+                          onClick={() => goToPage(safePage + 1)}
+                          disabled={safePage === totalPages}
+                          className="flex items-center gap-1 text-sm font-semibold px-3 h-8 rounded-lg border border-base-300 text-base-content/70 transition-colors hover:border-primary/40 hover:text-base-content disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          <span className="hidden sm:inline">Next</span>
+                          <ChevronRight size={15} />
+                        </button>
+
+                        <button
+                          onClick={() => goToPage(totalPages)}
+                          disabled={safePage === totalPages}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg border border-base-300 text-base-content/70 transition-colors hover:border-primary/40 hover:text-base-content disabled:opacity-40 disabled:pointer-events-none"
+                          aria-label="Last page"
+                        >
+                          <ChevronsRight size={15} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+            </div>
+          </div>
+        </main>
+
+        <Footer />
+      </div>
+    </>
   );
 };

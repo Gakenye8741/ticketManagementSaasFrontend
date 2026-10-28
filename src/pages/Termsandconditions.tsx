@@ -1,15 +1,16 @@
 import { Link } from "react-router-dom";
 import { FileText, Mail, ShieldCheck } from "lucide-react";
+import { Helmet } from "react-helmet-async"; // 👈 Added for SEO
 import usePageTitle from "../hooks/usePageTitle";
 
 /* -------------------------------------------------------------------------- */
 /* EDIT THESE DETAILS BEFORE PUBLISHING                                       */
 /* -------------------------------------------------------------------------- */
-const PLATFORM_NAME = "[Platform Name]";
-const COMPANY_NAME = "[Registered Company Name] Limited";
-const COMPANY_ADDRESS = "[Street, Building, Nairobi, Kenya]";
-const SUPPORT_EMAIL = "support@yourdomain.com";
-const LEGAL_EMAIL = "legal@yourdomain.com";
+const PLATFORM_NAME = "TicketStream";
+const COMPANY_NAME = "TicketStream Limited";
+const COMPANY_ADDRESS = "Tech Hub, Nairobi, Kenya";
+const SUPPORT_EMAIL = "support@ticketstream.io";
+const LEGAL_EMAIL = "legal@ticketstream.io";
 const LAST_UPDATED = "15 October 2026";
 const PRIVACY_ROUTE = "/privacy-policy";
 
@@ -275,76 +276,87 @@ export const TermsAndConditions = () => {
   usePageTitle("Terms and Conditions");
 
   return (
-    <div className="font-sans max-w-6xl mx-auto w-full px-4 sm:px-6 py-10 flex flex-col gap-8">
-      {/* Header */}
-      <header className="flex flex-col gap-3 border-b border-base-200 pb-6">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-primary/10 rounded-xl text-primary shrink-0">
-            <FileText size={22} />
+    <>
+      {/* 👇 ADDED SEO TAGS FOR GOOGLE */}
+      <Helmet>
+        <title>Terms and Conditions | TicketStream</title>
+        <meta 
+          name="description" 
+          content="Read the TicketStream Terms and Conditions. Understand the rules for buying tickets, running events, refunds, and using our ticketing platform." 
+        />
+      </Helmet>
+
+      <div className="font-sans max-w-6xl mx-auto w-full px-4 sm:px-6 py-10 flex flex-col gap-8">
+        {/* Header */}
+        <header className="flex flex-col gap-3 border-b border-base-200 pb-6">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-primary/10 rounded-xl text-primary shrink-0">
+              <FileText size={22} />
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-base-content">Terms and Conditions</h1>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-base-content">Terms and Conditions</h1>
-        </div>
-        <p className="text-xs text-base-content/60">
-          Last updated: <span className="font-bold text-base-content">{LAST_UPDATED}</span>
-        </p>
-        <p className="text-sm text-base-content/70 leading-relaxed max-w-3xl">
-          Please read these terms carefully. They explain the rules for buying tickets and running events on {PLATFORM_NAME}, what you can expect from us, and
-          what we expect from you.
-        </p>
-      </header>
+          <p className="text-xs text-base-content/60">
+            Last updated: <span className="font-bold text-base-content">{LAST_UPDATED}</span>
+          </p>
+          <p className="text-sm text-base-content/70 leading-relaxed max-w-3xl">
+            Please read these terms carefully. They explain the rules for buying tickets and running events on {PLATFORM_NAME}, what you can expect from us, and
+            what we expect from you.
+          </p>
+        </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-8 items-start">
-        {/* Table of contents */}
-        <nav aria-label="Contents" className="lg:sticky lg:top-6 bg-base-200/30 border border-base-200 rounded-2xl p-4 max-h-[70vh] overflow-y-auto">
-          <h2 className="text-xs font-black text-base-content mb-2">On this page</h2>
-          <ol className="flex flex-col gap-1">
+        <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-8 items-start">
+          {/* Table of contents */}
+          <nav aria-label="Contents" className="lg:sticky lg:top-6 bg-base-200/30 border border-base-200 rounded-2xl p-4 max-h-[70vh] overflow-y-auto">
+            <h2 className="text-xs font-black text-base-content mb-2">On this page</h2>
+            <ol className="flex flex-col gap-1">
+              {SECTIONS.map((s) => (
+                <li key={s.id}>
+                  <a href={`#${s.id}`} className="block text-[11px] text-base-content/70 hover:text-primary py-0.5 leading-snug">
+                    {s.title}
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+
+          {/* Content */}
+          <article className="flex flex-col gap-8 min-w-0">
             {SECTIONS.map((s) => (
-              <li key={s.id}>
-                <a href={`#${s.id}`} className="block text-[11px] text-base-content/70 hover:text-primary py-0.5 leading-snug">
-                  {s.title}
-                </a>
-              </li>
+              <section key={s.id} id={s.id} className="scroll-mt-6 flex flex-col gap-3">
+                <h2 className="text-lg font-black tracking-tight text-base-content">{s.title}</h2>
+                {s.blocks.map((b, i) =>
+                  typeof b === "string" ? (
+                    <p key={i} className="text-sm text-base-content/75 leading-relaxed">
+                      <RichText text={b} />
+                    </p>
+                  ) : (
+                    <ul key={i} className="list-disc pl-5 flex flex-col gap-1.5 text-sm text-base-content/75 leading-relaxed marker:text-primary">
+                      {b.list.map((li, j) => (
+                        <li key={j}>
+                          <RichText text={li} />
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                )}
+              </section>
             ))}
-          </ol>
-        </nav>
 
-        {/* Content */}
-        <article className="flex flex-col gap-8 min-w-0">
-          {SECTIONS.map((s) => (
-            <section key={s.id} id={s.id} className="scroll-mt-6 flex flex-col gap-3">
-              <h2 className="text-lg font-black tracking-tight text-base-content">{s.title}</h2>
-              {s.blocks.map((b, i) =>
-                typeof b === "string" ? (
-                  <p key={i} className="text-sm text-base-content/75 leading-relaxed">
-                    <RichText text={b} />
-                  </p>
-                ) : (
-                  <ul key={i} className="list-disc pl-5 flex flex-col gap-1.5 text-sm text-base-content/75 leading-relaxed marker:text-primary">
-                    {b.list.map((li, j) => (
-                      <li key={j}>
-                        <RichText text={li} />
-                      </li>
-                    ))}
-                  </ul>
-                )
-              )}
-            </section>
-          ))}
-
-          {/* Footer links */}
-          <footer className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-base-200 pt-6">
-            <Link to={PRIVACY_ROUTE} className="btn btn-ghost btn-sm bg-base-200 rounded-xl text-xs font-bold gap-1.5 w-fit">
-              <ShieldCheck size={14} />
-              Read our Privacy Policy
-            </Link>
-            <a href={`mailto:${SUPPORT_EMAIL}`} className="btn btn-primary btn-sm rounded-xl text-xs font-bold gap-1.5 w-fit">
-              <Mail size={14} />
-              Questions? Contact us
-            </a>
-          </footer>
-        </article>
+            {/* Footer links */}
+            <footer className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-base-200 pt-6">
+              <Link to={PRIVACY_ROUTE} className="btn btn-ghost btn-sm bg-base-200 rounded-xl text-xs font-bold gap-1.5 w-fit">
+                <ShieldCheck size={14} />
+                Read our Privacy Policy
+              </Link>
+              <a href={`mailto:${SUPPORT_EMAIL}`} className="btn btn-primary btn-sm rounded-xl text-xs font-bold gap-1.5 w-fit">
+                <Mail size={14} />
+                Questions? Contact us
+              </a>
+            </footer>
+          </article>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

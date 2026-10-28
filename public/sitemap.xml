@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  
+  <!-- ================= MAIN PAGES ================= -->
   <url>
     <loc>https://ticketstream.gakenye-ndiritu.co.ke/</loc>
     <changefreq>daily</changefreq>
@@ -25,4 +27,43 @@
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
+
+  <!-- ================= AUTH PAGES ================= -->
+  <url>
+    <loc>https://ticketstream.gakenye-ndiritu.co.ke/login</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <!-- <url>
+    <loc>https://ticketstream.gakenye-ndiritu.co.ke/register</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url> -->
+
+  <!-- ================= LEGAL PAGES ================= -->
+  <url>
+    <loc>https://ticketstream.gakenye-ndiritu.co.ke/terms-and-conditions</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <!-- <url>
+    <loc>https://ticketstream.gakenye-ndiritu.co.ke/privacy-policy</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url> -->
+
+  <!-- ================= DYNAMIC EVENT PAGES ================= -->
+  <!-- 
+    ⚠️ NOTE FOR THE FUTURE: 
+    Since you are using React, you cannot hardcode dynamic events here. 
+    Once you have events, you will need a backend script to generate this sitemap 
+    and inject URLs like this:
+
+    <url>
+      <loc>https://ticketstream.gakenye-ndiritu.co.ke/events/nairobi-jazz-night</loc>
+      <changefreq>daily</changefreq>
+      <priority>0.8</priority>
+    </url>
+  -->
+
 </urlset>

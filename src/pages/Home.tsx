@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { motion, MotionConfig, useInView, type Variants } from "framer-motion";
 import { ArrowRight, QrCode, Zap, Calendar, Rocket, Star } from "lucide-react";
+import { Helmet } from "react-helmet-async"; // 👈 Added for SEO
 import { Navbar } from "../components/Navbar";
 import { Footer } from "../components/Footer";
 import { HeroEventSection } from "../components/HeroEventSection";
@@ -192,6 +193,15 @@ export const Home = () => {
   return (
     // reducedMotion="user" automatically tones animations down for people who prefer less motion
     <MotionConfig reducedMotion="user">
+      {/* 👇 ADDED SEO TAGS FOR GOOGLE */}
+      <Helmet>
+        <title>TicketStream | Discover and Book Events in Kenya</title>
+        <meta
+          name="description"
+          content="Discover top events and shows in Kenya. Buy tickets securely with M-Pesa or Stripe, and experience seamless QR code check-ins with TicketStream."
+        />
+      </Helmet>
+
       <div className="min-h-screen bg-base-100 text-base-content flex flex-col justify-between font-sans overflow-x-hidden">
         {/* Navigation Bar */}
         <Navbar />

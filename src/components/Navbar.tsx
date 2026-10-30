@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import type { RootState } from "../App/store";
@@ -14,7 +14,6 @@ import {
   Search,
   Ticket,
   Compass,
-  Store,
   Menu,
   X,
   Sparkles,
@@ -23,6 +22,7 @@ import {
   Loader2,
   ShieldCheck,
   CalendarCheck,
+  Moon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -31,6 +31,10 @@ import { ThemeToggle } from "./ThemeToggle";
 import { useGetEventsByTitleQuery } from "../features/APIS/EventsApi";
 import { useGetUserByDigitalIdQuery } from "../features/APIS/UserApi";
 import { useGetPrimaryMediaByEventIdQuery } from "../features/APIS/mediaApi";
+
+// The home page is always shown in this daisyUI theme (change it here if your
+// dark theme has a different name).
+const HOME_THEME = "dark";
 
 // ---------------------------------------------------------------------------
 // ONE list of tabs, used by the desktop bar, the mobile menu and the bottom
@@ -88,9 +92,8 @@ const Avatar = ({
   className?: string;
 }) => (
   <div
-    className={`overflow-hidden bg-primary/15 text-primary flex items-center justify-center font-bold shrink-0 ${className}`}
+    className={`overflow-hidden bg-primary/15 text-primary flex items-center justify-center font-bold shrink-0 ring-2 ring-base-100 ${className}`}
   >
-    
     {url ? (
       <img
         src={url}
@@ -144,13 +147,13 @@ const EventSearchThumbnail = ({ event }: { event: any }) => {
       <img
         src={imageUrl}
         alt={event?.title || "Event"}
-        className="w-12 h-12 rounded-xl object-cover shrink-0"
+        className="w-12 h-12 rounded-xl object-cover shrink-0 ring-1 ring-base-200"
       />
     );
   }
 
   return (
-    <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+    <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 ring-1 ring-primary/15">
       <Compass size={18} />
     </div>
   );
@@ -183,9 +186,40 @@ const DockTab = ({
   );
 };
 
+// ---------------------------------------------------------------------------
+// Weetix brand mark — the new logo
+// ---------------------------------------------------------------------------
+const WeetixLogo = ({ size = "md" }: { size?: "sm" | "md" }) => {
+  const dims = size === "sm" ? "w-8 h-8 sm:w-9 sm:h-9" : "w-9 h-9";
+  const letter = size === "sm" ? "text-base sm:text-lg" : "text-lg";
+
+  return (
+    <div
+      className={`relative ${dims} rounded-xl flex items-center justify-center shadow-sm shadow-primary/30 shrink-0 overflow-hidden`}
+      style={{
+        background:
+          "linear-gradient(135deg, hsl(var(--p)) 0%, hsl(var(--p) / 0.85) 55%, hsl(var(--s, var(--p)) / 0.9) 100%)",
+      }}
+    >
+      {/* Soft inner highlight */}
+      <span className="absolute inset-0 bg-gradient-to-b from-white/25 to-transparent rounded-xl" />
+      {/* Bold "W" monogram */}
+      <span
+        className={`relative ${letter} font-black leading-none tracking-tighter text-primary-content`}
+        style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+      >
+        W
+      </span>
+    </div>
+  );
+};
+
 export const Navbar = () => {
   const location = useLocation();
   const navigate = useNavigate();
+
+  // On the home page the theme is locked to dark
+  const isHome = location.pathname === "/";
 
   const [scrolled, setScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -199,6 +233,23 @@ export const Navbar = () => {
   );
   const user = useSelector((state: RootState) => state.auth.user);
   const role = useSelector((state: RootState) => state.auth.role);
+
+  // Force dark on the home page (page, footer and everything else), then put
+  // the visitor's own theme back as soon as they leave. useLayoutEffect runs
+  // before the browser paints, so there is no light-theme flash.
+  useLayoutEffect(() => {
+    if (!isHome) return;
+
+    const root = document.documentElement;
+    const previous = root.getAttribute("data-theme");
+
+    root.setAttribute("data-theme", HOME_THEME);
+
+    return () => {
+      if (previous === null) root.removeAttribute("data-theme");
+      else root.setAttribute("data-theme", previous);
+    };
+  }, [isHome]);
 
   // Fetch the logged-in user's latest profile so the photo is always up to date
   const digitalId = user?.digitalId || user?.userId;
@@ -346,15 +397,21 @@ export const Navbar = () => {
   ];
   const eventsActive = isPathActive(location.pathname, "/events");
 
+  // Bar look: on the home page it floats clear over the video until you scroll
+  const navSurface =
+    isHome && !scrolled
+      ? "bg-black/25 backdrop-blur-md border-white/10"
+      : `bg-base-100/90 backdrop-blur-xl ${
+          scrolled ? "border-base-200 shadow-sm" : "border-base-200/60"
+        }`;
+
   return (
-    <>
+    // "contents" adds no box to the layout; it only lets us scope the dark
+    // theme to the navbar, search modal, menu and dock on the home page.
+    <div data-theme={isHome ? HOME_THEME : undefined} className="contents">
       {/* --- TOP NAVBAR --- */}
       <nav
-        className={`fixed top-0 left-0 w-full z-[100] h-14 sm:h-16 bg-base-100/90 backdrop-blur-xl border-b transition-shadow duration-200 ${
-          scrolled
-            ? "border-base-200 shadow-sm"
-            : "border-base-200/60"
-        }`}
+        className={`fixed top-0 left-0 w-full z-[100] h-14 sm:h-16 border-b transition-[background-color,box-shadow] duration-200 ${navSurface}`}
       >
         <div className="h-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between gap-2 sm:gap-4">
           {/* Left: mobile menu button + brand */}
@@ -371,18 +428,16 @@ export const Navbar = () => {
               {mobileMenuOpen ? <X size={19} /> : <Menu size={19} />}
             </button>
 
-            <Link to="/" className="flex items-center gap-2 sm:gap-2.5">
-              <div className="w-8 h-8 sm:w-9 sm:h-9 bg-primary text-primary-content rounded-xl flex items-center justify-center shadow-sm shadow-primary/25 shrink-0">
-                <Store className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
-              </div>
+            <Link to="/" className="flex items-center gap-2 sm:gap-2.5 group">
+              <WeetixLogo size="sm" />
 
               <div className="hidden min-[420px]:flex flex-col">
-                <span className="text-sm sm:text-base font-black tracking-tight uppercase text-base-content leading-none">
-                  TicketStream
+                <span className="text-sm sm:text-base font-black tracking-tighter text-base-content leading-none">
+                  Weetix
                 </span>
 
-                <span className="hidden sm:block text-[10px] font-bold tracking-widest text-primary uppercase mt-1 leading-none">
-                  Event Ticketing
+                <span className="hidden sm:block text-[9px] font-bold tracking-[0.22em] text-primary uppercase mt-1 leading-none">
+                  Live Events
                 </span>
               </div>
             </Link>
@@ -441,8 +496,21 @@ export const Navbar = () => {
               <span className="truncate">Search events...</span>
             </button>
 
-
-            <ThemeToggle />
+            {/* Theme toggle: disabled (locked to dark) on the home page */}
+            {isHome ? (
+              <button
+                type="button"
+                disabled
+                aria-disabled="true"
+                aria-label="Theme is locked to dark on the home page"
+                title="The home page is always shown in dark mode"
+                className="btn btn-ghost btn-sm btn-square rounded-xl opacity-50 cursor-not-allowed"
+              >
+                <Moon size={17} />
+              </button>
+            ) : (
+              <ThemeToggle />
+            )}
 
             <Link
               to={launchPath}
@@ -551,7 +619,7 @@ export const Navbar = () => {
           onClick={() => setIsSearchOpen(false)}
         >
           <div
-            className="w-full max-w-xl bg-base-100 rounded-3xl shadow-2xl border border-base-200 overflow-hidden flex flex-col max-h-[80vh]"
+            className="w-full max-w-xl bg-base-100 text-base-content rounded-3xl shadow-2xl border border-base-200 overflow-hidden flex flex-col max-h-[80vh]"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Search input */}
@@ -564,7 +632,7 @@ export const Navbar = () => {
               <input
                 autoFocus
                 type="text"
-                placeholder="Search events..."
+                placeholder="Search events on Weetix..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="flex-1 min-w-0 bg-transparent text-base sm:text-sm text-base-content placeholder:text-base-content/40 focus:outline-none"
@@ -683,7 +751,7 @@ export const Navbar = () => {
 
       {/* --- MOBILE MENU (same tabs as the desktop bar) --- */}
       {mobileMenuOpen && (
-        <div className="fixed inset-x-0 bottom-0 top-14 sm:top-16 z-[90] lg:hidden bg-base-100/95 backdrop-blur-xl overflow-y-auto overscroll-contain px-4 pt-5 pb-32 animate-in fade-in duration-200">
+        <div className="fixed inset-x-0 bottom-0 top-14 sm:top-16 z-[90] lg:hidden bg-base-100/95 text-base-content backdrop-blur-xl overflow-y-auto overscroll-contain px-4 pt-5 pb-32 animate-in fade-in duration-200">
           <div className="max-w-md mx-auto flex flex-col gap-5">
             {isAuthenticated && (
               <div className="flex items-center gap-3 rounded-2xl border border-base-200 bg-base-200/50 p-3">
@@ -812,9 +880,13 @@ export const Navbar = () => {
             className="-mt-7 flex flex-col items-center gap-1"
           >
             <span
-              className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-content shadow-lg shadow-primary/30 ring-4 transition-transform active:scale-95 ${
+              className={`flex h-12 w-12 items-center justify-center rounded-2xl text-primary-content shadow-lg shadow-primary/40 ring-4 transition-transform active:scale-95 ${
                 eventsActive ? "ring-primary/25" : "ring-base-100"
               }`}
+              style={{
+                background:
+                  "linear-gradient(135deg, hsl(var(--p)) 0%, hsl(var(--p) / 0.85) 100%)",
+              }}
             >
               <Compass size={22} />
             </span>
@@ -833,7 +905,7 @@ export const Navbar = () => {
           ))}
         </div>
       </div>
-    </>
+    </div>
   );
 };
 

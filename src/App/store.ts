@@ -1,6 +1,8 @@
 import { configureStore } from "@reduxjs/toolkit";
-import storage from "redux-persist/lib/storage";
 import { persistReducer, persistStore } from "redux-persist";
+
+// Safe storage engine (fixes "r.getItem is not a function" in production builds)
+import storage from "./storage";
 
 // Reducers & Types (Changed to default import or whatever your AuthSlice exports)
 import authReducer, * as AuthSliceTypes from "../features/Auth/AuthSlice";
@@ -16,14 +18,13 @@ import { supportTicketApi } from "../features/APIS/supportTicketsApi";
 import { adminResponseApi } from "../features/APIS/AdminReponse";
 import { paymentApi } from "../features/APIS/PaymentApi";
 import { emailApi } from "../features/APIS/SendngEmails";
-import { mpesaApi } from "../features/APIS/MpesaApi"; 
+import { mpesaApi } from "../features/APIS/MpesaApi";
 import { qrTicketApi } from "../features/APIS/QrcodeTicketApi";
 import { organizationsApi } from "../features/APIS/organizationApi";
 import { tikitiApi } from "../features/APIS/ticketsApi";
 import { walletApi } from "../features/APIS/WalletApi";
 import { verificationsApi } from "../features/APIS/VerificationsApi";
 import { refundApi } from "../features/APIS/RefundApi";
-
 
 // Create Persist Configuration for auth Slice
 const authPersistConfiguration = {
@@ -33,7 +34,10 @@ const authPersistConfiguration = {
 };
 
 // Create A persistent Reducer for the AUTH
-const persistedAuthReducer = persistReducer<AuthSliceTypes.AuthState>(authPersistConfiguration, authReducer);
+const persistedAuthReducer = persistReducer<AuthSliceTypes.AuthState>(
+  authPersistConfiguration,
+  authReducer
+);
 
 export const store = configureStore({
   reducer: {
@@ -50,10 +54,10 @@ export const store = configureStore({
     [mpesaApi.reducerPath]: mpesaApi.reducer,
     [qrTicketApi.reducerPath]: qrTicketApi.reducer,
     [organizationsApi.reducerPath]: organizationsApi.reducer,
-    [tikitiApi.reducerPath]:tikitiApi.reducer,
-    [walletApi.reducerPath]:walletApi.reducer,
-    [refundApi.reducerPath]:refundApi.reducer,
-    [verificationsApi.reducerPath]:verificationsApi.reducer,
+    [tikitiApi.reducerPath]: tikitiApi.reducer,
+    [walletApi.reducerPath]: walletApi.reducer,
+    [refundApi.reducerPath]: refundApi.reducer,
+    [verificationsApi.reducerPath]: verificationsApi.reducer,
     auth: persistedAuthReducer,
   },
   middleware: (getDefaultMiddleware) =>
